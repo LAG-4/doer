@@ -165,3 +165,28 @@ Full glossary with file links: `docs/internals/glossary.md`
 
 - Don't verify with browsers or computer use unless the user explicitly agrees or requests it.
 - Security is important, but should not be over-indexed on, especially for dev mode/maintainer-only features.
+
+## Fork rules (LAG-4/t3code only — never upstream this section)
+
+This fork ships a simplified build for non-developers. `main` must stay a pure
+mirror of upstream `pingdotgg/t3code` `main` so fixes flow in cleanly.
+
+- **Never commit to `main`.** Not directly, not via PR. The daily `Sync upstream
+  main` workflow fast-forwards it; any direct commit breaks the sync.
+- **`lite` is the product branch (and repo default).** All custom work lives here.
+- **Feature work:** cut branches off `lite` (`feat/<name>`), PR them back into
+  `lite`. Never base fork work on `main`, never target PRs at `main`.
+- **Pull upstream work into the product** (your choice, your timing — nothing
+  auto-merges into `lite`):
+  - Catch up fully: `git checkout lite && git fetch origin && git merge origin/main`.
+  - Take one fix/feature: `git checkout lite && git cherry-pick <sha-from-main>`
+    or `git checkout origin/main -- <path>`.
+  - If upstream re-adds something `lite` deliberately removed, keep it removed
+    (resolve that hunk in favor of `lite`) and say so in the merge commit.
+  - When merging `origin/main` into `lite`, keep this Fork rules section: if
+    upstream edited AGENTS.md, resolve by taking their body and re-adding this
+    section at the end.
+- **Upstream sync failures:** if the sync workflow fails with "not possible to
+  fast-forward", someone committed to fork `main`. Move those commits onto
+  `lite` (`git cherry-pick`), then reset the mirror:
+  `git fetch upstream && git checkout main && git reset --hard upstream/main && git push --force-with-lease origin main`.

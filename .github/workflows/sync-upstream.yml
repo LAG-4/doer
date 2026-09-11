@@ -1,0 +1,51 @@
+name: Sync upstream main
+
+# Keeps fork `main` as a pure mirror of pingdotgg/t3code `main`.
+# This workflow lives on `lite` (the default branch) and only ever
+# fast-forwards `main`. It never touches `lite` or any feature branch.
+# Rule: never commit directly to fork `main` — all custom work lives on
+# `lite` or feature branches cut from `lite`.
+
+on:
+  schedule:
+    - cron: "0 6 * * *" # daily 06:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream-main
+  cancel-in-progress: false
+
+jobs:
+  fast-forward-main:
+    name: Fast-forward main to upstream
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout fork main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Fast-forward to upstream main
+        run: |
+          set -euo pipefail
+          git remote add upstream https://github.com/pingdotgg/t3code.git 2>/dev/null || git remote set-url upstream https://github.com/pingdotgg/t3code.git
+          git fetch upstream main
+          git checkout main
+          LOCAL_SHA="$(git rev-parse HEAD)"
+          UPSTREAM_SHA="$(git rev-parse upstream/main)"
+          if [ "$LOCAL_SHA" = "$UPSTREAM_SHA" ]; then
+            echo "main already in sync with upstream ($LOCAL_SHA)."
+            exit 0
+          fi
+          # Fast-forward only: fails loudly if someone committed directly to fork main.
+          # That failure is intentional — it protects the mirror. Resolve by moving
+          # those commits onto `lite` instead, then reset main to upstream
+          # (see "Upstream sync failures" in AGENTS.md).
+          git merge --ff-only "upstream/main"
+          git push origin main
+          echo "Fast-forwarded $LOCAL_SHA -> $UPSTREAM_SHA"
