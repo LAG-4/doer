@@ -2,6 +2,8 @@ import {
   DEFAULT_MODEL,
   DEFAULT_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
+  isOpenCodeFreeModelSlug,
+  PREFERRED_DEFAULT_OPENCODE_MODELS,
   ProviderDriverKind,
   type ModelCapabilities,
   type ProviderInstanceId,
@@ -13,7 +15,8 @@ import { createModelCapabilities, resolveSelectableModel } from "@t3tools/shared
 const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [],
 });
-const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
+const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("opencode");
+const OPENCODE_DRIVER_KIND = ProviderDriverKind.make("opencode");
 
 export function formatProviderDriverKindLabel(provider: ProviderDriverKind): string {
   return provider
@@ -40,7 +43,8 @@ function getProviderSnapshot(
 
 // Resolve an instance selection to the correlated live driver. If the
 // instance is absent, fall back to a live enabled provider instead of
-// inferring a driver from the missing instance id.
+// inferring a driver from the missing instance id. OpenCode leads so fresh
+// installs land on the OpenCode free model.
 export function resolveSelectableProvider(
   providers: ReadonlyArray<ServerProvider>,
   provider: ProviderDriverKind | ProviderInstanceId | null | undefined,
@@ -49,7 +53,12 @@ export function resolveSelectableProvider(
   if (requestedEntry?.enabled) {
     return requestedEntry.driver;
   }
-  return providers.find((candidate) => candidate.enabled)?.driver ?? DEFAULT_DRIVER_KIND;
+  return (
+    providers.find((candidate) => candidate.enabled && candidate.driver === OPENCODE_DRIVER_KIND)
+      ?.driver ??
+    providers.find((candidate) => candidate.enabled)?.driver ??
+    DEFAULT_DRIVER_KIND
+  );
 }
 
 export function getProviderModelCapabilities(
@@ -97,6 +106,21 @@ export function getDefaultServerModel(
   provider: ProviderDriverKind,
 ): string {
   const models = getProviderModels(providers, provider);
+  if (provider === OPENCODE_DRIVER_KIND) {
+    // Prefer the free-tier default (Big Pickle, else any `*-free` Zen model)
+    // even when the snapshot carries no `isDefault` (stale cache, custom
+    // server). Falls through to the generic isDefault-first order below.
+    const slugs = models.filter((model) => !model.isCustom).map((model) => model.slug);
+    for (const preferred of PREFERRED_DEFAULT_OPENCODE_MODELS) {
+      if (slugs.includes(preferred)) {
+        return preferred;
+      }
+    }
+    const free = slugs.filter((slug) => isOpenCodeFreeModelSlug(slug)).toSorted()[0];
+    if (free) {
+      return free;
+    }
+  }
   return (
     models.find((model) => model.isDefault && !model.isCustom)?.slug ??
     models.find((model) => !model.isCustom)?.slug ??

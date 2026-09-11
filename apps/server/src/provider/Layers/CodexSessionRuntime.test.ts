@@ -4,7 +4,7 @@ import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { describe } from "vite-plus/test";
-import { DEFAULT_MODEL, ThreadId } from "@t3tools/contracts";
+import { DEFAULT_CODEX_MODEL, ThreadId } from "@t3tools/contracts";
 import * as CodexErrors from "effect-codex-app-server/errors";
 import * as CodexRpc from "effect-codex-app-server/rpc";
 import * as EffectCodexSchema from "effect-codex-app-server/schema";
@@ -190,9 +190,11 @@ describe("buildTurnStartParams", () => {
     );
 
     const settings = params.collaborationMode?.settings;
-    NodeAssert.equal(settings?.model, DEFAULT_MODEL);
+    NodeAssert.equal(settings?.model, DEFAULT_CODEX_MODEL);
     NodeAssert.equal(settings?.reasoning_effort, "medium");
-    NodeAssert.ok(settings?.developer_instructions?.includes(`as ${DEFAULT_MODEL} with medium`));
+    NodeAssert.ok(
+      settings?.developer_instructions?.includes(`as ${DEFAULT_CODEX_MODEL} with medium`),
+    );
   });
 
   it.effect("routes approvals to the auto reviewer in auto mode", () =>

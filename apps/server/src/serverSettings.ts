@@ -257,6 +257,10 @@ const decodeServerSettingsJsonExit = Schema.decodeUnknownExit(ServerSettingsJson
 const PersistedOptionalProviderSettings = Schema.Struct({
   providers: Schema.optionalKey(
     Schema.Struct({
+      codex: Schema.optionalKey(Schema.Struct({ enabled: Schema.optionalKey(Schema.Boolean) })),
+      claudeAgent: Schema.optionalKey(
+        Schema.Struct({ enabled: Schema.optionalKey(Schema.Boolean) }),
+      ),
       cursor: Schema.optionalKey(Schema.Struct({ enabled: Schema.optionalKey(Schema.Boolean) })),
       grok: Schema.optionalKey(Schema.Struct({ enabled: Schema.optionalKey(Schema.Boolean) })),
       opencode: Schema.optionalKey(Schema.Struct({ enabled: Schema.optionalKey(Schema.Boolean) })),
@@ -285,7 +289,9 @@ function restoreUsedProviders(
     Object.entries(settings.providerInstances).map(([instanceId, instance]) => [
       instanceId,
       instance.enabled === undefined &&
-      (instance.driver === "cursor" ||
+      (instance.driver === "codex" ||
+        instance.driver === "claudeAgent" ||
+        instance.driver === "cursor" ||
         instance.driver === "grok" ||
         instance.driver === "opencode") &&
       usedProviderInstances.has(instanceId)
@@ -298,6 +304,14 @@ function restoreUsedProviders(
     ...settings,
     providers: {
       ...settings.providers,
+      codex: {
+        ...settings.providers.codex,
+        enabled: persisted.providers?.codex?.enabled ?? usedProviders.has("codex"),
+      },
+      claudeAgent: {
+        ...settings.providers.claudeAgent,
+        enabled: persisted.providers?.claudeAgent?.enabled ?? usedProviders.has("claudeAgent"),
+      },
       cursor: {
         ...settings.providers.cursor,
         enabled: persisted.providers?.cursor?.enabled ?? usedProviders.has("cursor"),
@@ -308,7 +322,9 @@ function restoreUsedProviders(
       },
       opencode: {
         ...settings.providers.opencode,
-        enabled: persisted.providers?.opencode?.enabled ?? usedProviders.has("opencode"),
+        // OpenCode is on by default (fresh installs and upgrades land on the
+        // free model); only an explicitly persisted opt-out disables it.
+        enabled: persisted.providers?.opencode?.enabled ?? true,
       },
     },
     providerInstances,
@@ -325,10 +341,23 @@ function fallbackTextGenerationProvider(settings: ServerSettings): ServerSetting
   // Same precedence as isModelSelectionProviderEnabled: an explicit provider
   // instance wins over the legacy providers map, which decodes to defaults
   // (codex enabled) when the Providers UI has only written providerInstances.
-  const fallbackEntry = Object.entries(settings.providers).find(([driver, provider]) => {
+  // OpenCode leads so fresh installs default to the OpenCode free model.
+  const precedence: ReadonlyArray<string> = [
+    "opencode",
+    "codex",
+    "claudeAgent",
+    "cursor",
+    "grok",
+    "antigravity",
+  ];
+  const enabledEntries = Object.entries(settings.providers).filter(([driver, provider]) => {
     const instance = settings.providerInstances[ProviderInstanceId.make(driver)];
     return instance === undefined ? provider.enabled : resolveProviderInstanceEnabled(instance);
   });
+  const fallbackEntry =
+    precedence
+      .map((driver) => enabledEntries.find(([entryDriver]) => entryDriver === driver))
+      .find((entry) => entry !== undefined) ?? enabledEntries[0];
   const fallback = fallbackEntry ? ProviderDriverKind.make(fallbackEntry[0]) : undefined;
   if (!fallback) {
     return settings;
@@ -355,11 +384,14 @@ const ATOMIC_SETTINGS_KEYS: ReadonlySet<string> = new Set([
   "textGenerationModelSelection",
 ]);
 
-// Preserve both enabled states because provider history cannot recover a new opt-in.
+// Preserve explicit opt-in/opt-out states because provider history cannot
+// recover a new opt-in, and a stripped explicit disable would spring back on.
 const PERSISTED_SERVER_SETTINGS_DEFAULTS = {
   ...DEFAULT_SERVER_SETTINGS,
   providers: {
     ...DEFAULT_SERVER_SETTINGS.providers,
+    codex: { ...DEFAULT_SERVER_SETTINGS.providers.codex, enabled: undefined },
+    claudeAgent: { ...DEFAULT_SERVER_SETTINGS.providers.claudeAgent, enabled: undefined },
     cursor: { ...DEFAULT_SERVER_SETTINGS.providers.cursor, enabled: undefined },
     grok: { ...DEFAULT_SERVER_SETTINGS.providers.grok, enabled: undefined },
     opencode: { ...DEFAULT_SERVER_SETTINGS.providers.opencode, enabled: undefined },
@@ -472,13 +504,13 @@ const make = Effect.gen(function* () {
         provider_name AS "providerName",
         provider_instance_id AS "providerInstanceId"
       FROM projection_thread_sessions
-      WHERE provider_name IN ('cursor', 'grok', 'opencode')
+      WHERE provider_name IN ('codex', 'claudeAgent', 'cursor', 'grok', 'opencode')
       UNION
       SELECT DISTINCT
         provider_name AS "providerName",
         provider_instance_id AS "providerInstanceId"
       FROM provider_session_runtime
-      WHERE provider_name IN ('cursor', 'grok', 'opencode')
+      WHERE provider_name IN ('codex', 'claudeAgent', 'cursor', 'grok', 'opencode')
     `.pipe(
       Effect.mapError(
         (cause) =>

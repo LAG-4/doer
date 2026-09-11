@@ -30,15 +30,15 @@ const mergeProviderModels = (
 };
 
 /**
- * Built-in drivers in presentation order. Codex and Claude lead, the opt-in
- * providers follow, and unknown or fork drivers sort after every built-in.
+ * Built-in drivers in presentation order. OpenCode leads, the other providers
+ * follow, and unknown or fork drivers sort after every built-in.
  */
 const BUILT_IN_DRIVER_ORDER: ReadonlyArray<string> = [
+  "opencode",
   "codex",
   "claudeAgent",
   "cursor",
   "grok",
-  "opencode",
   "antigravity",
 ];
 

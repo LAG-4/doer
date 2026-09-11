@@ -35,7 +35,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { isWindowsCommandNotFound } from "../processRunner.ts";
 import { collectStreamAsString } from "./providerSnapshot.ts";
 import * as NetService from "@t3tools/shared/Net";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { compareSemverVersions, parseSemver } from "@t3tools/shared/semver";
 import {
   CommandResolutionCache,
@@ -44,9 +44,17 @@ import {
 } from "@t3tools/shared/shell";
 import {
   isDefaultOpenCodeBinary,
+  openCodeArchiveExtractCommand,
   openCodeBinaryCandidates,
+  openCodeCurlDownloadArgs,
+  openCodeExtractedBinaryNames,
+  openCodeInstallArchiveFilename,
+  openCodeInstallDownloadUrl,
+  openCodeInstallTargetForHost,
   openCodeManagedBinaryPath,
   openCodeManagedPackageJson,
+  openCodeManagedScriptBinDir,
+  openCodeManagedScriptBinaryPath,
   openCodeNpmInstallArgs,
 } from "./opencodeInstall.ts";
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
@@ -55,6 +63,7 @@ const OPENCODE_EMPTY_CONFIG_CONTENT = "{}";
 export const MINIMUM_OPENCODE_VERSION = "1.14.19";
 const OPENCODE_HEALTH_TIMEOUT = "5 seconds";
 const OPENCODE_NPM_INSTALL_TIMEOUT_MS = 5 * 60_000;
+const OPENCODE_SCRIPT_INSTALL_TIMEOUT_MS = 5 * 60_000;
 const OPENCODE_NPM_INSTALL_MAX_OUTPUT_BYTES = 32 * 1024;
 
 const OpenCodeHealthSchema = Schema.Struct({
@@ -305,10 +314,11 @@ export interface OpenCodeRuntimeShape {
     readonly managedDir?: string;
   }) => Effect.Effect<ReadonlyArray<OpenCodeSkill>, OpenCodeRuntimeError>;
   /**
-   * Makes sure an OpenCode CLI exists, installing it into `managedDir` with
-   * npm when no usable binary is found. Custom (non-default) `binaryPath`
-   * values are only verified, never installed. Serialized across callers so
-   * concurrent probes cannot run overlapping npm installs.
+   * Makes sure an OpenCode CLI exists, installing it into `managedDir` (npm
+   * first, official release download with curl when npm is missing) when no
+   * usable binary is found. Custom (non-default) `binaryPath` values are
+   * only verified, never installed. Serialized across callers so concurrent
+   * probes cannot run overlapping installs.
    */
   readonly ensureOpenCodeInstalled: (input: {
     readonly binaryPath: string;
@@ -618,7 +628,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const pathService = yield* Path.Path;
   // Serializes automatic installs: every probe/adapter instance shares this
-  // runtime, so overlapping refreshes queue on one npm install instead of
+  // runtime, so overlapping refreshes queue on one install instead of
   // racing in the same managed directory.
   const installLock = yield* Semaphore.make(1);
 
@@ -1156,23 +1166,25 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       ),
     );
 
-  const runNpmInstall = (input: {
-    readonly managedDir: string;
+  /**
+   * Run one installer child process to completion: spawn, collect capped
+   * output, enforce a timeout, and always kill the child on the way out.
+   * Shared by the npm and the script-download install paths.
+   */
+  const runInstallCommand = (input: {
+    readonly label: string;
+    readonly command: string;
+    readonly args: ReadonlyArray<string>;
     readonly environment?: NodeJS.ProcessEnv;
-  }): Effect.Effect<void, OpenCodeRuntimeError> =>
+    readonly timeoutMs: number;
+  }): Effect.Effect<
+    { readonly stdout: string; readonly stderr: string; readonly code: number },
+    OpenCodeRuntimeError
+  > =>
     Effect.gen(function* () {
-      const npm = yield* resolveExisting("npm", input.environment);
-      if (Option.isNone(npm)) {
-        return yield* new OpenCodeRuntimeError({
-          operation: "ensureOpenCodeInstalled",
-          detail:
-            "OpenCode CLI (`opencode`) is not installed and npm is unavailable to install it automatically. Install Node.js/npm, or install OpenCode manually: curl -fsSL https://opencode.ai/install | bash",
-        });
-      }
-      const args = openCodeNpmInstallArgs(input.managedDir);
       const spawnCommand = yield* resolveSpawnCommand(
-        npm.value,
-        args,
+        input.command,
+        input.args,
         input.environment ? { env: input.environment } : {},
       );
       const collected = yield* Effect.scoped(
@@ -1181,8 +1193,8 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
             .spawn(
               ChildProcess.make(spawnCommand.command, spawnCommand.args, {
                 shell: spawnCommand.shell,
-                // npm needs its usual host environment (HOME, cache dirs);
-                // the instance environment only overlays (e.g. proxies).
+                // Installers need their usual host environment (HOME, cache
+                // dirs); the instance environment only overlays (e.g. proxies).
                 ...(input.environment ? { env: input.environment, extendEnv: true } : {}),
               }),
             )
@@ -1191,7 +1203,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
                 (cause) =>
                   new OpenCodeRuntimeError({
                     operation: "ensureOpenCodeInstalled",
-                    detail: `Failed to start npm for the automatic OpenCode install: ${openCodeRuntimeErrorDetail(cause)}`,
+                    detail: `Failed to start ${input.label} for the automatic OpenCode install: ${openCodeRuntimeErrorDetail(cause)}`,
                     cause,
                   }),
               ),
@@ -1211,7 +1223,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
           );
           return { stdout, stderr, code: Number(code) };
         }),
-      ).pipe(Effect.timeoutOption(OPENCODE_NPM_INSTALL_TIMEOUT_MS));
+      ).pipe(Effect.timeoutOption(input.timeoutMs));
       if (Option.isNone(collected)) {
         return yield* new OpenCodeRuntimeError({
           operation: "ensureOpenCodeInstalled",
@@ -1219,15 +1231,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
             "Automatic OpenCode installation timed out after 5 minutes. The install may still be finishing; refresh provider status to check.",
         });
       }
-      const { stdout, stderr, code } = collected.value;
-      if (code !== 0) {
-        const tail = `${stderr}\n${stdout}`.trim().slice(-2048);
-        return yield* new OpenCodeRuntimeError({
-          operation: "ensureOpenCodeInstalled",
-          detail: `Automatic OpenCode installation failed (npm exited with code ${code}).${tail ? ` npm output:\n${tail}` : ""}`,
-        });
-      }
-      yield* Effect.void;
+      return collected.value;
     }).pipe(
       Effect.mapError((cause) =>
         ensureRuntimeError(
@@ -1237,6 +1241,186 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
         ),
       ),
     );
+
+  const runNpmInstall = (input: {
+    readonly managedDir: string;
+    readonly environment?: NodeJS.ProcessEnv;
+  }): Effect.Effect<void, OpenCodeRuntimeError> =>
+    Effect.gen(function* () {
+      const npm = yield* resolveExisting("npm", input.environment);
+      if (Option.isNone(npm)) {
+        return yield* new OpenCodeRuntimeError({
+          operation: "ensureOpenCodeInstalled",
+          detail:
+            "OpenCode CLI (`opencode`) is not installed and npm is unavailable to install it automatically. Install Node.js/npm, or install OpenCode manually: curl -fsSL https://opencode.ai/install | bash",
+        });
+      }
+      const { stdout, stderr, code } = yield* runInstallCommand({
+        label: "npm",
+        command: npm.value,
+        args: openCodeNpmInstallArgs(input.managedDir),
+        ...(input.environment ? { environment: input.environment } : {}),
+        timeoutMs: OPENCODE_NPM_INSTALL_TIMEOUT_MS,
+      });
+      if (code !== 0) {
+        const tail = `${stderr}\n${stdout}`.trim().slice(-2048);
+        return yield* new OpenCodeRuntimeError({
+          operation: "ensureOpenCodeInstalled",
+          detail: `Automatic OpenCode installation failed (npm exited with code ${code}).${tail ? ` npm output:\n${tail}` : ""}`,
+        });
+      }
+      yield* Effect.void;
+    });
+
+  /**
+   * Install without npm by downloading the official release archive with
+   * curl and extracting it into `<managedDir>/bin` — the path for machines
+   * (most non-developers) that have no Node.js toolchain. Mirrors the
+   * platform mapping of the official install script, so macOS and Windows
+   * are covered with the OS-preinstalled tools (curl plus unzip/tar on
+   * macOS/Linux, curl plus PowerShell on Windows).
+   */
+  const runScriptInstall = (input: {
+    readonly managedDir: string;
+    readonly environment?: NodeJS.ProcessEnv;
+  }): Effect.Effect<void, OpenCodeRuntimeError> =>
+    Effect.gen(function* () {
+      const target = openCodeInstallTargetForHost({
+        platform: hostPlatform,
+        arch: yield* HostProcessArchitecture,
+      });
+      if (target === null) {
+        return yield* new OpenCodeRuntimeError({
+          operation: "ensureOpenCodeInstalled",
+          detail: `Automatic OpenCode installation is not supported on this machine (${hostPlatform}). Install OpenCode manually: curl -fsSL https://opencode.ai/install | bash`,
+        });
+      }
+      const curl = yield* resolveExisting("curl", input.environment);
+      if (Option.isNone(curl)) {
+        return yield* new OpenCodeRuntimeError({
+          operation: "ensureOpenCodeInstalled",
+          detail:
+            "OpenCode CLI (`opencode`) is not installed, and neither npm nor curl is available to install it automatically. Install OpenCode manually: curl -fsSL https://opencode.ai/install | bash",
+        });
+      }
+      const extract = openCodeArchiveExtractCommand({
+        platform: hostPlatform,
+        archivePath: "",
+        destDir: "",
+      });
+      if (extract === null) {
+        return yield* new OpenCodeRuntimeError({
+          operation: "ensureOpenCodeInstalled",
+          detail: `Automatic OpenCode installation is not supported on this machine (${hostPlatform}). Install OpenCode manually: curl -fsSL https://opencode.ai/install | bash`,
+        });
+      }
+      const extractor = yield* resolveExisting(extract.command, input.environment);
+      if (Option.isNone(extractor)) {
+        const missing =
+          hostPlatform === "win32" ? "PowerShell" : hostPlatform === "darwin" ? "unzip" : "tar";
+        return yield* new OpenCodeRuntimeError({
+          operation: "ensureOpenCodeInstalled",
+          detail: `OpenCode CLI (\`opencode\`) is not installed, and ${missing} is unavailable to finish the automatic install. Install OpenCode manually: curl -fsSL https://opencode.ai/install | bash`,
+        });
+      }
+      const tmpDir = pathService.join(input.managedDir, "install-tmp");
+      const cleanupTmp = fs.remove(tmpDir, { recursive: true }).pipe(Effect.ignore);
+      yield* fs
+        .makeDirectory(tmpDir, { recursive: true })
+        .pipe(
+          Effect.mapError((cause) =>
+            ensureRuntimeError(
+              "ensureOpenCodeInstalled",
+              `Could not prepare the managed OpenCode directory at ${input.managedDir}: ${openCodeRuntimeErrorDetail(cause)}`,
+              cause,
+            ),
+          ),
+        );
+      yield* Effect.gen(function* () {
+        const archivePath = pathService.join(tmpDir, openCodeInstallArchiveFilename(target));
+        const extractDir = pathService.join(tmpDir, "extracted");
+        yield* fs.makeDirectory(extractDir, { recursive: true });
+        const download = yield* runInstallCommand({
+          label: "curl",
+          command: curl.value,
+          args: openCodeCurlDownloadArgs(openCodeInstallDownloadUrl(target), archivePath),
+          ...(input.environment ? { environment: input.environment } : {}),
+          timeoutMs: OPENCODE_SCRIPT_INSTALL_TIMEOUT_MS,
+        });
+        if (download.code !== 0) {
+          return yield* new OpenCodeRuntimeError({
+            operation: "ensureOpenCodeInstalled",
+            detail: `Automatic OpenCode installation failed (could not download the release archive). Check network access, or install OpenCode manually: curl -fsSL https://opencode.ai/install | bash`,
+          });
+        }
+        const extractCommand = openCodeArchiveExtractCommand({
+          platform: hostPlatform,
+          archivePath,
+          destDir: extractDir,
+        });
+        if (extractCommand === null) {
+          return yield* new OpenCodeRuntimeError({
+            operation: "ensureOpenCodeInstalled",
+            detail: `Automatic OpenCode installation is not supported on this machine (${hostPlatform}). Install OpenCode manually: curl -fsSL https://opencode.ai/install | bash`,
+          });
+        }
+        const extracted = yield* runInstallCommand({
+          label: extractCommand.command,
+          command: extractor.value,
+          args: extractCommand.args,
+          ...(input.environment ? { environment: input.environment } : {}),
+          timeoutMs: OPENCODE_SCRIPT_INSTALL_TIMEOUT_MS,
+        });
+        if (extracted.code !== 0) {
+          const tail = `${extracted.stderr}\n${extracted.stdout}`.trim().slice(-1024);
+          return yield* new OpenCodeRuntimeError({
+            operation: "ensureOpenCodeInstalled",
+            detail: `Automatic OpenCode installation failed (could not unpack the release archive).${tail ? ` Output:\n${tail}` : ""} Install OpenCode manually: curl -fsSL https://opencode.ai/install | bash`,
+          });
+        }
+        let staged: string | null = null;
+        for (const name of openCodeExtractedBinaryNames(hostPlatform)) {
+          const candidate = pathService.join(extractDir, name);
+          if (yield* fs.exists(candidate)) {
+            staged = candidate;
+            break;
+          }
+        }
+        if (staged === null) {
+          return yield* new OpenCodeRuntimeError({
+            operation: "ensureOpenCodeInstalled",
+            detail:
+              "Automatic OpenCode installation failed (the downloaded archive did not contain an opencode binary). Install OpenCode manually: curl -fsSL https://opencode.ai/install | bash",
+          });
+        }
+        const binDir = openCodeManagedScriptBinDir(input.managedDir);
+        yield* fs.makeDirectory(binDir, { recursive: true });
+        const destination = openCodeManagedScriptBinaryPath(input.managedDir, hostPlatform);
+        yield* fs
+          .rename(staged, destination)
+          .pipe(
+            Effect.mapError((cause) =>
+              ensureRuntimeError(
+                "ensureOpenCodeInstalled",
+                `Could not place the downloaded OpenCode binary at ${destination}: ${openCodeRuntimeErrorDetail(cause)}`,
+                cause,
+              ),
+            ),
+          );
+        if (hostPlatform !== "win32") {
+          yield* fs.chmod(destination, 0o755).pipe(Effect.ignore);
+        }
+      }).pipe(
+        Effect.ensuring(cleanupTmp),
+        Effect.mapError((cause) =>
+          ensureRuntimeError(
+            "ensureOpenCodeInstalled",
+            `Automatic OpenCode installation failed: ${openCodeRuntimeErrorDetail(cause)}`,
+            cause,
+          ),
+        ),
+      );
+    });
 
   const ensureOpenCodeInstalled: OpenCodeRuntimeShape["ensureOpenCodeInstalled"] = (input) =>
     installLock.withPermit(
@@ -1284,33 +1468,53 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
               ),
             ),
           );
-        const manifestPath = pathService.join(managedDir, "package.json");
-        if (!(yield* fs.exists(manifestPath))) {
-          yield* fs
-            .writeFileString(manifestPath, openCodeManagedPackageJson())
-            .pipe(
-              Effect.mapError((cause) =>
-                ensureRuntimeError(
-                  "ensureOpenCodeInstalled",
-                  `Could not prepare the managed OpenCode directory at ${managedDir}: ${openCodeRuntimeErrorDetail(cause)}`,
-                  cause,
+        // npm first; without it (the usual non-developer machine), download
+        // the official release archive with curl instead.
+        const npm = yield* resolveExisting("npm", environment);
+        if (Option.isSome(npm)) {
+          yield* Effect.logInfo("OpenCode CLI not found. Installing automatically with npm.", {
+            managedDir,
+          });
+          const manifestPath = pathService.join(managedDir, "package.json");
+          if (!(yield* fs.exists(manifestPath))) {
+            yield* fs
+              .writeFileString(manifestPath, openCodeManagedPackageJson())
+              .pipe(
+                Effect.mapError((cause) =>
+                  ensureRuntimeError(
+                    "ensureOpenCodeInstalled",
+                    `Could not prepare the managed OpenCode directory at ${managedDir}: ${openCodeRuntimeErrorDetail(cause)}`,
+                    cause,
+                  ),
                 ),
-              ),
-            );
+              );
+          }
+          yield* runNpmInstall({
+            managedDir,
+            ...(environment !== undefined ? { environment } : {}),
+          });
+        } else {
+          yield* Effect.logInfo(
+            "OpenCode CLI not found and npm is unavailable. Installing automatically by downloading the official release.",
+            { managedDir },
+          );
+          yield* runScriptInstall({
+            managedDir,
+            ...(environment !== undefined ? { environment } : {}),
+          });
         }
-        yield* runNpmInstall({
-          managedDir,
-          ...(environment !== undefined ? { environment } : {}),
-        });
         const installed = yield* firstExisting(
-          [openCodeManagedBinaryPath(managedDir, hostPlatform)],
+          [
+            openCodeManagedBinaryPath(managedDir, hostPlatform),
+            openCodeManagedScriptBinaryPath(managedDir, hostPlatform),
+          ],
           environment,
         );
         if (installed === null) {
           return yield* new OpenCodeRuntimeError({
             operation: "ensureOpenCodeInstalled",
             detail:
-              "npm reported success but the OpenCode binary is still missing. Install it manually: curl -fsSL https://opencode.ai/install | bash",
+              "The automatic OpenCode install finished but the OpenCode binary is still missing. Install it manually: curl -fsSL https://opencode.ai/install | bash",
           });
         }
         yield* Effect.logInfo("OpenCode CLI installed automatically.", {

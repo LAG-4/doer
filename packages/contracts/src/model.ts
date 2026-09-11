@@ -149,7 +149,44 @@ const CURSOR_DRIVER_KIND = ProviderDriverKind.make("cursor");
 const GROK_DRIVER_KIND = ProviderDriverKind.make("grok");
 const OPENCODE_DRIVER_KIND = ProviderDriverKind.make("opencode");
 
-export const DEFAULT_MODEL = "gpt-5.6-sol";
+export const DEFAULT_MODEL = "opencode/big-pickle";
+
+/** Codex-specific chat default (was the global default before OpenCode-first). */
+export const DEFAULT_CODEX_MODEL = "gpt-5.6-sol";
+
+/**
+ * OpenCode default-model preference, most preferred first. Big Pickle is the
+ * free stealth model on OpenCode Zen; entries ending in `-free` are the other
+ * free-tier Zen models. The provider snapshot marks the first of these
+ * present in the live inventory as default; when none are available, the
+ * first reported model wins.
+ */
+export const PREFERRED_DEFAULT_OPENCODE_MODELS: ReadonlyArray<string> = ["opencode/big-pickle"];
+
+/** True for OpenCode Zen free-tier slugs: Big Pickle or any `*-free` model. */
+export function isOpenCodeFreeModelSlug(slug: string): boolean {
+  const trimmed = slug.trim();
+  if (trimmed === "opencode/big-pickle" || trimmed === "big-pickle") {
+    return true;
+  }
+  const modelId = trimmed.includes("/") ? (trimmed.split("/").pop() ?? trimmed) : trimmed;
+  return modelId.toLowerCase().endsWith("-free");
+}
+
+/**
+ * Pick the preferred OpenCode default from the available slugs: the first
+ * preferred entry present, else the first free-tier slug (sorted for
+ * determinism), else undefined so callers fall back to the catalog order.
+ */
+export function resolvePreferredOpenCodeModel(slugs: ReadonlyArray<string>): string | undefined {
+  for (const preferred of PREFERRED_DEFAULT_OPENCODE_MODELS) {
+    if (slugs.includes(preferred)) {
+      return preferred;
+    }
+  }
+  const free = slugs.filter((slug) => isOpenCodeFreeModelSlug(slug)).toSorted();
+  return free[0];
+}
 
 /**
  * Codex default-model preference, most preferred first. The provider snapshot
@@ -160,18 +197,20 @@ export const PREFERRED_DEFAULT_CODEX_MODELS: ReadonlyArray<string> = [
   "gpt-5.6-sol",
   "gpt-5.6-terra",
 ];
-export const DEFAULT_TEXT_GENERATION_MODEL = "gpt-5.6-luna";
+export const DEFAULT_TEXT_GENERATION_MODEL = "opencode/big-pickle";
+/** Codex-specific text-generation default (was the global default before OpenCode-first). */
+export const DEFAULT_CODEX_TEXT_GENERATION_MODEL = "gpt-5.6-luna";
 /** Keep the official Antigravity session's current model. Never send this ID to ACP. */
 export const ANTIGRAVITY_DEFAULT_MODEL = "antigravity-default";
 export const DEFAULT_TEXT_GENERATION_REASONING_EFFORT = "low";
 
 export const DEFAULT_MODEL_BY_PROVIDER: Partial<Record<ProviderDriverKind, string>> = {
-  [CODEX_DRIVER_KIND]: DEFAULT_MODEL,
+  [CODEX_DRIVER_KIND]: DEFAULT_CODEX_MODEL,
   [CLAUDE_DRIVER_KIND]: "claude-sonnet-5",
   [CURSOR_DRIVER_KIND]: "auto",
   // Product slug, not an ACP model id. The Grok adapter treats it as "the session's current model".
   [GROK_DRIVER_KIND]: "grok-build",
-  [OPENCODE_DRIVER_KIND]: "openai/gpt-5",
+  [OPENCODE_DRIVER_KIND]: "opencode/big-pickle",
   [ProviderDriverKind.make("antigravity")]: ANTIGRAVITY_DEFAULT_MODEL,
 };
 
@@ -179,11 +218,11 @@ export const DEFAULT_MODEL_BY_PROVIDER: Partial<Record<ProviderDriverKind, strin
 export const DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER: Partial<
   Record<ProviderDriverKind, string>
 > = {
-  [CODEX_DRIVER_KIND]: DEFAULT_TEXT_GENERATION_MODEL,
+  [CODEX_DRIVER_KIND]: DEFAULT_CODEX_TEXT_GENERATION_MODEL,
   [ProviderDriverKind.make("antigravity")]: ANTIGRAVITY_DEFAULT_MODEL,
   [CLAUDE_DRIVER_KIND]: "claude-haiku-4-5",
   [CURSOR_DRIVER_KIND]: "composer-2",
-  [OPENCODE_DRIVER_KIND]: "openai/gpt-5",
+  [OPENCODE_DRIVER_KIND]: "opencode/big-pickle",
 };
 
 export const MODEL_SLUG_ALIASES_BY_PROVIDER: Partial<

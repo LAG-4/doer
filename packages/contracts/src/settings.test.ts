@@ -500,11 +500,10 @@ describe("ClientSettings pull request merge methods", () => {
 });
 
 describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
-  it("defaults text generation to Luna at low reasoning effort", () => {
+  it("defaults text generation to the OpenCode free model", () => {
     expect(DEFAULT_SERVER_SETTINGS.textGenerationModelSelection).toEqual({
-      instanceId: ProviderInstanceId.make("codex"),
-      model: "gpt-5.6-luna",
-      options: [{ id: "reasoningEffort", value: "low" }],
+      instanceId: ProviderInstanceId.make("opencode"),
+      model: "opencode/big-pickle",
     });
   });
 
@@ -517,7 +516,8 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
     expect(decoded.providerInstances).toEqual({});
     // Legacy `providers` struct is still hydrated with its per-driver defaults
     // so existing call sites keep working through the migration.
-    expect(decoded.providers.codex.enabled).toBe(true);
+    expect(decoded.providers.opencode.enabled).toBe(true);
+    expect(decoded.providers.codex.enabled).toBe(false);
   });
 
   it("decodes a multi-instance map mixing first-party and fork drivers", () => {
@@ -564,13 +564,13 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
 });
 
 describe("provider enabled defaults", () => {
-  it("enables only the stable bindings by default", () => {
+  it("enables only OpenCode by default; Codex and Claude are opt-in", () => {
     const decoded = decodeServerSettings({});
-    expect(decoded.providers.codex.enabled).toBe(true);
-    expect(decoded.providers.claudeAgent.enabled).toBe(true);
+    expect(decoded.providers.opencode.enabled).toBe(true);
+    expect(decoded.providers.codex.enabled).toBe(false);
+    expect(decoded.providers.claudeAgent.enabled).toBe(false);
     expect(decoded.providers.cursor.enabled).toBe(false);
     expect(decoded.providers.grok.enabled).toBe(false);
-    expect(decoded.providers.opencode.enabled).toBe(false);
   });
 
   it("keeps Cursor enabled when an existing user explicitly opted in", () => {
@@ -590,9 +590,15 @@ describe("provider enabled defaults", () => {
   it("resolves instance enabled state with explicit false winning", () => {
     const grok = ProviderDriverKind.make("grok");
     const codex = ProviderDriverKind.make("codex");
-    // No flags anywhere: driver default applies.
+    // No flags anywhere: driver default applies (only OpenCode is on).
     expect(resolveProviderInstanceEnabled({ driver: grok, config: {} })).toBe(false);
-    expect(resolveProviderInstanceEnabled({ driver: codex, config: {} })).toBe(true);
+    expect(resolveProviderInstanceEnabled({ driver: codex, config: {} })).toBe(false);
+    expect(
+      resolveProviderInstanceEnabled({
+        driver: ProviderDriverKind.make("opencode"),
+        config: {},
+      }),
+    ).toBe(true);
     // Unknown fork drivers stay enabled.
     expect(
       resolveProviderInstanceEnabled({ driver: ProviderDriverKind.make("ollama"), config: {} }),

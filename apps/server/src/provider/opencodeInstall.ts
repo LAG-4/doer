@@ -8,12 +8,19 @@
  * (it lands in `~/.opencode/bin`, which login shells add to PATH but GUI
  * processes never see). This module lists every location worth checking, in
  * priority order, and knows how to install the CLI into a T3-managed
- * directory (`<baseDir>/tools/opencode`) with npm when nothing is found.
+ * directory (`<baseDir>/tools/opencode`) when nothing is found.
  *
- * The managed install deliberately avoids global state: `npm install
- * --prefix <managedDir>` keeps the binary under T3's home directory, so no
- * sudo, no user-global mutation, and removal is a directory delete. The
- * official install script's `~/.opencode/bin` location stays a read-only
+ * Two install methods, tried in order:
+ *   1. `npm install --prefix <managedDir>` (needs npm on PATH) — keeps the
+ *      binary under T3's home directory, so no sudo, no user-global
+ *      mutation, and removal is a directory delete.
+ *   2. Direct download of the official release archive with curl, mirroring
+ *      the platform mapping of the `https://opencode.ai/install` script —
+ *      for machines (most non-developers) with no npm at all. The binary
+ *      lands in `<managedDir>/bin`, next to the npm tree, never in
+ *      `~/.opencode/bin`.
+ *
+ * The official install script's `~/.opencode/bin` location stays a read-only
  * detection fallback — T3 never writes there.
  *
  * @module provider/opencodeInstall
@@ -29,6 +36,11 @@ export const OPENCODE_NPM_PACKAGE = "opencode-ai";
 export const OPENCODE_NPM_INSTALL_SPEC = `${OPENCODE_NPM_PACKAGE}@latest`;
 /** Directory name below `<baseDir>/tools` holding the T3-managed install. */
 export const OPENCODE_MANAGED_TOOL_DIRNAME = "opencode";
+/** The official install script — the fallback install mirrors its platform mapping. */
+export const OPENCODE_INSTALL_SCRIPT_URL = "https://opencode.ai/install";
+/** Release downloads live here; the script uses `.../latest/download/<filename>`. */
+export const OPENCODE_RELEASE_DOWNLOAD_BASE_URL =
+  "https://github.com/sst/opencode/releases/latest/download";
 
 /** True when the caller left the stock `"opencode"` command in place. */
 export function isDefaultOpenCodeBinary(binaryPath: string | null | undefined): boolean {
@@ -46,11 +58,27 @@ export function openCodeManagedBinDir(managedDir: string): string {
   return NodePath.join(managedDir, "node_modules", ".bin");
 }
 
+/** `<managedDir>/bin` — home of the script-downloaded binary (no npm involved). */
+export function openCodeManagedScriptBinDir(managedDir: string): string {
+  return NodePath.join(managedDir, "bin");
+}
+
 /** Absolute path of the T3-managed `opencode` executable for a platform. */
 export function openCodeManagedBinaryPath(managedDir: string, platform: NodeJS.Platform): string {
   return NodePath.join(
     openCodeManagedBinDir(managedDir),
     platform === "win32" ? "opencode.cmd" : "opencode",
+  );
+}
+
+/** Absolute path of the script-downloaded `opencode` executable for a platform. */
+export function openCodeManagedScriptBinaryPath(
+  managedDir: string,
+  platform: NodeJS.Platform,
+): string {
+  return NodePath.join(
+    openCodeManagedScriptBinDir(managedDir),
+    platform === "win32" ? "opencode.exe" : "opencode",
   );
 }
 
@@ -95,7 +123,8 @@ export interface OpenCodeBinaryCandidatesInput {
  * Ordered locations to try for an OpenCode binary. A custom `binaryPath` is
  * returned verbatim (the user's explicit choice wins and is never
  * second-guessed); the default resolves through PATH first, then the
- * official script's `~/.opencode/bin`, then the T3-managed install.
+ * official script's `~/.opencode/bin`, then the T3-managed installs
+ * (npm first, script-downloaded second).
  */
 export function openCodeBinaryCandidates(
   input: OpenCodeBinaryCandidatesInput,
@@ -112,6 +141,7 @@ export function openCodeBinaryCandidates(
   const managedDir = input.managedDir?.trim();
   if (managedDir) {
     candidates.push(openCodeManagedBinaryPath(managedDir, input.platform));
+    candidates.push(openCodeManagedScriptBinaryPath(managedDir, input.platform));
   }
   return candidates;
 }
@@ -144,4 +174,98 @@ export function openCodeManagedPackageJson(): string {
     null,
     2,
   )}\n`;
+}
+
+/**
+ * Release target triple, mirroring the supported combos of the official
+ * install script (`os-arch`; Windows ships x64 only). `null` means the
+ * script has no asset for this host — surface the manual install instead.
+ */
+export type OpenCodeInstallTarget =
+  | "darwin-arm64"
+  | "darwin-x64"
+  | "linux-arm64"
+  | "linux-x64"
+  | "windows-x64";
+
+export function openCodeInstallTargetForHost(input: {
+  readonly platform: NodeJS.Platform;
+  readonly arch: string;
+}): OpenCodeInstallTarget | null {
+  const normalizedArch =
+    input.arch === "aarch64" ? "arm64" : input.arch === "x86_64" ? "x64" : input.arch;
+  if (input.platform === "darwin" && (normalizedArch === "arm64" || normalizedArch === "x64")) {
+    return `darwin-${normalizedArch}`;
+  }
+  if (input.platform === "linux" && (normalizedArch === "arm64" || normalizedArch === "x64")) {
+    return `linux-${normalizedArch}`;
+  }
+  if (input.platform === "win32" && normalizedArch === "x64") {
+    return "windows-x64";
+  }
+  return null;
+}
+
+/** Release archive name for a target: `.zip` everywhere but Linux (`.tar.gz`). */
+export function openCodeInstallArchiveFilename(target: OpenCodeInstallTarget): string {
+  return `opencode-${target}${target.startsWith("linux-") ? ".tar.gz" : ".zip"}`;
+}
+
+/** Direct download URL for a target's release archive. */
+export function openCodeInstallDownloadUrl(target: OpenCodeInstallTarget): string {
+  return `${OPENCODE_RELEASE_DOWNLOAD_BASE_URL}/${openCodeInstallArchiveFilename(target)}`;
+}
+
+/** `curl` argv that downloads a URL to a file, failing loudly on HTTP errors. */
+export function openCodeCurlDownloadArgs(url: string, outputPath: string): ReadonlyArray<string> {
+  return ["-fsSL", "-L", "-o", outputPath, url];
+}
+
+export interface OpenCodeExtractCommand {
+  readonly command: string;
+  readonly args: ReadonlyArray<string>;
+}
+
+/** Quote a path for PowerShell single-quoted string context. */
+export function powershellSingleQuoted(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+/**
+ * Extraction command for a downloaded archive. Linux uses `tar`, macOS
+ * `unzip` (both ship with the OS), Windows uses PowerShell's built-in
+ * `Expand-Archive` so no third-party tool is needed. `null` on platforms
+ * without a known extractor.
+ */
+export function openCodeArchiveExtractCommand(input: {
+  readonly platform: NodeJS.Platform;
+  readonly archivePath: string;
+  readonly destDir: string;
+}): OpenCodeExtractCommand | null {
+  if (input.platform === "linux") {
+    return { command: "tar", args: ["-xzf", input.archivePath, "-C", input.destDir] };
+  }
+  if (input.platform === "darwin") {
+    return { command: "unzip", args: ["-q", input.archivePath, "-d", input.destDir] };
+  }
+  if (input.platform === "win32") {
+    return {
+      command: "powershell",
+      args: [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        `Expand-Archive -LiteralPath ${powershellSingleQuoted(input.archivePath)} -DestinationPath ${powershellSingleQuoted(input.destDir)} -Force`,
+      ],
+    };
+  }
+  return null;
+}
+
+/**
+ * Binary file names to look for inside an extracted release archive, most
+ * likely first. Release zips have shipped both layouts over time.
+ */
+export function openCodeExtractedBinaryNames(platform: NodeJS.Platform): ReadonlyArray<string> {
+  return platform === "win32" ? ["opencode.exe", "opencode"] : ["opencode", "opencode.exe"];
 }

@@ -3,6 +3,7 @@ import {
   type OpenCodeSettings,
   type ServerProviderModel,
   type ServerProviderSkill,
+  resolvePreferredOpenCodeModel,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Data from "effect/Data";
@@ -294,7 +295,17 @@ function flattenOpenCodeModels(input: OpenCodeInventory): ReadonlyArray<ServerPr
     }
   }
 
-  return models.toSorted((left, right) => left.name.localeCompare(right.name));
+  const sorted = models.toSorted((left, right) => left.name.localeCompare(right.name));
+  // Prefer the free-tier default (Big Pickle, else any `*-free` Zen model) so
+  // every generic isDefault-first picker resolves to the OpenCode free model
+  // without client-side special cases.
+  const defaultSlug = resolvePreferredOpenCodeModel(sorted.map((model) => model.slug));
+  if (defaultSlug === undefined) {
+    return sorted;
+  }
+  return sorted.map((model) =>
+    model.slug === defaultSlug ? { ...model, isDefault: true } : model,
+  );
 }
 
 function trimOptional(value: string | null | undefined): string | undefined {

@@ -191,7 +191,8 @@ describe("EnvironmentProviderSettings routing", () => {
 
   it("routes refresh and provider update commands to the selected environment", async () => {
     atoms.providers = [provider()];
-    const panel = renderPanel();
+    // OpenCode leads the provider list; open the Codex card explicitly.
+    const panel = renderPanel({ targetInstanceId: codexId });
     const refreshButton = visitElements(panel, isRefreshButton);
     expect(refreshButton).not.toBeNull();
     (refreshButton?.props.onClick as (() => void) | undefined)?.();

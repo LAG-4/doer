@@ -188,10 +188,12 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       yield* serverSettings.updateSettings({
         providers: {
           codex: {
+            enabled: true,
             binaryPath: "/usr/local/bin/codex",
             homePath: "/Users/julius/.codex",
           },
           claudeAgent: {
+            enabled: true,
             binaryPath: "/usr/local/bin/claude",
             customModels: ["claude-custom"],
           },
@@ -331,6 +333,11 @@ it.layer(NodeServices.layer)("server settings", (it) => {
   it.effect("preserves model when switching providers via textGenerationModelSelection", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+
+      // Opt in to both providers first (both are off by default).
+      yield* serverSettings.updateSettings({
+        providers: { claudeAgent: { enabled: true }, codex: { enabled: true } },
+      });
 
       // Start with Claude text generation selection
       yield* serverSettings.updateSettings({
@@ -614,7 +621,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
       yield* fileSystem.writeFileString(
         serverConfig.settingsPath,
-        '{"providerInstances":{"cursor_work":{"driver":"cursor","config":{}},"grok":{"driver":"grok","config":{}},"opencode_work":{"driver":"opencode","config":{"serverUrl":"http://127.0.0.1:4096"}},"opencode_unused":{"driver":"opencode","config":{}}}}',
+        '{"providerInstances":{"cursor_work":{"driver":"cursor","config":{}},"grok":{"driver":"grok","config":{}},"opencode_work":{"driver":"opencode","config":{"serverUrl":"http://127.0.0.1:4096"}},"cursor_unused":{"driver":"cursor","config":{}}}}',
       );
       yield* recordProviderUsage("cursor", "cursor_work");
       yield* recordProviderUsage("grok", null);
@@ -626,7 +633,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       assert.isTrue(settings.providerInstances[ProviderInstanceId.make("cursor_work")]?.enabled);
       assert.isTrue(settings.providerInstances[ProviderInstanceId.make("grok")]?.enabled);
       assert.isTrue(settings.providerInstances[ProviderInstanceId.make("opencode_work")]?.enabled);
-      const unused = settings.providerInstances[ProviderInstanceId.make("opencode_unused")];
+      const unused = settings.providerInstances[ProviderInstanceId.make("cursor_unused")];
       assert.isDefined(unused);
       assert.isFalse(resolveProviderInstanceEnabled(unused));
     }).pipe(Effect.provide(makeServerSettingsLayer())),
@@ -662,7 +669,8 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       const fileSystem = yield* FileSystem.FileSystem;
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
       // The Providers UI writes providerInstances only, so the legacy providers
-      // map decodes to defaults where codex is enabled and listed first.
+      // map decodes to defaults where the disabled codex slot is skipped and
+      // OpenCode leads as the default.
       yield* fileSystem.writeFileString(
         serverConfig.settingsPath,
         '{"providerInstances":{"codex":{"driver":"codex","enabled":false,"config":{}}}}',
@@ -670,11 +678,11 @@ it.layer(NodeServices.layer)("server settings", (it) => {
 
       const settings = yield* serverSettings.getSettings;
 
-      assert.equal(settings.textGenerationModelSelection.instanceId, "claudeAgent");
+      assert.equal(settings.textGenerationModelSelection.instanceId, "opencode");
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
-  it.effect("keeps unused providers disabled in existing sparse settings files", () =>
+  it.effect("keeps unused opt-in providers disabled in existing sparse settings files", () =>
     Effect.gen(function* () {
       const serverConfig = yield* ServerConfig.ServerConfig;
       const fileSystem = yield* FileSystem.FileSystem;
@@ -684,7 +692,8 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       const settings = yield* serverSettings.getSettings;
 
       assert.isFalse(settings.providers.grok.enabled);
-      assert.isFalse(settings.providers.opencode.enabled);
+      // OpenCode is on by default; only Cursor/Grok stay opt-in.
+      assert.isTrue(settings.providers.opencode.enabled);
       assert.isFalse(settings.providers.cursor.enabled);
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
@@ -697,7 +706,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       const settings = yield* serverSettings.getSettings;
 
       assert.isTrue(settings.providers.grok.enabled);
-      assert.isFalse(settings.providers.opencode.enabled);
+      assert.isTrue(settings.providers.opencode.enabled);
       assert.isFalse(settings.providers.cursor.enabled);
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
@@ -714,7 +723,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
 
       assert.isTrue(settings.providers.cursor.enabled);
       assert.isFalse(settings.providers.grok.enabled);
-      assert.isFalse(settings.providers.opencode.enabled);
+      assert.isTrue(settings.providers.opencode.enabled);
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
@@ -733,7 +742,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
 
       assert.isFalse(settings.providers.cursor.enabled);
       assert.isTrue(settings.providers.grok.enabled);
-      assert.isFalse(settings.providers.opencode.enabled);
+      assert.isTrue(settings.providers.opencode.enabled);
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
@@ -812,7 +821,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
-  it.effect("keeps optional providers disabled after a new installation writes settings", () =>
+  it.effect("keeps opt-in providers disabled after a new installation writes settings", () =>
     Effect.gen(function* () {
       const serverConfig = yield* ServerConfig.ServerConfig;
       const fileSystem = yield* FileSystem.FileSystem;
@@ -820,7 +829,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
 
       const initial = yield* serverSettings.getSettings;
       assert.isFalse(initial.providers.grok.enabled);
-      assert.isFalse(initial.providers.opencode.enabled);
+      assert.isTrue(initial.providers.opencode.enabled);
       assert.isFalse(initial.providers.cursor.enabled);
 
       const next = yield* serverSettings.updateSettings({
@@ -834,7 +843,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       });
 
       assert.isFalse(next.providers.grok.enabled);
-      assert.isFalse(next.providers.opencode.enabled);
+      assert.isTrue(next.providers.opencode.enabled);
       assert.isFalse(next.providers.cursor.enabled);
       const grok = next.providerInstances[ProviderInstanceId.make("grok")];
       assert.isDefined(grok);
@@ -845,7 +854,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       const persisted = JSON.parse(raw);
       assert.isFalse(persisted.providers.cursor.enabled);
       assert.isFalse(persisted.providers.grok.enabled);
-      assert.isFalse(persisted.providers.opencode.enabled);
+      assert.isTrue(persisted.providers.opencode.enabled);
       assert.isUndefined(persisted.providerInstances.grok.enabled);
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
@@ -931,7 +940,8 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       });
 
       assert.deepEqual(next.providers.codex, {
-        enabled: true,
+        // Codex is opt-in; this update only touches paths.
+        enabled: false,
         binaryPath: "/opt/homebrew/bin/codex",
         homePath: "",
         shadowHomePath: "",
@@ -939,7 +949,8 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         customModels: [],
       });
       assert.deepEqual(next.providers.claudeAgent, {
-        enabled: true,
+        // Claude is opt-in; this update only touches paths.
+        enabled: false,
         binaryPath: "/opt/homebrew/bin/claude",
         homePath: "",
         customModels: [],
@@ -947,8 +958,8 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         autoCompactWindow: "",
       });
       assert.deepEqual(next.providers.opencode, {
-        // OpenCode is disabled by default; this update only touches paths.
-        enabled: false,
+        // OpenCode is enabled by default; this update only touches paths.
+        enabled: true,
         binaryPath: "/opt/homebrew/bin/opencode",
         serverUrl: "http://127.0.0.1:4096",
         serverPassword: "secret-password",
@@ -1032,7 +1043,11 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         },
         providers: {
           codex: {
+            enabled: false,
             binaryPath: "/opt/homebrew/bin/codex",
+          },
+          claudeAgent: {
+            enabled: false,
           },
           cursor: {
             enabled: false,
@@ -1041,7 +1056,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
             enabled: false,
           },
           opencode: {
-            enabled: false,
+            enabled: true,
             serverUrl: "http://127.0.0.1:4096",
             serverPassword: "secret-password",
           },

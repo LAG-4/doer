@@ -35,7 +35,7 @@ import { sortModelsForProviderInstance } from "./modelOrdering";
 
 const MAX_CUSTOM_MODEL_COUNT = 32;
 export const MAX_CUSTOM_MODEL_LENGTH = 256;
-const DEFAULT_TEXT_GENERATION_INSTANCE_ID = ProviderInstanceId.make("codex");
+const DEFAULT_TEXT_GENERATION_INSTANCE_ID = ProviderInstanceId.make("opencode");
 
 /**
  * Resolve the custom-model list for a given instance, preferring the
@@ -409,8 +409,16 @@ export function resolveAppModelSelectionState(
   const selectedEntry = entries.find(
     (entry) => entry.instanceId === selection.instanceId && entry.enabled && entry.isAvailable,
   );
+  // OpenCode leads so fresh installs default to the OpenCode free model; the
+  // server already emits snapshots in this order, but stay explicit for
+  // stale caches that predate the reorder.
   const entry =
-    selectedEntry ?? entries.find((candidate) => candidate.enabled && candidate.isAvailable);
+    selectedEntry ??
+    entries.find(
+      (candidate) =>
+        candidate.driverKind === "opencode" && candidate.enabled && candidate.isAvailable,
+    ) ??
+    entries.find((candidate) => candidate.enabled && candidate.isAvailable);
   if (entry) {
     // When the instance changed due to fallback (e.g. selected instance was disabled),
     // don't carry over the old instance's model — use the fallback instance's default.

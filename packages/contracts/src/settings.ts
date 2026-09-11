@@ -15,7 +15,6 @@ import { KeybindingShortcut } from "./keybindings.ts";
 import {
   CustomModelSetting,
   DEFAULT_TEXT_GENERATION_MODEL,
-  DEFAULT_TEXT_GENERATION_REASONING_EFFORT,
   ProviderOptionSelections,
 } from "./model.ts";
 import { ModelSelection, ProjectScript } from "./orchestration.ts";
@@ -538,8 +537,11 @@ function makeProviderSettingsSchema<const Fields extends Schema.Struct.Fields>(
 
 export const CodexSettings = makeProviderSettingsSchema(
   {
+    // Off by default: new installs default to the OpenCode free model.
+    // Users opt in from Settings; existing usage is restored from provider
+    // history on load (see `restoreUsedProviders` in serverSettings.ts).
     enabled: Schema.Boolean.pipe(
-      Schema.withDecodingDefault(Effect.succeed(true)),
+      Schema.withDecodingDefault(Effect.succeed(false)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
     binaryPath: makeBinaryPathSetting("codex").pipe(
@@ -597,8 +599,11 @@ const CLAUDE_AUTO_COMPACT_WINDOW_PATTERN = /^(?:|[1-9]\d{5}|1000000)$/;
 
 export const ClaudeSettings = makeProviderSettingsSchema(
   {
+    // Off by default: new installs default to the OpenCode free model.
+    // Users opt in from Settings; existing usage is restored from provider
+    // history on load (see `restoreUsedProviders` in serverSettings.ts).
     enabled: Schema.Boolean.pipe(
-      Schema.withDecodingDefault(Effect.succeed(true)),
+      Schema.withDecodingDefault(Effect.succeed(false)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
     binaryPath: makeBinaryPathSetting("claude").pipe(
@@ -655,7 +660,7 @@ export type ClaudeSettings = typeof ClaudeSettings.Type;
 
 export const CursorSettings = makeProviderSettingsSchema(
   {
-    // Off by default like Grok and OpenCode. Users opt in from Settings.
+    // Off by default like Grok, Codex, and Claude. Users opt in from Settings.
     enabled: Schema.Boolean.pipe(
       Schema.withDecodingDefault(Effect.succeed(false)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
@@ -691,7 +696,7 @@ export type CursorSettings = typeof CursorSettings.Type;
 
 export const GrokSettings = makeProviderSettingsSchema(
   {
-    // Off by default (like Cursor and OpenCode): the binding is not yet
+    // Off by default (like Cursor, Codex, and Claude): the binding is not yet
     // stable enough to probe on every install. Users opt in from Settings.
     enabled: Schema.Boolean.pipe(
       Schema.withDecodingDefault(Effect.succeed(false)),
@@ -800,10 +805,11 @@ export type AntigravitySettings = typeof AntigravitySettings.Type;
 
 export const OpenCodeSettings = makeProviderSettingsSchema(
   {
-    // Off by default (like Cursor and Grok): the binding is not yet stable
-    // enough to probe on every install. Users opt in from Settings.
+    // On by default: new threads default to the OpenCode free model, and the
+    // server auto-installs the CLI into its managed directory when missing,
+    // so enabling is enough to get a working provider with no manual step.
     enabled: Schema.Boolean.pipe(
-      Schema.withDecodingDefault(Effect.succeed(false)),
+      Schema.withDecodingDefault(Effect.succeed(true)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
     binaryPath: makeBinaryPathSetting("opencode").pipe(
@@ -1039,14 +1045,8 @@ export const ServerSettings = Schema.Struct({
   textGenerationModelSelection: ModelSelection.pipe(
     Schema.withDecodingDefault(
       Effect.succeed({
-        instanceId: ProviderInstanceId.make("codex"),
+        instanceId: ProviderInstanceId.make("opencode"),
         model: DEFAULT_TEXT_GENERATION_MODEL,
-        options: [
-          {
-            id: "reasoningEffort",
-            value: DEFAULT_TEXT_GENERATION_REASONING_EFFORT,
-          },
-        ],
       }),
     ),
   ),
