@@ -9,11 +9,13 @@ import * as Schema from "effect/Schema";
 
 import {
   TrimmedNonEmptyString,
+  VcsProcessExitError,
   type SourceControlRepositoryVisibility,
   type VcsError,
 } from "@t3tools/contracts";
 
 import * as VcsProcess from "../vcs/VcsProcess.ts";
+import { classifyNonZeroExit } from "../vcs/VcsProcess.ts";
 import {
   decodeGitHubPullRequestJson,
   decodeGitHubPullRequestListJson,
@@ -21,6 +23,54 @@ import {
 } from "./gitHubPullRequests.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+const MAX_GITHUB_CLI_ERROR_EXCERPT_LENGTH = 500;
+
+/**
+ * Sanitizes `gh` stderr for user-visible errors. The previous generic
+ * "GitHub CLI command failed." hid the real cause (e.g. `gh pr create`
+ * printing "pull request title must not be blank"), making
+ * `createChangeRequest` failures unactionable. Keep the first few
+ * non-empty lines, redact likely secrets, and truncate.
+ */
+export function sanitizeGitHubCliStderr(stderr: string): string | undefined {
+  const normalized = stderr.replace(/\r\n/g, "\n").trim();
+  if (normalized.length === 0) {
+    return undefined;
+  }
+  const lines = normalized
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .slice(0, 3);
+  if (lines.length === 0) {
+    return undefined;
+  }
+  let excerpt = lines.join(" ");
+  // Redact URL credentials (https://user:token@host).
+  excerpt = excerpt.replace(/:\/\/[^/\s]+:[^/\s@]+@/g, "://[redacted]@");
+  // Redact common GitHub token shapes and JSON token fields.
+  excerpt = excerpt
+    .replace(/\bgho_[A-Za-z0-9_]+/g, "[redacted]")
+    .replace(/\bghp_[A-Za-z0-9]+/g, "[redacted]")
+    .replace(/\bghs_[A-Za-z0-9_]+/g, "[redacted]")
+    .replace(/\bgithub_pat_[A-Za-z0-9_]+/g, "[redacted]")
+    .replace(
+      /("(?:access_token|bearerToken|credential|pairingToken|token)"\s*:\s*")[^"]+(")/giu,
+      "$1[redacted]$2",
+    );
+  // Strip control characters that would break single-line transport.
+  // eslint-disable-next-line no-control-regex
+  excerpt = excerpt
+    .replace(/[\u0000-\u001F\u007F]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (excerpt.length === 0) {
+    return undefined;
+  }
+  return excerpt.length > MAX_GITHUB_CLI_ERROR_EXCERPT_LENGTH
+    ? `${excerpt.slice(0, MAX_GITHUB_CLI_ERROR_EXCERPT_LENGTH).trimEnd()} [truncated]`
+    : excerpt;
+}
 
 const gitHubCliFailureFields = {
   command: Schema.Literal("gh"),
@@ -82,10 +132,13 @@ export class GitHubPullRequestNotFoundError extends Schema.TaggedError<GitHubPul
 
 export class GitHubCliCommandError extends Schema.TaggedError<GitHubCliCommandError>()(
   "GitHubCliCommandError",
-  gitHubCliFailureFields,
+  {
+    ...gitHubCliFailureFields,
+    stderrExcerpt: Schema.optional(Schema.String),
+  },
 ) {
   get detail(): string {
-    return "GitHub CLI command failed.";
+    return this.stderrExcerpt ?? "GitHub CLI command failed.";
   }
 
   override get message(): string {
@@ -192,6 +245,19 @@ export function fromVcsError(
     }
     if (error.failureKind === "not-found") {
       return new GitHubPullRequestNotFoundError({ ...context, cause: error });
+    }
+    // `VcsProcessExitError` drops raw stderr in real runs (only lengths are
+    // kept), but callers that manually construct it with stderr content
+    // (e.g. tests, `allowNonZeroExit` flows) can still surface it here.
+    const excerpt = sanitizeGitHubCliStderr(error.detail);
+    if (
+      excerpt !== undefined &&
+      excerpt !== "Process exited with a non-zero status." &&
+      excerpt !== "Authentication failed." &&
+      excerpt !== "API rate limit exceeded." &&
+      excerpt !== "Pull request not found."
+    ) {
+      return new GitHubCliCommandError({ ...context, cause: error, stderrExcerpt: excerpt });
     }
   }
 
@@ -350,10 +416,50 @@ export const make = Effect.gen(function* () {
         args: input.args,
         cwd: input.cwd,
         timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+        // Capture stderr on non-zero exits: `VcsProcess` drops raw stderr
+        // into lengths only, which turned every `gh pr create` failure into
+        // the unactionable "GitHub CLI command failed."
+        allowNonZeroExit: true,
         ...(input.stdin !== undefined ? { stdin: input.stdin } : {}),
         ...(input.maxOutputBytes !== undefined ? { maxOutputBytes: input.maxOutputBytes } : {}),
       })
-      .pipe(Effect.mapError((error) => fromVcsError({ command: "gh", cwd: input.cwd }, error)));
+      .pipe(
+        Effect.flatMap((result) => {
+          if (result.exitCode === 0) {
+            return Effect.succeed(result);
+          }
+          const stderrExcerpt = sanitizeGitHubCliStderr(result.stderr);
+          const failureKind = classifyNonZeroExit("gh", result.stderr);
+          const vcsError = new VcsProcessExitError({
+            operation: "GitHubCli.execute",
+            command: "gh",
+            cwd: input.cwd,
+            exitCode: result.exitCode,
+            detail: stderrExcerpt ?? "Process exited with a non-zero status.",
+            failureKind,
+            stderrLength: result.stderr.length,
+            stderrTruncated: result.stderrTruncated,
+          });
+          const mapped = fromVcsError({ command: "gh", cwd: input.cwd }, vcsError);
+          if (mapped._tag === "GitHubCliCommandError" && stderrExcerpt !== undefined) {
+            return Effect.fail(
+              new GitHubCliCommandError({
+                command: "gh",
+                cwd: input.cwd,
+                cause: vcsError,
+                stderrExcerpt,
+              }),
+            );
+          }
+          return Effect.fail(mapped);
+        }),
+        Effect.mapError((error) => {
+          if (isGitHubCliError(error)) {
+            return error;
+          }
+          return fromVcsError({ command: "gh", cwd: input.cwd }, error as VcsError);
+        }),
+      );
 
   return GitHubCli.of({
     execute,
