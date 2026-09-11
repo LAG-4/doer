@@ -56,6 +56,7 @@ import { useThreadSelection } from "../../state/use-thread-selection";
 import { vcsEnvironment } from "../../state/vcs";
 import { WorkspaceSidebarToolbar } from "../layout/workspace-sidebar-toolbar";
 import { ThreadGitMenu } from "../threads/ThreadGitControls";
+import { useSimpleModeEnabled } from "../threads/use-simple-mode-enabled";
 import { useReviewCacheForThread } from "./reviewState";
 import {
   isNativeReviewDiffDrawEvent,
@@ -372,8 +373,10 @@ export function ReviewSheet(props: ReviewSheetProps) {
   );
   // The selection-based git hooks only apply when this review belongs to the
   // selected thread (it always does when reached from the thread's toolbar).
+  // Simple mode hides the commit/push entry entirely.
+  const simpleModeEnabled = useSimpleModeEnabled();
   const gitMenuAvailable =
-    selectedThread !== null && String(selectedThread.id) === String(threadId);
+    !simpleModeEnabled && selectedThread !== null && String(selectedThread.id) === String(threadId);
   // With a solid (non-overlay) header the content lays out below the header
   // natively, so no manual top inset is needed. (Android renders its own
   // in-flow AndroidScreenHeader, so it needs no inset either.)

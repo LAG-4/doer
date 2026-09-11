@@ -43,6 +43,7 @@ import {
 } from "../ProviderDriver.ts";
 import { withInstanceIdentity } from "./instanceIdentity.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
+import { openCodeManagedDir } from "../opencodeInstall.ts";
 import {
   enrichProviderSnapshotWithVersionAdvisory,
   makeCachedProviderMaintenanceResolution,
@@ -119,6 +120,10 @@ export const OpenCodeDriver: ProviderDriver<OpenCodeSettings, OpenCodeDriverEnv>
         continuationGroupKey: continuationIdentity.continuationKey,
       });
       const effectiveConfig = { ...config, enabled } satisfies OpenCodeSettings;
+      // T3-managed `<baseDir>/tools/opencode`: missing binaries install here
+      // automatically, and every spawn path consults it after PATH and
+      // `~/.opencode/bin` so GUI-launched servers still find the CLI.
+      const managedDir = openCodeManagedDir(serverConfig.baseDir);
       const resolveMaintenance = yield* makeCachedProviderMaintenanceResolution(
         resolveProviderMaintenanceCapabilitiesEffect(UPDATE, {
           binaryPath: effectiveConfig.binaryPath,
@@ -133,6 +138,7 @@ export const OpenCodeDriver: ProviderDriver<OpenCodeSettings, OpenCodeDriverEnv>
       const adapter = yield* makeOpenCodeAdapter(effectiveConfig, {
         instanceId,
         environment: processEnv,
+        managedDir,
         ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
       });
       const serverOwner = yield* OpenCodeServerOwner.make({
@@ -142,6 +148,7 @@ export const OpenCodeDriver: ProviderDriver<OpenCodeSettings, OpenCodeDriverEnv>
           ? { serverPassword: effectiveConfig.serverPassword }
           : {}),
         environment: processEnv,
+        managedDir,
       });
       const textGeneration = yield* makeOpenCodeTextGeneration(effectiveConfig).pipe(
         Effect.provideService(OpenCodeServerOwner.OpenCodeServerOwner, serverOwner),
@@ -151,6 +158,7 @@ export const OpenCodeDriver: ProviderDriver<OpenCodeSettings, OpenCodeDriverEnv>
         effectiveConfig,
         serverConfig.cwd,
         processEnv,
+        { managedDir },
       ).pipe(
         Effect.map(stampIdentity),
         Effect.provideService(OpenCodeServerOwner.OpenCodeServerOwner, serverOwner),

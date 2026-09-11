@@ -191,6 +191,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     requiresThreadAutoSettlement: true,
   },
   {
+    id: "simple-mode",
+    title: "Simple mode",
+    to: "/settings/general",
+    searchTerms: ["hide git commit branch worktree pull request pr beginner simple source control"],
+  },
+  {
     id: "time-format",
     title: "Time format",
     to: "/settings/general",

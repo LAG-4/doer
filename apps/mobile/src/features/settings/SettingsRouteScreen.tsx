@@ -576,8 +576,19 @@ function ConfiguredSettingsRouteScreen() {
 }
 
 function GeneralSettingsSection() {
+  const savePreferences = useAtomSet(updateMobilePreferencesAtom);
+  const preferences = useAtomValue(mobilePreferencesAtom);
+  const simpleModeEnabled =
+    !AsyncResult.isSuccess(preferences) || preferences.value.simpleModeEnabled !== false;
   return (
     <SettingsSection title="General">
+      <SettingsSwitchRow
+        icon="sparkles"
+        label="Simple Mode"
+        subtitle="Hide commit and branch controls"
+        value={simpleModeEnabled}
+        onValueChange={(value) => savePreferences({ simpleModeEnabled: value })}
+      />
       <SettingsRow icon="folder" label="Project Grouping" target="SettingsProjectGrouping" />
       <AutoSettleSettingsRows />
       <SettingsRow icon="chart.bar.xaxis" label="Usage" target="SettingsUsage" />

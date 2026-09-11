@@ -25,6 +25,7 @@ import {
   openCodeRuntimeErrorDetail,
   type OpenCodeInventory,
 } from "../opencodeRuntime.ts";
+import { isDefaultOpenCodeBinary } from "../opencodeInstall.ts";
 import type { Agent, ProviderListResponse } from "@opencode-ai/sdk/v2";
 import * as OpenCodeServerOwner from "../OpenCodeServerOwner.ts";
 
@@ -70,6 +71,8 @@ function formatOpenCodeProbeError(input: {
   readonly isExternalServer: boolean;
   readonly phase: "version" | "inventory";
   readonly serverUrl: string;
+  /** Extra context appended when the CLI is missing (e.g. an install failure). */
+  readonly installHint?: string;
 }): { readonly installed: boolean; readonly message: string } {
   const detail = normalizedErrorMessage(input.cause);
   const lower = detail?.toLowerCase() ?? "";
@@ -111,7 +114,9 @@ function formatOpenCodeProbeError(input: {
   if (lower.includes("enoent") || lower.includes("notfound")) {
     return {
       installed: false,
-      message: "OpenCode CLI (`opencode`) is not installed or not on PATH.",
+      message: input.installHint
+        ? `OpenCode CLI (\`opencode\`) is not installed or not on PATH. ${input.installHint}`
+        : "OpenCode CLI (`opencode`) is not installed or not on PATH.",
     };
   }
 
@@ -139,6 +144,11 @@ function formatOpenCodeProbeError(input: {
     installed: true,
     message: detail ? `${failureLabel}: ${detail}` : `${failureLabel}.`,
   };
+}
+
+function isMissingBinaryProbeFailure(cause: unknown): boolean {
+  const lower = normalizedErrorMessage(cause)?.toLowerCase() ?? "";
+  return lower.includes("enoent") || lower.includes("notfound");
 }
 
 function titleCaseSlug(value: string): string {
@@ -364,6 +374,10 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
   openCodeSettings: OpenCodeSettings,
   cwd: string,
   environment?: NodeJS.ProcessEnv,
+  options?: {
+    /** T3-managed `<baseDir>/tools/opencode` dir; enables detection + auto-install. */
+    readonly managedDir?: string;
+  },
 ): Effect.fn.Return<
   ServerProviderDraft,
   never,
@@ -372,6 +386,7 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
   const openCodeRuntime = yield* OpenCodeRuntime;
   const serverOwner = yield* OpenCodeServerOwner.OpenCodeServerOwner;
   const resolvedEnvironment = environment ?? process.env;
+  const managedDir = options?.managedDir;
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const customModels = openCodeSettings.customModels;
   const isExternalServer = openCodeSettings.serverUrl.trim().length > 0;
@@ -380,12 +395,14 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
     cause: unknown,
     version: string | null = null,
     phase: "version" | "inventory" = "version",
+    installHint?: string,
   ) => {
     const failure = formatOpenCodeProbeError({
       cause,
       isExternalServer,
       phase,
       serverUrl: openCodeSettings.serverUrl,
+      ...(installHint !== undefined ? { installHint } : {}),
     });
     return buildServerProvider({
       presentation: OPENCODE_PRESENTATION,
@@ -421,13 +438,15 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
   }
 
   let version: string | null = null;
+  let autoInstallHint: string | undefined;
   if (!isExternalServer) {
-    const versionExit = yield* Effect.exit(
+    const probeVersion = () =>
       openCodeRuntime
         .runOpenCodeCommand({
           binaryPath: openCodeSettings.binaryPath,
           args: ["--version"],
           environment: resolvedEnvironment,
+          ...(managedDir !== undefined ? { managedDir } : {}),
         })
         .pipe(
           Effect.mapError(
@@ -442,10 +461,32 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
                 }),
               ),
           }),
-        ),
-    );
+        );
+    let versionExit = yield* Effect.exit(probeVersion());
+    // First probe on a fresh machine finds no binary anywhere. Install it
+    // into the managed directory and retry once, so enabling OpenCode is
+    // enough to get a working provider — no manual CLI install step.
+    if (
+      versionExit._tag === "Failure" &&
+      managedDir !== undefined &&
+      isDefaultOpenCodeBinary(openCodeSettings.binaryPath) &&
+      isMissingBinaryProbeFailure(Cause.squash(versionExit.cause))
+    ) {
+      const ensuredExit = yield* Effect.exit(
+        openCodeRuntime.ensureOpenCodeInstalled({
+          binaryPath: openCodeSettings.binaryPath,
+          managedDir,
+          environment: resolvedEnvironment,
+        }),
+      );
+      if (ensuredExit._tag === "Success") {
+        versionExit = yield* Effect.exit(probeVersion());
+      } else {
+        autoInstallHint = `Automatic install failed: ${openCodeRuntimeErrorDetail(Cause.squash(ensuredExit.cause))}`;
+      }
+    }
     if (versionExit._tag === "Failure") {
-      return fallback(Cause.squash(versionExit.cause));
+      return fallback(Cause.squash(versionExit.cause), null, "version", autoInstallHint);
     }
     version = parseGenericCliVersion(versionExit.value.stdout) ?? null;
 

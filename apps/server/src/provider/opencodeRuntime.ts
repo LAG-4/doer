@@ -19,13 +19,16 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as P from "effect/Predicate";
+import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
 import * as Scope from "effect/Scope";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
@@ -34,12 +37,25 @@ import { collectStreamAsString } from "./providerSnapshot.ts";
 import * as NetService from "@t3tools/shared/Net";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { compareSemverVersions, parseSemver } from "@t3tools/shared/semver";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import {
+  CommandResolutionCache,
+  resolveCommandPath,
+  resolveSpawnCommand,
+} from "@t3tools/shared/shell";
+import {
+  isDefaultOpenCodeBinary,
+  openCodeBinaryCandidates,
+  openCodeManagedBinaryPath,
+  openCodeManagedPackageJson,
+  openCodeNpmInstallArgs,
+} from "./opencodeInstall.ts";
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 const OPENCODE_EMPTY_CONFIG_CONTENT = "{}";
 
 export const MINIMUM_OPENCODE_VERSION = "1.14.19";
 const OPENCODE_HEALTH_TIMEOUT = "5 seconds";
+const OPENCODE_NPM_INSTALL_TIMEOUT_MS = 5 * 60_000;
+const OPENCODE_NPM_INSTALL_MAX_OUTPUT_BYTES = 32 * 1024;
 
 const OpenCodeHealthSchema = Schema.Struct({
   healthy: Schema.Literal(true),
@@ -200,6 +216,16 @@ export interface OpenCodeSkill {
   readonly location?: string | null;
 }
 
+/**
+ * Result of making sure an OpenCode CLI is available. `binaryPath` is the
+ * resolved executable to use (absolute when it came from a well-known
+ * location); `freshInstall` reports whether this call installed it.
+ */
+export interface EnsureOpenCodeInstallResult {
+  readonly binaryPath: string;
+  readonly freshInstall: boolean;
+}
+
 const OpenCodeSkillSchema = Schema.Struct({
   name: Schema.optionalKey(Schema.NullOr(Schema.String)),
   description: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -221,6 +247,8 @@ export interface OpenCodeRuntimeShape {
     readonly directory: string;
     readonly serverPassword?: string;
     readonly environment?: NodeJS.ProcessEnv;
+    /** T3-managed `<baseDir>/tools/opencode` dir; enables the install fallback. */
+    readonly managedDir?: string;
     readonly port?: number;
     readonly hostname?: string;
     readonly timeoutMs?: number;
@@ -236,6 +264,8 @@ export interface OpenCodeRuntimeShape {
     readonly serverUrl?: string | null;
     readonly serverPassword?: string;
     readonly environment?: NodeJS.ProcessEnv;
+    /** T3-managed `<baseDir>/tools/opencode` dir; enables the install fallback. */
+    readonly managedDir?: string;
     readonly port?: number;
     readonly hostname?: string;
     readonly timeoutMs?: number;
@@ -244,6 +274,8 @@ export interface OpenCodeRuntimeShape {
     readonly binaryPath: string;
     readonly args: ReadonlyArray<string>;
     readonly environment?: NodeJS.ProcessEnv;
+    /** T3-managed `<baseDir>/tools/opencode` dir; enables the install fallback. */
+    readonly managedDir?: string;
     readonly cwd?: string;
     readonly maxOutputBytes?: number;
   }) => Effect.Effect<OpenCodeCommandResult, OpenCodeRuntimeError>;
@@ -262,12 +294,27 @@ export interface OpenCodeRuntimeShape {
     readonly binaryPath: string;
     readonly cwd: string;
     readonly environment?: NodeJS.ProcessEnv;
+    /** T3-managed `<baseDir>/tools/opencode` dir; enables the install fallback. */
+    readonly managedDir?: string;
   }) => Effect.Effect<OpenCodeInventory, OpenCodeRuntimeError>;
   readonly loadSkillsFromCli: (input: {
     readonly binaryPath: string;
     readonly cwd: string;
     readonly environment?: NodeJS.ProcessEnv;
+    /** T3-managed `<baseDir>/tools/opencode` dir; enables the install fallback. */
+    readonly managedDir?: string;
   }) => Effect.Effect<ReadonlyArray<OpenCodeSkill>, OpenCodeRuntimeError>;
+  /**
+   * Makes sure an OpenCode CLI exists, installing it into `managedDir` with
+   * npm when no usable binary is found. Custom (non-default) `binaryPath`
+   * values are only verified, never installed. Serialized across callers so
+   * concurrent probes cannot run overlapping npm installs.
+   */
+  readonly ensureOpenCodeInstalled: (input: {
+    readonly binaryPath: string;
+    readonly managedDir?: string;
+    readonly environment?: NodeJS.ProcessEnv;
+  }) => Effect.Effect<EnsureOpenCodeInstallResult, OpenCodeRuntimeError>;
 }
 
 function parseServerUrlFromOutput(output: string): string | null {
@@ -568,12 +615,72 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const netService = yield* NetService.NetService;
   const hostPlatform = yield* HostProcessPlatform;
-  const resolveCommand = (command: string, args: ReadonlyArray<string>, env?: NodeJS.ProcessEnv) =>
-    resolveSpawnCommand(command, args, env ? { env } : {});
+  const fs = yield* FileSystem.FileSystem;
+  const pathService = yield* Path.Path;
+  // Serializes automatic installs: every probe/adapter instance shares this
+  // runtime, so overlapping refreshes queue on one npm install instead of
+  // racing in the same managed directory.
+  const installLock = yield* Semaphore.make(1);
+
+  // Fresh (uncached) existence check: the shared resolution cache keeps
+  // negative results for 30s, which would hide a binary that appeared since
+  // (e.g. right after an automatic install finished).
+  const resolveExisting = (candidate: string, env?: NodeJS.ProcessEnv) =>
+    resolveCommandPath(candidate, env ? { env } : {}).pipe(
+      Effect.provideService(CommandResolutionCache, new Map()),
+      Effect.provideService(FileSystem.FileSystem, fs),
+      Effect.provideService(Path.Path, pathService),
+      Effect.option,
+    );
+
+  const firstExisting = (
+    candidates: ReadonlyArray<string>,
+    env?: NodeJS.ProcessEnv,
+  ): Effect.Effect<string | null> =>
+    Effect.gen(function* () {
+      for (const candidate of candidates) {
+        if (Option.isSome(yield* resolveExisting(candidate, env))) {
+          return candidate;
+        }
+      }
+      return null;
+    });
+
+  const resolveCommand = (
+    command: string,
+    args: ReadonlyArray<string>,
+    env?: NodeJS.ProcessEnv,
+    managedDir?: string,
+  ) =>
+    Effect.gen(function* () {
+      const commandOptions = env ? { env } : {};
+      // A custom binary path is the user's explicit choice: use it verbatim.
+      // The default goes through PATH first, then the official install
+      // script's `~/.opencode/bin`, then the T3-managed install — so binaries
+      // GUI-launched servers cannot see on PATH are still found.
+      if (isDefaultOpenCodeBinary(command)) {
+        const candidates = openCodeBinaryCandidates({
+          binaryPath: command,
+          ...(env !== undefined ? { environment: env } : {}),
+          ...(managedDir !== undefined ? { managedDir } : {}),
+          platform: hostPlatform,
+        });
+        const existing = yield* firstExisting(candidates, env);
+        if (existing !== null) {
+          return yield* resolveSpawnCommand(existing, args, commandOptions);
+        }
+      }
+      return yield* resolveSpawnCommand(command, args, commandOptions);
+    });
 
   const runOpenCodeCommand: OpenCodeRuntimeShape["runOpenCodeCommand"] = (input) =>
     Effect.gen(function* () {
-      const spawnCommand = yield* resolveCommand(input.binaryPath, input.args, input.environment);
+      const spawnCommand = yield* resolveCommand(
+        input.binaryPath,
+        input.args,
+        input.environment,
+        input.managedDir,
+      );
       const child = yield* spawner.spawn(
         ChildProcess.make(spawnCommand.command, spawnCommand.args, {
           detached: hostPlatform !== "win32",
@@ -662,7 +769,12 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
         ));
       const timeoutMs = input.timeoutMs ?? DEFAULT_OPENCODE_SERVER_TIMEOUT_MS;
       const args = ["serve", `--hostname=${hostname}`, `--port=${port}`];
-      const spawnCommand = yield* resolveCommand(input.binaryPath, args, input.environment);
+      const spawnCommand = yield* resolveCommand(
+        input.binaryPath,
+        args,
+        input.environment,
+        input.managedDir,
+      );
       const serverPassword = resolveOpenCodeServerPassword({
         external: false,
         ...(input.serverPassword !== undefined ? { serverPassword: input.serverPassword } : {}),
@@ -866,6 +978,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       directory: input.directory,
       ...(input.serverPassword !== undefined ? { serverPassword: input.serverPassword } : {}),
       ...(input.environment !== undefined ? { environment: input.environment } : {}),
+      ...(input.managedDir !== undefined ? { managedDir: input.managedDir } : {}),
       ...(input.port !== undefined ? { port: input.port } : {}),
       ...(input.hostname !== undefined ? { hostname: input.hostname } : {}),
       ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
@@ -923,7 +1036,9 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
   const loadInventoryFromCli: OpenCodeRuntimeShape["loadInventoryFromCli"] = (input) =>
     Effect.gen(function* () {
       const env = input.environment !== undefined ? { environment: input.environment } : ({} as {});
-      const commandContext = { cwd: input.cwd, ...env };
+      const managed =
+        input.managedDir !== undefined ? { managedDir: input.managedDir } : ({} as {});
+      const commandContext = { cwd: input.cwd, ...env, ...managed };
 
       const runModelsCli = () =>
         runOpenCodeCommand({
@@ -1027,6 +1142,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       cwd: input.cwd,
       maxOutputBytes: OPENCODE_SKILL_DISCOVERY_MAX_OUTPUT_BYTES,
       ...(input.environment !== undefined ? { environment: input.environment } : {}),
+      ...(input.managedDir !== undefined ? { managedDir: input.managedDir } : {}),
     }).pipe(
       Effect.flatMap((result) =>
         result.code === 0
@@ -1040,6 +1156,181 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       ),
     );
 
+  const runNpmInstall = (input: {
+    readonly managedDir: string;
+    readonly environment?: NodeJS.ProcessEnv;
+  }): Effect.Effect<void, OpenCodeRuntimeError> =>
+    Effect.gen(function* () {
+      const npm = yield* resolveExisting("npm", input.environment);
+      if (Option.isNone(npm)) {
+        return yield* new OpenCodeRuntimeError({
+          operation: "ensureOpenCodeInstalled",
+          detail:
+            "OpenCode CLI (`opencode`) is not installed and npm is unavailable to install it automatically. Install Node.js/npm, or install OpenCode manually: curl -fsSL https://opencode.ai/install | bash",
+        });
+      }
+      const args = openCodeNpmInstallArgs(input.managedDir);
+      const spawnCommand = yield* resolveSpawnCommand(
+        npm.value,
+        args,
+        input.environment ? { env: input.environment } : {},
+      );
+      const collected = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const child = yield* spawner
+            .spawn(
+              ChildProcess.make(spawnCommand.command, spawnCommand.args, {
+                shell: spawnCommand.shell,
+                // npm needs its usual host environment (HOME, cache dirs);
+                // the instance environment only overlays (e.g. proxies).
+                ...(input.environment ? { env: input.environment, extendEnv: true } : {}),
+              }),
+            )
+            .pipe(
+              Effect.mapError(
+                (cause) =>
+                  new OpenCodeRuntimeError({
+                    operation: "ensureOpenCodeInstalled",
+                    detail: `Failed to start npm for the automatic OpenCode install: ${openCodeRuntimeErrorDetail(cause)}`,
+                    cause,
+                  }),
+              ),
+            );
+          yield* Effect.addFinalizer(() => child.kill().pipe(Effect.ignore));
+          const [stdout, stderr, code] = yield* Effect.all(
+            [
+              collectStreamAsString(child.stdout, {
+                maxBytes: OPENCODE_NPM_INSTALL_MAX_OUTPUT_BYTES,
+              }),
+              collectStreamAsString(child.stderr, {
+                maxBytes: OPENCODE_NPM_INSTALL_MAX_OUTPUT_BYTES,
+              }),
+              child.exitCode,
+            ],
+            { concurrency: "unbounded" },
+          );
+          return { stdout, stderr, code: Number(code) };
+        }),
+      ).pipe(Effect.timeoutOption(OPENCODE_NPM_INSTALL_TIMEOUT_MS));
+      if (Option.isNone(collected)) {
+        return yield* new OpenCodeRuntimeError({
+          operation: "ensureOpenCodeInstalled",
+          detail:
+            "Automatic OpenCode installation timed out after 5 minutes. The install may still be finishing; refresh provider status to check.",
+        });
+      }
+      const { stdout, stderr, code } = collected.value;
+      if (code !== 0) {
+        const tail = `${stderr}\n${stdout}`.trim().slice(-2048);
+        return yield* new OpenCodeRuntimeError({
+          operation: "ensureOpenCodeInstalled",
+          detail: `Automatic OpenCode installation failed (npm exited with code ${code}).${tail ? ` npm output:\n${tail}` : ""}`,
+        });
+      }
+      yield* Effect.void;
+    }).pipe(
+      Effect.mapError((cause) =>
+        ensureRuntimeError(
+          "ensureOpenCodeInstalled",
+          `Automatic OpenCode installation failed: ${openCodeRuntimeErrorDetail(cause)}`,
+          cause,
+        ),
+      ),
+    );
+
+  const ensureOpenCodeInstalled: OpenCodeRuntimeShape["ensureOpenCodeInstalled"] = (input) =>
+    installLock.withPermit(
+      Effect.gen(function* () {
+        const environment = input.environment;
+        const candidates = openCodeBinaryCandidates({
+          binaryPath: input.binaryPath,
+          ...(environment !== undefined ? { environment } : {}),
+          ...(input.managedDir !== undefined ? { managedDir: input.managedDir } : {}),
+          platform: hostPlatform,
+        });
+        const existing = yield* firstExisting(candidates, environment);
+        if (existing !== null) {
+          return {
+            binaryPath: existing,
+            freshInstall: false,
+          } satisfies EnsureOpenCodeInstallResult;
+        }
+        // A custom binary path is the user's explicit choice: report it
+        // missing rather than installing something they did not ask for.
+        if (!isDefaultOpenCodeBinary(input.binaryPath)) {
+          return yield* new OpenCodeRuntimeError({
+            operation: "ensureOpenCodeInstalled",
+            detail: `Custom OpenCode binary '${input.binaryPath.trim()}' was not found.`,
+          });
+        }
+        const managedDir = input.managedDir?.trim();
+        if (!managedDir) {
+          return yield* new OpenCodeRuntimeError({
+            operation: "ensureOpenCodeInstalled",
+            detail: "OpenCode CLI (`opencode`) is not installed or not on PATH.",
+          });
+        }
+        yield* Effect.logInfo("OpenCode CLI not found. Installing automatically with npm.", {
+          managedDir,
+        });
+        yield* fs
+          .makeDirectory(managedDir, { recursive: true })
+          .pipe(
+            Effect.mapError((cause) =>
+              ensureRuntimeError(
+                "ensureOpenCodeInstalled",
+                `Could not create the managed OpenCode directory at ${managedDir}: ${openCodeRuntimeErrorDetail(cause)}`,
+                cause,
+              ),
+            ),
+          );
+        const manifestPath = pathService.join(managedDir, "package.json");
+        if (!(yield* fs.exists(manifestPath))) {
+          yield* fs
+            .writeFileString(manifestPath, openCodeManagedPackageJson())
+            .pipe(
+              Effect.mapError((cause) =>
+                ensureRuntimeError(
+                  "ensureOpenCodeInstalled",
+                  `Could not prepare the managed OpenCode directory at ${managedDir}: ${openCodeRuntimeErrorDetail(cause)}`,
+                  cause,
+                ),
+              ),
+            );
+        }
+        yield* runNpmInstall({
+          managedDir,
+          ...(environment !== undefined ? { environment } : {}),
+        });
+        const installed = yield* firstExisting(
+          [openCodeManagedBinaryPath(managedDir, hostPlatform)],
+          environment,
+        );
+        if (installed === null) {
+          return yield* new OpenCodeRuntimeError({
+            operation: "ensureOpenCodeInstalled",
+            detail:
+              "npm reported success but the OpenCode binary is still missing. Install it manually: curl -fsSL https://opencode.ai/install | bash",
+          });
+        }
+        yield* Effect.logInfo("OpenCode CLI installed automatically.", {
+          binaryPath: installed,
+        });
+        return {
+          binaryPath: installed,
+          freshInstall: true,
+        } satisfies EnsureOpenCodeInstallResult;
+      }).pipe(
+        Effect.mapError((cause) =>
+          ensureRuntimeError(
+            "ensureOpenCodeInstalled",
+            `Could not make sure the OpenCode CLI is installed: ${openCodeRuntimeErrorDetail(cause)}`,
+            cause,
+          ),
+        ),
+      ),
+    );
+
   return {
     startOpenCodeServerProcess,
     connectToOpenCodeServer,
@@ -1049,6 +1340,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
     loadOpenCodeSkills,
     loadInventoryFromCli,
     loadSkillsFromCli,
+    ensureOpenCodeInstalled,
   } satisfies OpenCodeRuntimeShape;
 });
 

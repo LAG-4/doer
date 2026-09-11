@@ -429,6 +429,14 @@ describe("ClientSettings context window meter", () => {
   });
 });
 
+describe("ClientSettings simple mode", () => {
+  it("defaults on and preserves an explicit opt-out", () => {
+    expect(decodeClientSettings({}).simpleModeEnabled).toBe(true);
+    expect(decodeClientSettings({ simpleModeEnabled: false }).simpleModeEnabled).toBe(false);
+    expect(decodeClientSettingsPatch({ simpleModeEnabled: false }).simpleModeEnabled).toBe(false);
+  });
+});
+
 describe("ClientSettings composer collapse", () => {
   it("collapses on scroll by default and accepts opting out", () => {
     expect(decodeClientSettings({}).composerCollapseOnScroll).toBe(true);

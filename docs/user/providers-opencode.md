@@ -5,6 +5,27 @@ enable it in **Settings > Providers**. See [provider setup](./install.md#provide
 T3 Code requires OpenCode 1.14.19 or newer, including when you connect an existing
 OpenCode server.
 
+## Automatic installation
+
+When OpenCode is enabled and no `opencode` binary is found, T3 Code installs it
+automatically into `<T3 home>/tools/opencode` with `npm install opencode-ai`
+(the same npm package the official docs recommend). This needs network access
+and an `npm` on PATH; it never touches your global installs and never needs
+sudo. If the automatic install fails, the provider card says so — install it
+manually instead:
+
+```bash
+curl -fsSL https://opencode.ai/install | bash
+```
+
+then use **Refresh provider status** in **Settings > Providers**.
+
+T3 Code looks for the binary on PATH first, then in `~/.opencode/bin` (where the
+script above installs it), then in its managed directory. A GUI-launched server
+often sees a sparse PATH, so a script-installed OpenCode is still detected.
+To use a different binary, set **Binary path** in the provider settings; a
+custom path is used verbatim and is never auto-installed.
+
 ## Local or external server
 
 Leave **Server URL** empty to let T3 Code start OpenCode locally. A password in

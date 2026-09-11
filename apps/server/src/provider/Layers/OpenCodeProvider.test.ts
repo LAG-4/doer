@@ -41,6 +41,8 @@ const runtimeMock = {
     inventoryError: null as Error | null,
     connectionError: null as Error | null,
     inventoryCwd: null as string | null,
+    ensureError: null as Error | null,
+    ensureCalls: 0,
     closeCalls: 0,
     sdkClientInputs: [] as Array<{
       baseUrl: string;
@@ -60,6 +62,8 @@ const runtimeMock = {
     this.state.inventoryError = null;
     this.state.connectionError = null;
     this.state.inventoryCwd = null;
+    this.state.ensureError = null;
+    this.state.ensureCalls = 0;
     this.state.closeCalls = 0;
     this.state.sdkClientInputs.length = 0;
     this.state.inventory = {
@@ -157,6 +161,20 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntimeShape = {
   },
   loadOpenCodeSkills: () => Effect.succeed([]),
   loadSkillsFromCli: () => Effect.succeed([]),
+  ensureOpenCodeInstalled: () =>
+    Effect.gen(function* () {
+      runtimeMock.state.ensureCalls += 1;
+      if (runtimeMock.state.ensureError) {
+        return yield* new OpenCodeRuntimeError({
+          operation: "ensureOpenCodeInstalled",
+          detail: runtimeMock.state.ensureError.message,
+          cause: runtimeMock.state.ensureError,
+        });
+      }
+      // A successful install fixes whatever the version probe tripped on.
+      runtimeMock.state.runVersionError = null;
+      return { binaryPath: "/managed/opencode", freshInstall: true };
+    }),
 };
 
 beforeEach(() => {
@@ -182,6 +200,7 @@ const checkProvider = Effect.fn("checkProvider")(function* (
   settings: OpenCodeSettings,
   cwd = process.cwd(),
   environment?: NodeJS.ProcessEnv,
+  options?: { readonly managedDir?: string },
 ) {
   return yield* Effect.scoped(
     Effect.gen(function* () {
@@ -191,7 +210,7 @@ const checkProvider = Effect.fn("checkProvider")(function* (
         ...(settings.serverPassword ? { serverPassword: settings.serverPassword } : {}),
         ...(environment ? { environment } : {}),
       });
-      return yield* checkOpenCodeProviderStatus(settings, cwd, environment).pipe(
+      return yield* checkOpenCodeProviderStatus(settings, cwd, environment, options).pipe(
         Effect.provideService(OpenCodeServerOwner.OpenCodeServerOwner, serverOwner),
       );
     }),
@@ -210,6 +229,55 @@ it.layer(testLayer)("checkOpenCodeProviderStatus", (it) => {
         snapshot.message,
         "OpenCode CLI (`opencode`) is not installed or not on PATH.",
       );
+      NodeAssert.equal(runtimeMock.state.ensureCalls, 0);
+    }),
+  );
+
+  it.effect("installs OpenCode automatically and retries the version probe", () =>
+    Effect.gen(function* () {
+      runtimeMock.state.runVersionError = new Error("spawn opencode ENOENT");
+      const snapshot = yield* checkProvider(makeOpenCodeSettings(), process.cwd(), undefined, {
+        managedDir: "/managed/opencode",
+      });
+
+      NodeAssert.equal(runtimeMock.state.ensureCalls, 1);
+      NodeAssert.equal(snapshot.installed, true);
+      NodeAssert.equal(
+        snapshot.message,
+        "OpenCode is available, but it did not report any connected upstream providers.",
+      );
+    }),
+  );
+
+  it.effect("reports the install failure when the binary is missing", () =>
+    Effect.gen(function* () {
+      runtimeMock.state.runVersionError = new Error("spawn opencode ENOENT");
+      runtimeMock.state.ensureError = new Error("npm is unavailable");
+      const snapshot = yield* checkProvider(makeOpenCodeSettings(), process.cwd(), undefined, {
+        managedDir: "/managed/opencode",
+      });
+
+      NodeAssert.equal(snapshot.status, "error");
+      NodeAssert.equal(snapshot.installed, false);
+      NodeAssert.equal(
+        snapshot.message,
+        "OpenCode CLI (`opencode`) is not installed or not on PATH. Automatic install failed: npm is unavailable",
+      );
+    }),
+  );
+
+  it.effect("does not attempt an install for custom binary paths", () =>
+    Effect.gen(function* () {
+      runtimeMock.state.runVersionError = new Error("spawn /custom/opencode ENOENT");
+      const snapshot = yield* checkProvider(
+        makeOpenCodeSettings({ binaryPath: "/custom/opencode" }),
+        process.cwd(),
+        undefined,
+        { managedDir: "/managed/opencode" },
+      );
+
+      NodeAssert.equal(runtimeMock.state.ensureCalls, 0);
+      NodeAssert.equal(snapshot.installed, false);
     }),
   );
 

@@ -458,6 +458,8 @@ export interface OpenCodeAdapterLiveOptions {
   readonly environment?: NodeJS.ProcessEnv;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
+  /** T3-managed `<baseDir>/tools/opencode` dir; enables the install fallback. */
+  readonly managedDir?: string;
 }
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
@@ -2833,6 +2835,7 @@ export function makeOpenCodeAdapter(
                 directory,
                 serverUrl,
                 ...(serverPassword ? { serverPassword } : {}),
+                ...(options?.managedDir !== undefined ? { managedDir: options.managedDir } : {}),
                 environment: McpProviderSession.withAgentDeviceEnvironment(
                   options?.environment ?? process.env,
                   mcpSession,

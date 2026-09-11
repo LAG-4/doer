@@ -1,3 +1,48 @@
+# FORK: Normie agent harness (LAG-4/t3code)
+
+> This repo is a **separate product forked from `pingdotgg/t3code`**, not a contribution branch.
+> Never open PRs to upstream. Cherry-pick upstream fixes via the `upstream` remote when needed.
+> Upstream is MIT-licensed (T3 Tools Inc) — keep that copyright + MIT notice in all copies.
+
+**What this fork is:** the same T3 Code harness (Node WebSocket server + web/desktop/mobile clients,
+6 BYO providers: Codex, Claude, Cursor, Grok, OpenCode, Antigravity), but rebuilt for
+**non-developers** — a free/cheap alternative to Claude Cowork and ChatGPT Work, defaulting to
+OpenCode free models while keeping provider choice.
+
+**Goal:** same project but for normies. Daily life/work tasks, files, browser, schedules —
+no git jargon, no terminal, no PRs.
+
+**Normie vocabulary (use in UI/docs, not `project/environment/worktree`):**
+`Space` (= project/folder), `This computer` (= environment), `History/Undo` (= checkpoint/snapshot),
+`Task` (= thread). Never show `branch`, `worktree`, `hunk`, `baseRef`, `PTY`, `cwd`, `HOME`, `ACP`
+outside an `Advanced` disclosure.
+
+**Cut / hide first (gate behind `SIMPLE_MODE = true`, don't delete server logic yet):**
+`BranchToolbar*.tsx`, `GitActionsControl.tsx`, `worktreeCleanup.ts`, `DiffPanel.tsx`,
+`chat/ChangedFilesTree.tsx`, `ThreadTerminalDrawer.tsx` + `server/terminal/Manager.ts`,
+`chat/OpenInPicker.tsx`, `routes/_chat.pull-requests.tsx`, `pullRequest/*`,
+`server/sourceControl/*`, `server/git/GitManager.ts`, `CommandPalette.tsx`,
+`routes/settings.source-control.tsx`, `settings.keybindings.tsx`, `DiagnosticsSettings.tsx`,
+`AddProviderInstanceDialog.tsx` binary-path/HOME fields, `CustomModelEditor.tsx`,
+`ProjectScriptsControl.tsx` `runOnWorktreeCreate`. Keep `packages/contracts/` untouched so DBs stay compatible.
+
+**Keep (already generic):** threads/drafts, rich composer + attachments + @-files, citations,
+plan cards, approvals/sandbox (reworded), file browser/preview/search, checkpoints as History,
+pairing URLs, Tailscale/LAN, mobile remote control, `preview/Manager.ts` browser preview.
+
+**Add after cuts (Cowork/Work parity, in order):** 1) onboarding: pick folders + `Free (OpenCode)`
+default, 2) Projects-v2: folder + instructions + memory, 3) scheduled/recurring tasks (biggest gap —
+T3 only has snooze/wake now), 4) blessed connectors (Drive/Gmail/Calendar/Slack) over raw MCP, 5) plan mode (promote `ProposedPlanCard.tsx`: gather → plan → approve → do), 6) shareable output
+pages (reuse preview server, like Work Sites), 7) polished xlsx/pptx/docx outputs.
+
+**Fork dev loop (verified 2026-09-11):** `./dev.sh web|desktop|server|share|mobile|status|stop`
+(single entry point, isolated `--home-dir /tmp/t3-fork-dev`, PID-tracked logs in `/tmp/t3fork-dev/`).
+Raw form: `vp i`, then `vp run dev --home-dir /tmp/<name>`
+(server ~13773/web ~5733 from `[dev-runner]`, ports shift if occupied — e.g. 13775/5735 when busy). Open the full pairing URL
+with token, never bare localhost. Never run against live `~/.t3/userdata`. Seed with `VACUUM INTO`
+copy per Test data below. Checks: `vp test run <files>`, `vp lint <files>`,
+`vp run --filter <package> typecheck`. No repo-wide checks. Stop only PIDs you spawned.
+
 # T3 Code
 
 T3 Code is a minimal GUI for coding agents. A Node WebSocket server wraps provider CLIs and agents (Codex, Claude Code, Cursor, Grok, OpenCode, Antigravity) and serves web, desktop, and mobile clients.

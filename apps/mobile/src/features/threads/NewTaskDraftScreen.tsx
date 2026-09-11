@@ -90,6 +90,7 @@ import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/re
 import { enqueueThreadOutboxMessage } from "../../state/thread-outbox";
 import { useRemoteConnectionStatus } from "../../state/use-remote-environment-registry";
 import { useNewTaskFlow } from "./new-task-flow-provider";
+import { useSimpleModeEnabled } from "./use-simple-mode-enabled";
 import { resolveProjectThreadCreationBranch } from "./projectThreadCreationValidation";
 import { resolveDraftProjectSelection } from "./new-task-project-selection";
 import {
@@ -152,6 +153,7 @@ export function NewTaskDraftScreen(props: {
 }) {
   const projects = useProjects();
   const flow = useNewTaskFlow();
+  const simpleModeEnabled = useSimpleModeEnabled();
   const navigation = useNavigation();
   const {
     consumeShare,
@@ -1225,7 +1227,7 @@ export function NewTaskDraftScreen(props: {
     </View>
   );
 
-  const workspaceControls = (
+  const workspaceControls = simpleModeEnabled ? null : (
     <View className="flex-row items-center gap-1 px-2">
       <ComposerInlineControl
         accessibilityHint={`Switches to ${flow.workspaceMode === "local" ? "a new worktree" : "the current checkout"}`}
@@ -1267,7 +1269,7 @@ export function NewTaskDraftScreen(props: {
           />
         </View>
       ) : null}
-      <View className="pb-1">{workspaceControls}</View>
+      {workspaceControls ? <View className="pb-1">{workspaceControls}</View> : null}
 
       {modelUnavailable ? (
         <Pressable
