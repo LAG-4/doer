@@ -2248,7 +2248,7 @@ export function GeneralSettingsPanel() {
       <SettingsSection id="behavior" title="Behavior">
         <SettingsRow
           {...searchableSetting("simple-mode")}
-          description="Hide commit, branch, worktree, and pull request controls for a simpler interface. Turn off to show Git options."
+          description="Hide commit, branch, worktree, pull request, and terminal controls for a simpler interface. Turn off to show Git and terminal options."
           resetAction={
             settings.simpleModeEnabled !== DEFAULT_UNIFIED_SETTINGS.simpleModeEnabled ? (
               <SettingResetButton

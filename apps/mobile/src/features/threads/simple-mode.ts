@@ -1,5 +1,5 @@
 /**
- * Simple mode hides commit, branch, and worktree controls for a calmer
+ * Simple mode hides commit, branch, worktree, and terminal controls for a calmer
  * default UI. The preference is sparse: `undefined` means "never chosen",
  * which resolves to on — matching web's `simpleModeEnabled` default.
  *
