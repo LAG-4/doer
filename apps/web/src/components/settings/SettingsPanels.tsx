@@ -548,6 +548,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.composerCollapseOnScroll !== DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll
         ? ["Collapse composer on scroll"]
         : []),
+      ...(settings.simpleModeEnabled !== DEFAULT_UNIFIED_SETTINGS.simpleModeEnabled
+        ? ["Simple mode"]
+        : []),
       ...(settings.contextWindowMeterEnabled !== DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled
         ? ["Context window indicator"]
         : []),
@@ -607,6 +610,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.confirmThreadDelete,
       settings.confirmThreadUnpin,
       settings.composerCollapseOnScroll,
+      settings.simpleModeEnabled,
       settings.addProjectBaseDirectory,
       settings.defaultThreadEnvMode,
       settings.newWorktreesStartFromOrigin,
@@ -713,6 +717,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       proactivePanelsEnabled: DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled,
       showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
       composerCollapseOnScroll: DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll,
+      simpleModeEnabled: DEFAULT_UNIFIED_SETTINGS.simpleModeEnabled,
       contextWindowMeterEnabled: DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled,
       environmentIdentificationMode: DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode,
       glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
@@ -2241,6 +2246,29 @@ export function GeneralSettingsPanel() {
       </SettingsSection>
 
       <SettingsSection id="behavior" title="Behavior">
+        <SettingsRow
+          {...searchableSetting("simple-mode")}
+          description="Hide commit, branch, worktree, and pull request controls for a simpler interface. Turn off to show Git options."
+          resetAction={
+            settings.simpleModeEnabled !== DEFAULT_UNIFIED_SETTINGS.simpleModeEnabled ? (
+              <SettingResetButton
+                label="simple mode"
+                onClick={() =>
+                  updateSettings({
+                    simpleModeEnabled: DEFAULT_UNIFIED_SETTINGS.simpleModeEnabled,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.simpleModeEnabled}
+              onCheckedChange={(checked) => updateSettings({ simpleModeEnabled: Boolean(checked) })}
+              aria-label="Simple mode"
+            />
+          }
+        />
         <SettingsRow
           {...searchableSetting("time-format")}
           description="System default follows your browser or OS clock preference."

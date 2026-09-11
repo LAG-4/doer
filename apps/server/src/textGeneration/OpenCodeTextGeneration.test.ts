@@ -146,6 +146,14 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntime.OpenCodeRuntimeShape = {
       }),
     ),
   loadSkillsFromCli: () => Effect.succeed([]),
+  ensureOpenCodeInstalled: () =>
+    Effect.fail(
+      new OpenCodeRuntime.OpenCodeRuntimeError({
+        operation: "ensureOpenCodeInstalled",
+        detail: "OpenCodeRuntimeTestDouble.ensureOpenCodeInstalled not used in this test",
+        cause: null,
+      }),
+    ),
 };
 
 const DEFAULT_TEST_MODEL_SELECTION = {

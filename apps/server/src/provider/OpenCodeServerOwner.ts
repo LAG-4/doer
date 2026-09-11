@@ -32,6 +32,8 @@ export const make = Effect.fn("OpenCodeServerOwner.make")(function* (input: {
   readonly directory: string;
   readonly serverPassword?: string;
   readonly environment?: NodeJS.ProcessEnv;
+  /** T3-managed `<baseDir>/tools/opencode` dir; enables the install fallback. */
+  readonly managedDir?: string;
 }) {
   const runtime = yield* OpenCodeRuntime.OpenCodeRuntime;
   const ownerScope = yield* Effect.acquireRelease(Scope.make(), (scope) =>
@@ -106,6 +108,7 @@ export const make = Effect.fn("OpenCodeServerOwner.make")(function* (input: {
                     ? { serverPassword: input.serverPassword }
                     : {}),
                   ...(input.environment ? { environment: input.environment } : {}),
+                  ...(input.managedDir !== undefined ? { managedDir: input.managedDir } : {}),
                 })
                 .pipe(Effect.provideService(Scope.Scope, serverScope)),
             ),
@@ -182,4 +185,6 @@ export const layer = (input: {
   readonly directory: string;
   readonly serverPassword?: string;
   readonly environment?: NodeJS.ProcessEnv;
+  /** T3-managed `<baseDir>/tools/opencode` dir; enables the install fallback. */
+  readonly managedDir?: string;
 }) => Layer.effect(OpenCodeServerOwner, make(input));

@@ -48,6 +48,7 @@ import {
   useRemoteEnvironmentRuntime,
 } from "../../state/use-remote-environment-registry";
 import { useKnownTerminalSessions } from "../../state/use-terminal-session";
+import { useSimpleModeEnabled } from "./use-simple-mode-enabled";
 import { useSelectedThreadDetailState } from "../../state/use-thread-detail";
 import { useThreadSelection } from "../../state/use-thread-selection";
 import { GitActionProgressOverlay } from "./GitActionProgressOverlay";
@@ -230,6 +231,7 @@ function ThreadRouteContent(
   }, [selectedThread, selectedThreadDetailState]);
   const { selectedThreadCwd } = useSelectedThreadWorktree();
   const composer = useThreadComposerState();
+  const simpleModeEnabled = useSimpleModeEnabled();
   const gitState = useSelectedThreadGitState();
   const gitActions = useSelectedThreadGitActions();
   const requests = useSelectedThreadRequests();
@@ -662,6 +664,22 @@ function ThreadRouteContent(
   };
   const threadCenterHeaderItems = useThreadGitCenterHeaderItems(threadGitControlProps);
   const compactRightHeaderItems = useThreadGitRightHeaderItems(threadGitControlProps);
+  // Simple mode hides the commit/branch git entry; the remaining
+  // files/terminal items stay visible.
+  const visibleThreadCenterHeaderItems = useMemo(
+    () =>
+      simpleModeEnabled
+        ? threadCenterHeaderItems.filter((item) => item.identifier !== "thread-right-git")
+        : threadCenterHeaderItems,
+    [simpleModeEnabled, threadCenterHeaderItems],
+  );
+  const visibleCompactRightHeaderItems = useMemo(
+    () =>
+      simpleModeEnabled
+        ? compactRightHeaderItems.filter((item) => item.identifier !== "thread-right-git")
+        : compactRightHeaderItems,
+    [compactRightHeaderItems, simpleModeEnabled],
+  );
   const splitLeftHeaderItems = useMemo<NativeHeaderItems>(
     () => [
       {
@@ -728,11 +746,13 @@ function ThreadRouteContent(
         onPress: () => handleOpenTerminal(null),
       });
     }
-    actions.push({
-      accessibilityLabel: "Open git controls",
-      icon: "point.topleft.down.curvedto.point.bottomright.up",
-      onPress: handleOpenGitInspector,
-    });
+    if (!simpleModeEnabled) {
+      actions.push({
+        accessibilityLabel: "Open git controls",
+        icon: "point.topleft.down.curvedto.point.bottomright.up",
+        onPress: handleOpenGitInspector,
+      });
+    }
     if (fileInspector.supported && selectedThreadCwd !== null) {
       actions.push({
         accessibilityLabel: "Toggle inspector",
@@ -750,6 +770,7 @@ function ThreadRouteContent(
     props.onReturnToThread,
     selectedThreadCwd,
     selectedThreadProject?.workspaceRoot,
+    simpleModeEnabled,
   ]);
 
   const handleEditFailedCreation = useCallback(async () => {
@@ -943,7 +964,10 @@ function ThreadRouteContent(
           // reserved for future breadcrumbs/status).
           unstable_headerRightItems:
             Platform.OS === "ios"
-              ? () => (layout.usesSplitView ? threadCenterHeaderItems : compactRightHeaderItems)
+              ? () =>
+                  layout.usesSplitView
+                    ? visibleThreadCenterHeaderItems
+                    : visibleCompactRightHeaderItems
               : undefined,
           unstable_headerSubtitle: usesNativeHeaderGlass ? headerSubtitle : undefined,
           contentStyle:

@@ -113,6 +113,7 @@ describe("GitHubCli.layer", () => {
         ],
         cwd: "/repo",
         timeoutMs: 30_000,
+        allowNonZeroExit: true,
       });
     }).pipe(Effect.provide(layer)),
   );
@@ -333,6 +334,7 @@ describe("GitHubCli.layer", () => {
         args: ["repo", "create", "octocat/codething-mvp", "--private"],
         cwd: "/repo",
         timeoutMs: 30_000,
+        allowNonZeroExit: true,
       });
     }).pipe(Effect.provide(layer)),
   );
@@ -415,4 +417,76 @@ describe("GitHubCli.layer", () => {
       assert.notInclude(error.message, "user ID");
     }).pipe(Effect.provide(layer)),
   );
+
+  it.effect("surfaces sanitized gh stderr for command failures instead of a generic message", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValueOnce(
+        Effect.succeed({
+          exitCode: ChildProcessSpawner.ExitCode(1),
+          stdout: "",
+          stderr: "pull request title must not be blank\n",
+          stdoutTruncated: false,
+          stderrTruncated: false,
+        }),
+      );
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const error = yield* gh
+        .createPullRequest({
+          cwd: "/repo",
+          baseBranch: "main",
+          headSelector: "feature/provider",
+          title: "",
+          bodyFile: "/tmp/body.md",
+        })
+        .pipe(Effect.flip);
+
+      assert.strictEqual(error._tag, "GitHubCliCommandError");
+      assert.include(error.detail, "pull request title must not be blank");
+      assert.notInclude(error.detail, "GitHub CLI command failed.");
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("redacts secrets from surfaced gh stderr", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValueOnce(
+        Effect.succeed({
+          exitCode: ChildProcessSpawner.ExitCode(1),
+          stdout: "",
+          stderr: "pull request create failed: https://user:gho_secret123@github.com/owner/repo\n",
+          stdoutTruncated: false,
+          stderrTruncated: false,
+        }),
+      );
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const error = yield* gh
+        .createPullRequest({
+          cwd: "/repo",
+          baseBranch: "main",
+          headSelector: "feature/provider",
+          title: "Provider PR",
+          bodyFile: "/tmp/body.md",
+        })
+        .pipe(Effect.flip);
+
+      assert.strictEqual(error._tag, "GitHubCliCommandError");
+      assert.notInclude(error.detail, "gho_secret123");
+      assert.notInclude(error.detail, "user:");
+      assert.include(error.detail, "[redacted]");
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it("sanitizes gh stderr excerpts", () => {
+    assert.strictEqual(GitHubCli.sanitizeGitHubCliStderr(""), undefined);
+    assert.strictEqual(GitHubCli.sanitizeGitHubCliStderr("   \n  "), undefined);
+    assert.strictEqual(
+      GitHubCli.sanitizeGitHubCliStderr("pull request title must not be blank\n"),
+      "pull request title must not be blank",
+    );
+    assert.strictEqual(
+      GitHubCli.sanitizeGitHubCliStderr("line one\n\nline two\nline three\nline four\n"),
+      "line one line two line three",
+    );
+  });
 });

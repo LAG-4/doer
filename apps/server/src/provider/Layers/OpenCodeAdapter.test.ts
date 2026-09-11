@@ -516,6 +516,14 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntimeShape = {
       }),
     ),
   loadSkillsFromCli: () => Effect.succeed([]),
+  ensureOpenCodeInstalled: () =>
+    Effect.fail(
+      new OpenCodeRuntimeError({
+        operation: "ensureOpenCodeInstalled",
+        detail: "OpenCodeRuntimeTestDouble.ensureOpenCodeInstalled not used in this test",
+        cause: null,
+      }),
+    ),
 };
 
 const providerSessionDirectoryTestLayer = Layer.succeed(ProviderSessionDirectory, {

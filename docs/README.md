@@ -1,4 +1,9 @@
-# T3 Code docs
+# T3 Code docs (LAG-4 normie fork)
+
+> Fork note: this repo is a separate normie product built on upstream T3 Code.
+> Product goal, cut/keep/add lists, and normie vocabulary live in `../AGENTS.md` at the top.
+> Keep `docs/user/` in the shipped product's voice (Spaces, This computer, History),
+> without git/terminal/branch/worktree jargon unless inside an Advanced section.
 
 ## Using T3 Code
 

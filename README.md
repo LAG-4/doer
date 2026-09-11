@@ -1,3 +1,14 @@
+# Normie Agent Harness (fork of T3 Code)
+
+> This is **LAG-4/t3code**, a separate product fork of [`pingdotgg/t3code`](https://github.com/pingdotgg/t3code)
+> for **non-developers** — think Claude Cowork / ChatGPT Work, but BYO-provider with OpenCode free models.
+> Not an upstream contribution branch: do not open PRs to upstream. Upstream is MIT (T3 Tools Inc);
+> that copyright + license notice is preserved in `LICENSE`.
+>
+> Agent instructions live in `AGENTS.md` (fork goal, cut/keep/add lists, normie vocabulary, dev loop).
+> User flow: pick folders → pick Free (OpenCode) or your provider → chat, files, history, schedules.
+> Dev jargon (branches, worktrees, diffs, PRs, terminals, editors) is hidden behind `SIMPLE_MODE`.
+
 # T3 Code
 
 T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
