@@ -664,19 +664,25 @@ function ThreadRouteContent(
   };
   const threadCenterHeaderItems = useThreadGitCenterHeaderItems(threadGitControlProps);
   const compactRightHeaderItems = useThreadGitRightHeaderItems(threadGitControlProps);
-  // Simple mode hides the commit/branch git entry; the remaining
-  // files/terminal items stay visible.
+  // Simple mode hides the commit/branch git entry and the terminal
+  // entry; the remaining files item stays visible.
   const visibleThreadCenterHeaderItems = useMemo(
     () =>
       simpleModeEnabled
-        ? threadCenterHeaderItems.filter((item) => item.identifier !== "thread-right-git")
+        ? threadCenterHeaderItems.filter(
+            (item) =>
+              item.identifier !== "thread-right-git" && item.identifier !== "thread-right-terminal",
+          )
         : threadCenterHeaderItems,
     [simpleModeEnabled, threadCenterHeaderItems],
   );
   const visibleCompactRightHeaderItems = useMemo(
     () =>
       simpleModeEnabled
-        ? compactRightHeaderItems.filter((item) => item.identifier !== "thread-right-git")
+        ? compactRightHeaderItems.filter(
+            (item) =>
+              item.identifier !== "thread-right-git" && item.identifier !== "thread-right-terminal",
+          )
         : compactRightHeaderItems,
     [compactRightHeaderItems, simpleModeEnabled],
   );
@@ -739,7 +745,7 @@ function ThreadRouteContent(
         onPress: handleOpenFilesInspector,
       });
     }
-    if (selectedThreadProject?.workspaceRoot) {
+    if (selectedThreadProject?.workspaceRoot && !simpleModeEnabled) {
       actions.push({
         accessibilityLabel: "Open terminal",
         icon: "terminal",

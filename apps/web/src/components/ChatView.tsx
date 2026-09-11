@@ -8158,6 +8158,7 @@ export default function ChatView(props: ChatViewProps) {
 
   const panelToggleControls = (
     <PanelLayoutControls
+      showTerminalControl={!simpleModeEnabled}
       terminalAvailable={activeProject !== null}
       terminalOpen={terminalUiState.terminalOpen}
       terminalShortcutLabel={shortcutLabelForCommand(keybindings, "terminal.toggle")}
