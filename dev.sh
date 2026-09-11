@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 # One-command dev launcher for the LAG-4/t3code normie fork.
-# Usage: ./dev.sh [web|desktop|server|web-only|share|mobile|doctor|status|stop|help] [-- extra args]
+# Usage: ./dev.sh [commands|web|desktop|server|web-only|share|mobile|doctor|status|stop|help] [-- extra args]
 # Examples:
 #   ./dev.sh web                 # server + web, isolated state
 #   ./dev.sh desktop              # Electron app + server
@@ -87,6 +87,29 @@ case "$cmd" in
       for l in web desktop server web-only share; do stop_one "$l"; done
       echo "note: if web/desktop children linger, check ./dev.sh status and kill those PIDs directly."
     else stop_one "$target"; fi
+    ;;
+  commands|list)
+    cat <<'EOF'
+Usage: ./dev.sh <command> [-- extra args passed through]
+
+Run something:
+  web         Server + web app (local dev, isolated state)
+  desktop     Electron app + server
+  server      Server only (no UI; pair from another client)
+  web-only    Web app only (needs a server already running)
+  share       Web over tailnet (test from your phone)
+  mobile      Metro for the Expo dev client (then build the native client once)
+
+Inspect / manage:
+  status      Show which lanes are running (pids, logs, ports)
+  stop [lane] Stop one lane, or everything (default: all)
+  doctor      Sanity check: vp/node versions, deps, isolated home dir
+  commands    This list
+  help        Short usage header
+
+State is isolated in /tmp/t3-fork-dev (override with T3_FORK_HOME=...).
+Logs and pids live in /tmp/t3fork-dev/.
+EOF
     ;;
   help|*) sed -n '2,12p' "$0"; ;;
 esac

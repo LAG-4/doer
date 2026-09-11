@@ -35,7 +35,7 @@ default, 2) Projects-v2: folder + instructions + memory, 3) scheduled/recurring 
 T3 only has snooze/wake now), 4) blessed connectors (Drive/Gmail/Calendar/Slack) over raw MCP, 5) plan mode (promote `ProposedPlanCard.tsx`: gather → plan → approve → do), 6) shareable output
 pages (reuse preview server, like Work Sites), 7) polished xlsx/pptx/docx outputs.
 
-**Fork dev loop (verified 2026-09-11):** `./dev.sh web|desktop|server|share|mobile|status|stop`
+**Fork dev loop (verified 2026-09-11):** `./dev.sh web|desktop|server|share|mobile|status|stop` (`./dev.sh commands` lists all)
 (single entry point, isolated `--home-dir /tmp/t3-fork-dev`, PID-tracked logs in `/tmp/t3fork-dev/`).
 Raw form: `vp i`, then `vp run dev --home-dir /tmp/<name>`
 (server ~13773/web ~5733 from `[dev-runner]`, ports shift if occupied — e.g. 13775/5735 when busy). Open the full pairing URL
