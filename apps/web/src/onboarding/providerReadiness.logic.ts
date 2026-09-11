@@ -2,6 +2,7 @@ import {
   ClaudeSettings,
   CodexSettings,
   type ExecutionEnvironmentPlatformOs,
+  OpenCodeSettings,
   type ServerProvider,
   type ServerSettings,
 } from "@t3tools/contracts";
@@ -10,6 +11,7 @@ import * as Schema from "effect/Schema";
 
 const decodeClaudeSettings = Schema.decodeUnknownOption(ClaudeSettings);
 const decodeCodexSettings = Schema.decodeUnknownOption(CodexSettings);
+const decodeOpenCodeSettings = Schema.decodeUnknownOption(OpenCodeSettings);
 const SAFE_SHELL_BINARY_PATTERN = /^[A-Za-z0-9_./:\\-]+$/;
 
 function quoteProviderBinary(
@@ -77,6 +79,10 @@ export function selectOnboardingProvidersByDriver(
  * one-click updater in Settings keeps working after install.
  */
 const NATIVE_INSTALL_COMMANDS = {
+  opencode: {
+    windows: "scoop install opencode",
+    posix: "curl -fsSL https://opencode.ai/install | bash",
+  },
   claudeAgent: {
     windows: "irm https://claude.ai/install.ps1 | iex",
     posix: "curl -fsSL https://claude.ai/install.sh | bash",
@@ -123,6 +129,14 @@ export function resolveOnboardingProviderLoginCommand(
     );
     const binaryPath = Option.isSome(config) ? config.value.binaryPath : "codex";
     return `${quoteProviderBinary(binaryPath, "codex", platform)} login`;
+  }
+
+  if (provider.driver === "opencode") {
+    const config = decodeOpenCodeSettings(
+      instance ? (instance.config ?? {}) : settings.providers.opencode,
+    );
+    const binaryPath = Option.isSome(config) ? config.value.binaryPath : "opencode";
+    return `${quoteProviderBinary(binaryPath, "opencode", platform)} auth login`;
   }
 
   return provider.driver;

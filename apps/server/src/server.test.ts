@@ -5438,6 +5438,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               providerInstances: {
                 [ProviderInstanceId.make("codex")]: {
                   driver: ProviderDriverKind.make("codex"),
+                  enabled: true,
                   config: { homePath: codexHome },
                 },
                 [ProviderInstanceId.make("claudeAgent")]: {

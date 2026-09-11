@@ -15,6 +15,8 @@
 import {
   DEFAULT_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
+  isOpenCodeFreeModelSlug,
+  PREFERRED_DEFAULT_OPENCODE_MODELS,
   resolveProviderInstanceEnabled,
   type ModelSelection,
   type ProviderDriverKind,
@@ -234,6 +236,20 @@ export function getDefaultProviderInstanceModel(
 ): string | undefined {
   const entry = getProviderInstanceEntry(providers, instanceId);
   if (!entry) return undefined;
+  if (entry.driverKind === "opencode") {
+    // Prefer the free-tier default (Big Pickle, else any `*-free` Zen model)
+    // even when the snapshot carries no `isDefault` (stale cache).
+    const builtInSlugs = entry.models.filter((model) => !model.isCustom).map((model) => model.slug);
+    for (const preferred of PREFERRED_DEFAULT_OPENCODE_MODELS) {
+      if (builtInSlugs.includes(preferred)) {
+        return preferred;
+      }
+    }
+    const free = builtInSlugs.filter((slug) => isOpenCodeFreeModelSlug(slug)).toSorted()[0];
+    if (free) {
+      return free;
+    }
+  }
   return (
     entry.models.find((model) => model.isDefault && !model.isCustom)?.slug ??
     entry.models.find((model) => !model.isCustom)?.slug ??
@@ -248,9 +264,9 @@ const isSelectableProviderInstanceEntry = (entry: ProviderInstanceEntry): boolea
 /**
  * Resolve an exact stored instance when it remains enabled and available.
  * Otherwise choose a deterministic fallback that can plausibly start now:
- * ready first, then a non-error probe result. An errored provider is retained
- * only when it was explicitly requested; it is never invented as a new-user
- * default.
+ * OpenCode first (the default), then ready, then a non-error probe result.
+ * An errored provider is retained only when it was explicitly requested; it
+ * is never invented as a new-user default.
  */
 export function resolveSelectableProviderInstanceEntry(
   entries: ReadonlyArray<ProviderInstanceEntry>,
@@ -262,8 +278,14 @@ export function resolveSelectableProviderInstanceEntry(
       return requested;
     }
   }
+  const isOpenCode = (entry: ProviderInstanceEntry): boolean => entry.driverKind === "opencode";
   return (
+    entries.find((entry) => isOpenCode(entry) && isProviderInstancePickerReady(entry)) ??
     entries.find(isProviderInstancePickerReady) ??
+    entries.find(
+      (entry) =>
+        isOpenCode(entry) && isSelectableProviderInstanceEntry(entry) && entry.status !== "error",
+    ) ??
     entries.find((entry) => isSelectableProviderInstanceEntry(entry) && entry.status !== "error")
   );
 }

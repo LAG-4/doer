@@ -5,14 +5,22 @@ enable it in **Settings > Providers**. See [provider setup](./install.md#provide
 T3 Code requires OpenCode 1.14.19 or newer, including when you connect an existing
 OpenCode server.
 
+## Default model
+
+New threads default to the OpenCode free model: Big Pickle (`opencode/big-pickle`)
+first, then any other `*-free` Zen model when Big Pickle isn't in the catalog.
+When no free model is available, the first reported model is used.
+
 ## Automatic installation
 
 When OpenCode is enabled and no `opencode` binary is found, T3 Code installs it
-automatically into `<T3 home>/tools/opencode` with `npm install opencode-ai`
-(the same npm package the official docs recommend). This needs network access
-and an `npm` on PATH; it never touches your global installs and never needs
-sudo. If the automatic install fails, the provider card says so — install it
-manually instead:
+automatically into `<T3 home>/tools/opencode` and never touches your global
+installs (no sudo). It tries `npm install opencode-ai` first (the same npm
+package the official docs recommend); on machines without npm — the usual
+non-developer machine — it downloads the official release for your system with
+curl instead (macOS and Windows included) and unpacks it into the same managed
+directory. Either way it needs network access. If the automatic install fails,
+the provider card says so — install it manually instead:
 
 ```bash
 curl -fsSL https://opencode.ai/install | bash

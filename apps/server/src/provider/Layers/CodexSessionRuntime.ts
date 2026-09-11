@@ -1,6 +1,6 @@
 import {
   ApprovalRequestId,
-  DEFAULT_MODEL,
+  DEFAULT_CODEX_MODEL,
   EventId,
   ProviderDriverKind,
   ProviderItemId,
@@ -589,7 +589,7 @@ function buildCodexCollaborationMode(input: {
   if (input.interactionMode === undefined) {
     return undefined;
   }
-  const model = normalizeCodexModelSlug(input.model) ?? DEFAULT_MODEL;
+  const model = normalizeCodexModelSlug(input.model) ?? DEFAULT_CODEX_MODEL;
   const reasoningEffort = input.effort ?? "medium";
   return {
     mode: input.interactionMode,

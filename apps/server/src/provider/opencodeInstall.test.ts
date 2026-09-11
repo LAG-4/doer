@@ -5,13 +5,22 @@ import * as NodePath from "node:path";
 
 import {
   isDefaultOpenCodeBinary,
+  openCodeArchiveExtractCommand,
   openCodeBinaryCandidates,
+  openCodeCurlDownloadArgs,
+  openCodeExtractedBinaryNames,
+  openCodeInstallArchiveFilename,
+  openCodeInstallDownloadUrl,
+  openCodeInstallTargetForHost,
   openCodeManagedBinaryPath,
   openCodeManagedBinDir,
   openCodeManagedDir,
   openCodeManagedPackageJson,
+  openCodeManagedScriptBinaryPath,
+  openCodeManagedScriptBinDir,
   openCodeNativeBinaryPath,
   openCodeNpmInstallArgs,
+  powershellSingleQuoted,
   resolveOpenCodeHome,
 } from "./opencodeInstall.ts";
 
@@ -37,6 +46,15 @@ describe("opencodeInstall", () => {
     );
     expect(openCodeManagedBinaryPath(managedDir, "win32")).toBe(
       NodePath.join("/t3home", "tools", "opencode", "node_modules", ".bin", "opencode.cmd"),
+    );
+    expect(openCodeManagedScriptBinDir(managedDir)).toBe(
+      NodePath.join("/t3home", "tools", "opencode", "bin"),
+    );
+    expect(openCodeManagedScriptBinaryPath(managedDir, "darwin")).toBe(
+      NodePath.join("/t3home", "tools", "opencode", "bin", "opencode"),
+    );
+    expect(openCodeManagedScriptBinaryPath(managedDir, "win32")).toBe(
+      NodePath.join("/t3home", "tools", "opencode", "bin", "opencode.exe"),
     );
   });
 
@@ -67,6 +85,7 @@ describe("opencodeInstall", () => {
       "opencode",
       NodePath.join("/home/amy", ".opencode", "bin", "opencode"),
       NodePath.join("/t3home", "tools", "opencode", "node_modules", ".bin", "opencode"),
+      NodePath.join("/t3home", "tools", "opencode", "bin", "opencode"),
     ]);
   });
 
@@ -105,5 +124,69 @@ describe("opencodeInstall", () => {
     const manifest = JSON.parse(openCodeManagedPackageJson()) as { name: string; private: boolean };
     expect(manifest.name).toBe("t3-managed-opencode");
     expect(manifest.private).toBe(true);
+  });
+
+  it("resolves release targets the way the official install script does", () => {
+    expect(openCodeInstallTargetForHost({ platform: "darwin", arch: "arm64" })).toBe(
+      "darwin-arm64",
+    );
+    expect(openCodeInstallTargetForHost({ platform: "darwin", arch: "x64" })).toBe("darwin-x64");
+    expect(openCodeInstallTargetForHost({ platform: "linux", arch: "x64" })).toBe("linux-x64");
+    expect(openCodeInstallTargetForHost({ platform: "linux", arch: "aarch64" })).toBe(
+      "linux-arm64",
+    );
+    expect(openCodeInstallTargetForHost({ platform: "win32", arch: "x64" })).toBe("windows-x64");
+    // The script ships no Windows ARM64 asset.
+    expect(openCodeInstallTargetForHost({ platform: "win32", arch: "arm64" })).toBeNull();
+    expect(openCodeInstallTargetForHost({ platform: "darwin", arch: "ia32" })).toBeNull();
+  });
+
+  it("builds release archive names and download URLs", () => {
+    expect(openCodeInstallArchiveFilename("darwin-arm64")).toBe("opencode-darwin-arm64.zip");
+    expect(openCodeInstallArchiveFilename("windows-x64")).toBe("opencode-windows-x64.zip");
+    expect(openCodeInstallArchiveFilename("linux-x64")).toBe("opencode-linux-x64.tar.gz");
+    expect(openCodeInstallDownloadUrl("darwin-arm64")).toBe(
+      "https://github.com/sst/opencode/releases/latest/download/opencode-darwin-arm64.zip",
+    );
+  });
+
+  it("builds a failing-loudly curl download command", () => {
+    expect(openCodeCurlDownloadArgs("https://example.com/a.zip", "/tmp/a.zip")).toEqual([
+      "-fsSL",
+      "-L",
+      "-o",
+      "/tmp/a.zip",
+      "https://example.com/a.zip",
+    ]);
+  });
+
+  it("picks a preinstalled extractor per platform", () => {
+    expect(
+      openCodeArchiveExtractCommand({ platform: "linux", archivePath: "a.tgz", destDir: "d" }),
+    ).toEqual({ command: "tar", args: ["-xzf", "a.tgz", "-C", "d"] });
+    expect(
+      openCodeArchiveExtractCommand({ platform: "darwin", archivePath: "a.zip", destDir: "d" }),
+    ).toEqual({ command: "unzip", args: ["-q", "a.zip", "-d", "d"] });
+    expect(
+      openCodeArchiveExtractCommand({
+        platform: "win32",
+        archivePath: "C:\\tmp\\a.zip",
+        destDir: "C:\\tmp\\d",
+      }),
+    ).toEqual({
+      command: "powershell",
+      args: [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "Expand-Archive -LiteralPath 'C:\\tmp\\a.zip' -DestinationPath 'C:\\tmp\\d' -Force",
+      ],
+    });
+  });
+
+  it("quotes PowerShell paths and prefers platform binary names", () => {
+    expect(powershellSingleQuoted("C:\\amy's dir")).toBe("'C:\\amy''s dir'");
+    expect(openCodeExtractedBinaryNames("win32")).toEqual(["opencode.exe", "opencode"]);
+    expect(openCodeExtractedBinaryNames("darwin")).toEqual(["opencode", "opencode.exe"]);
   });
 });

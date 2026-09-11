@@ -1,5 +1,11 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { DEFAULT_MODEL, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import {
+  DEFAULT_CODEX_MODEL,
+  DEFAULT_MODEL,
+  ProjectId,
+  ProviderInstanceId,
+  ThreadId,
+} from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";
@@ -157,7 +163,7 @@ it.effect("resolveAutoBootstrapWelcomeTargets returns existing project and threa
               workspaceRoot: "/tmp/startup-project",
               defaultModelSelection: {
                 instanceId: ProviderInstanceId.make("codex"),
-                model: DEFAULT_MODEL,
+                model: DEFAULT_CODEX_MODEL,
               },
               scripts: [],
               createdAt: "2026-01-01T00:00:00.000Z",
@@ -293,7 +299,7 @@ it.effect.each([
       commands.at(-1)?.modelSelection,
       projectSelection ??
         machineSelection ?? {
-          instanceId: ProviderInstanceId.make("codex"),
+          instanceId: ProviderInstanceId.make("opencode"),
           model: DEFAULT_MODEL,
         },
     );

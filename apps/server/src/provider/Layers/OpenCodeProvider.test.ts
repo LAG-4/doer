@@ -9,7 +9,11 @@ import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 import { beforeEach } from "vite-plus/test";
 
-import { OpenCodeSettings } from "@t3tools/contracts";
+import {
+  isOpenCodeFreeModelSlug,
+  OpenCodeSettings,
+  resolvePreferredOpenCodeModel,
+} from "@t3tools/contracts";
 import { ServerConfig } from "../../config.ts";
 import {
   OpenCodeRuntime,
@@ -362,6 +366,120 @@ it.layer(testLayer)("checkOpenCodeProviderStatus", (it) => {
         agentDescriptor.options.find((option) => option.isDefault === true)?.id,
         "build",
       );
+    }),
+  );
+
+  it.effect("marks Big Pickle as the default OpenCode model", () =>
+    Effect.gen(function* () {
+      runtimeMock.state.inventory = {
+        providerList: {
+          connected: ["opencode", "openai"],
+          all: [
+            {
+              id: "opencode",
+              name: "OpenCode Zen",
+              models: {
+                "big-pickle": { id: "big-pickle", name: "Big Pickle" },
+              },
+            },
+            {
+              id: "openai",
+              name: "OpenAI",
+              models: {
+                "gpt-5.4": { id: "gpt-5.4", name: "GPT-5.4" },
+              },
+            },
+          ],
+          default: {},
+        },
+        agents: [{ name: "build", hidden: false, mode: "primary" }],
+      };
+
+      const snapshot = yield* checkProvider(makeOpenCodeSettings());
+
+      NodeAssert.equal(
+        snapshot.models.find((entry) => entry.isDefault)?.slug,
+        "opencode/big-pickle",
+      );
+    }),
+  );
+
+  it.effect("falls back to a *-free Zen model when Big Pickle is absent", () =>
+    Effect.gen(function* () {
+      runtimeMock.state.inventory = {
+        providerList: {
+          connected: ["opencode"],
+          all: [
+            {
+              id: "opencode",
+              name: "OpenCode Zen",
+              models: {
+                "glm-5-free": { id: "glm-5-free", name: "GLM-5 Free" },
+                "kimi-k2": { id: "kimi-k2", name: "Kimi K2" },
+              },
+            },
+          ],
+          default: {},
+        },
+        agents: [{ name: "build", hidden: false, mode: "primary" }],
+      };
+
+      const snapshot = yield* checkProvider(makeOpenCodeSettings());
+
+      NodeAssert.equal(
+        snapshot.models.find((entry) => entry.isDefault)?.slug,
+        "opencode/glm-5-free",
+      );
+    }),
+  );
+
+  it.effect("marks no OpenCode default when no free model is available", () =>
+    Effect.gen(function* () {
+      runtimeMock.state.inventory = {
+        providerList: {
+          connected: ["openai"],
+          all: [
+            {
+              id: "openai",
+              name: "OpenAI",
+              models: {
+                "gpt-5.4": { id: "gpt-5.4", name: "GPT-5.4" },
+              },
+            },
+          ],
+          default: {},
+        },
+        agents: [{ name: "build", hidden: false, mode: "primary" }],
+      };
+
+      const snapshot = yield* checkProvider(makeOpenCodeSettings());
+
+      NodeAssert.equal(
+        snapshot.models.find((entry) => entry.isDefault),
+        undefined,
+      );
+    }),
+  );
+
+  it.effect("prefers Big Pickle over other free models, bare or namespaced", () =>
+    Effect.gen(function* () {
+      NodeAssert.equal(isOpenCodeFreeModelSlug("opencode/big-pickle"), true);
+      NodeAssert.equal(isOpenCodeFreeModelSlug("big-pickle"), true);
+      NodeAssert.equal(isOpenCodeFreeModelSlug("opencode/glm-5-free"), true);
+      NodeAssert.equal(isOpenCodeFreeModelSlug("opencode/gpt-5"), false);
+      NodeAssert.equal(
+        resolvePreferredOpenCodeModel(["opencode/gpt-5", "opencode/glm-5-free"]),
+        "opencode/glm-5-free",
+      );
+      NodeAssert.equal(
+        resolvePreferredOpenCodeModel([
+          "opencode/glm-5-free",
+          "opencode/big-pickle",
+          "opencode/kimi-free",
+        ]),
+        "opencode/big-pickle",
+      );
+      NodeAssert.equal(resolvePreferredOpenCodeModel(["opencode/gpt-5"]), undefined);
     }),
   );
 

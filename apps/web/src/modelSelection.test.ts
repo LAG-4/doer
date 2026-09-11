@@ -811,6 +811,43 @@ describe("instance-scoped model selection", () => {
     });
   });
 
+  it("prefers the OpenCode free model over other providers for fresh installs", () => {
+    const opencode = provider({
+      provider: ProviderDriverKind.make("opencode"),
+      instanceId: "opencode",
+      models: ["openai/gpt-5", "opencode/big-pickle"],
+    });
+    const codex = provider({ instanceId: "codex", models: ["gpt-5.6-sol"] });
+    const settings = settingsWithProviderInstances();
+
+    expect(resolveAppModelSelectionState(settings, [codex, opencode])).toEqual(
+      createModelSelection(ProviderInstanceId.make("opencode"), "opencode/big-pickle"),
+    );
+  });
+
+  it("falls back to OpenCode when the stored instance is disabled", () => {
+    const opencode = provider({
+      provider: ProviderDriverKind.make("opencode"),
+      instanceId: "opencode",
+      models: ["opencode/big-pickle"],
+    });
+    const codex = {
+      ...provider({ instanceId: "codex", models: ["gpt-5.6-sol"] }),
+      enabled: false,
+    };
+    const settings: UnifiedSettings = {
+      ...settingsWithProviderInstances(),
+      textGenerationModelSelection: createModelSelection(
+        ProviderInstanceId.make("codex"),
+        "gpt-5.6-sol",
+      ),
+    };
+
+    expect(resolveAppModelSelectionState(settings, [codex, opencode])).toEqual(
+      createModelSelection(ProviderInstanceId.make("opencode"), "opencode/big-pickle"),
+    );
+  });
+
   it("does not select a provider that cannot generate system text", () => {
     const instanceId = ProviderInstanceId.make("antigravity");
     const unsupported = {

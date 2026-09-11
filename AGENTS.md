@@ -101,11 +101,12 @@ We need to be on the same page with terminology. When communicating, use this la
 - **turn** means one user-to-agent cycle, including follow-up work such as checkpointing.
 - **T3 home** means the base data directory. Runtime state normally lives below its userdata directory.
 
-## The three ways to hurt yourself
+## Ways to hurt yourself (and the developer's machine)
 
 1. **Killing by pattern.** Never `pkill -f`, `pgrep | kill`, or `kill` a PID you found by matching a name, path, or worktree string. Your own agent process has this worktree's path in its argv, and this machine runs several other dev servers at once. Kill only a PID you captured at spawn, or the owner of your port from `ss -H -ltnp` after confirming `/proc/<pid>/cwd` is your worktree.
 2. **Writing to the live install.** `~/.t3/userdata` is the developer's real T3 Code database, in use while you work. Reading it and copying from it are fine, and a good way to get real test data (see Test data). Never start a server against it, never open it read-write, never clean it up.
 3. **Baking in origins.** Never set `VITE_HTTP_URL` or `VITE_WS_URL` for dev. Dev is single-origin and Vite proxies `/api`, `/ws`, `/oauth`, and `/.well-known`. Setting them bakes localhost into the bundle and silently breaks every remote browser.
+4. **Detaching processes.** Never `nohup`, `&`-background, disown, or otherwise detach a process from the agent session. A detached test run or dev server keeps running unmonitored after the turn ends and can starve the developer's own running T3 Code, browser, and other apps — this once forced a full machine restart. Run everything attached with an explicit timeout, one heavy suite at a time. After any interrupted command, `ps`-check for strays from this worktree before doing anything else.
 
 ## Hit every surface
 
@@ -217,7 +218,7 @@ This fork ships a simplified build for non-developers. `main` must stay a pure
 mirror of upstream `pingdotgg/t3code` `main` so fixes flow in cleanly.
 
 - **Never commit to `main`.** Not directly, not via PR. The daily `Sync upstream
-  main` workflow fast-forwards it; any direct commit breaks the sync.
+main` workflow fast-forwards it; any direct commit breaks the sync.
 - **`lite` is the product branch (and repo default).** All custom work lives here.
 - **Feature work:** cut branches off `lite` (`feat/<name>`), PR them back into
   `lite`. Never base fork work on `main`, never target PRs at `main`.

@@ -606,7 +606,7 @@ function PairingForm({
 
 // ── Step 3: agents ───────────────────────────────────────────
 
-const PRIMARY_AGENT_DRIVERS = ["claudeAgent", "codex"] as const;
+const PRIMARY_AGENT_DRIVERS = ["opencode"] as const;
 type OnboardingAgentDriver = (typeof PRIMARY_AGENT_DRIVERS)[number];
 
 /** Setup values stay fixed while provider probes refresh the surrounding cards. */
@@ -620,11 +620,13 @@ interface AgentTerminalSession {
 }
 
 /**
- * Claude Code and Codex use live probe status. Install opens the built-in
+ * The agent card uses live probe status. Install opens the built-in
  * terminal inline with the vendor's standalone installer pre-typed. The update
  * RPC can't install a binary that isn't there yet (it infers the installer from
  * the installed binary's path), and the terminal also handles the interactive
- * login that follows.
+ * login that follows. Only OpenCode is shown: it is installed automatically by
+ * the server when missing and is the default for new threads. Other providers
+ * (Codex, Claude, …) stay opt-in under Settings → Providers.
  */
 function AgentsStep({
   environmentIds,
@@ -1164,7 +1166,7 @@ function ImportStep({
         <div className="flex flex-1 flex-col items-center justify-center gap-3 py-6">
           <Spinner className="size-5 text-muted-foreground" />
           <p className="text-center text-sm text-muted-foreground">
-            Looking for projects from Claude Code and Codex…
+            Looking for projects from your agents…
           </p>
         </div>
         <div className="flex justify-end">
@@ -1244,7 +1246,7 @@ function ImportStep({
                   </div>
                 ) : scanCandidates.length === 0 ? (
                   <p className="py-2 text-sm text-muted-foreground">
-                    No existing Claude Code or Codex projects found.
+                    No existing agent projects found.
                   </p>
                 ) : null}
                 {scan.data?.truncated ? (

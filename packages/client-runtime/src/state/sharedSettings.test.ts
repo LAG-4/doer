@@ -57,20 +57,32 @@ describe("splitSharedServerPatch", () => {
     DEFAULT_SERVER_SETTINGS.textGenerationModelSelection,
   ])("shares the text generation model and options, including reset (%j)", (selection) => {
     const patch = { textGenerationModelSelection: selection };
+    // Only OpenCode is enabled by default; simulate environments where the
+    // selection's provider was opted in so the shared selection applies.
+    const settings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      providerInstances: {
+        [selection.instanceId]: {
+          driver: ProviderDriverKind.make(selection.instanceId),
+          enabled: true,
+          config: {},
+        },
+      },
+    };
     expect(splitSharedServerPatch(patch)).toEqual({ sharedPatch: patch, localPatch: {} });
-    expect(pickSharedServerSettings({ ...DEFAULT_SERVER_SETTINGS, ...patch })).toMatchObject(patch);
+    expect(pickSharedServerSettings({ ...settings, ...patch })).toMatchObject(patch);
     const environment = {
       environmentId: boxId,
       label: "Remote Box",
       syncEligible: true,
       settings: {
-        ...DEFAULT_SERVER_SETTINGS,
+        ...settings,
         textGenerationModelSelection: { ...selection, model: "different-model" },
       },
     };
     const input = {
       primaryEnvironmentId: primaryId,
-      primarySettings: { ...DEFAULT_SERVER_SETTINGS, ...patch },
+      primarySettings: { ...settings, ...patch },
       environments: [environment],
     };
     expect(findSharedSettingsMismatches(input)).toEqual([
@@ -132,6 +144,13 @@ describe("filterSharedServerPatch", () => {
           claudeAgent: {
             driver: ProviderDriverKind.make("claudeAgent"),
             enabled: true,
+            config: {},
+          },
+          // The shared default selection targets OpenCode; keep it disabled
+          // here so the "disabled default provider" reset behavior applies.
+          opencode: {
+            driver: ProviderDriverKind.make("opencode"),
+            enabled: false,
             config: {},
           },
         },
