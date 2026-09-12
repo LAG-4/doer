@@ -247,6 +247,12 @@ export interface ProjectionSnapshotQueryShape {
     readonly limit?: number;
   }) => Effect.Effect<ReadonlyArray<Automation>, ProjectionRepositoryError>;
 
+  /** Read fired automation rows whose run may have finished, oldest firing first. */
+  readonly listSettleCandidateAutomations: (input: {
+    readonly firedBeforeIso: string;
+    readonly limit?: number;
+  }) => Effect.Effect<ReadonlyArray<Automation>, ProjectionRepositoryError>;
+
   /**
    * Read a single active thread detail snapshot by id.
    */

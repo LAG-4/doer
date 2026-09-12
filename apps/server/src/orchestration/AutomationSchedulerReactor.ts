@@ -11,7 +11,7 @@ import * as Schedule from "effect/Schedule";
 import type * as Scope from "effect/Scope";
 
 import { forkParked } from "../serverActivation.ts";
-import { planFiring } from "./AutomationSchedule.ts";
+import { isoMinusMs, planFiring } from "./AutomationSchedule.ts";
 import * as OrchestrationEngine from "./Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./Services/ProjectionSnapshotQuery.ts";
 
@@ -24,6 +24,12 @@ export class AutomationSchedulerReactor extends Context.Service<
 >()("t3/orchestration/AutomationSchedulerReactor") {}
 
 const DUE_SWEEP_LIMIT = 50;
+/**
+ * Grace between a scheduled firing and auto-settling its thread: the turn's
+ * checkpoint and diff work lands after the provider finishes, and settling
+ * must never race it.
+ */
+const SETTLE_GRACE_MS = 5 * 60_000;
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
@@ -63,6 +69,18 @@ export const make = Effect.gen(function* () {
     const turnCommandId = CommandId.make(
       `server:automation:${automation.id}:${planned.occurrenceKey}`,
     );
+    // Scheduled runs are unattended by contract: the thread runs on full
+    // access even if its mode drifted (the user flipped it, an import set
+    // it) since the last firing.
+    if (thread.value.runtimeMode !== "full-access") {
+      yield* engine.dispatch({
+        type: "thread.runtime-mode.set",
+        commandId: CommandId.make(`${turnCommandId}:mode`),
+        threadId: automation.threadId,
+        runtimeMode: "full-access",
+        createdAt: now,
+      });
+    }
     yield* engine.dispatch({
       type: "thread.turn.start",
       commandId: turnCommandId,
@@ -73,7 +91,7 @@ export const make = Effect.gen(function* () {
         text: automation.prompt,
         attachments: [],
       },
-      runtimeMode: thread.value.runtimeMode,
+      runtimeMode: "full-access",
       interactionMode: thread.value.interactionMode,
       createdAt: now,
     });
@@ -89,6 +107,62 @@ export const make = Effect.gen(function* () {
       outcome: planned.outcome,
     });
   });
+
+  /**
+   * Settle the thread of a firing whose run finished: a completed scheduled
+   * run parks itself instead of lingering in Active. Only the automation's
+   * own turn qualifies — a newer user turn (requested after the firing)
+   * skips settlement — and settle's own guards (session, approvals, queued
+   * turns) still apply inside the decider.
+   */
+  const settleAutomationThread = Effect.fn("AutomationSchedulerReactor.settleAutomationThread")(
+    function* (automation: Automation) {
+      if (automation.lastFiredAt === null) {
+        return;
+      }
+      const thread = yield* snapshots.getThreadShellById(automation.threadId);
+      if (Option.isNone(thread)) {
+        return;
+      }
+      const shell = thread.value;
+      if (shell.settledOverride === "settled") {
+        return;
+      }
+      if (shell.session?.status === "starting" || shell.session?.status === "running") {
+        return;
+      }
+      if (shell.hasPendingApprovals || shell.hasPendingUserInput) {
+        return;
+      }
+      const latestTurn = shell.latestTurn;
+      if (
+        latestTurn === null ||
+        latestTurn.state === "running" ||
+        latestTurn.requestedAt > automation.lastFiredAt
+      ) {
+        return;
+      }
+      yield* engine
+        .dispatch({
+          type: "thread.settle",
+          commandId: CommandId.make(
+            `server:automation:${automation.id}:settle:${automation.lastFiredAt}`,
+          ),
+          threadId: automation.threadId,
+        })
+        .pipe(
+          Effect.catchCause((cause) =>
+            Cause.hasInterruptsOnly(cause)
+              ? Effect.failCause(cause)
+              : Effect.logDebug("scheduled automation thread not settled", {
+                  automationId: automation.id,
+                  threadId: automation.threadId,
+                  cause: Cause.pretty(cause),
+                }),
+          ),
+        );
+    },
+  );
 
   const sweep = Effect.fn("AutomationSchedulerReactor.sweep")(function* () {
     const now = DateTime.formatIso(yield* DateTime.now);
@@ -110,6 +184,28 @@ export const make = Effect.gen(function* () {
         ),
       { concurrency: 4, discard: true },
     );
+    const settleCutoff = isoMinusMs(now, SETTLE_GRACE_MS);
+    if (settleCutoff !== null) {
+      const candidates = yield* snapshots.listSettleCandidateAutomations({
+        firedBeforeIso: settleCutoff,
+        limit: DUE_SWEEP_LIMIT,
+      });
+      yield* Effect.forEach(
+        candidates,
+        (automation) =>
+          settleAutomationThread(automation).pipe(
+            Effect.catchCause((cause) =>
+              Cause.hasInterruptsOnly(cause)
+                ? Effect.failCause(cause)
+                : Effect.logWarning("scheduled automation settle sweep skipped", {
+                    automationId: automation.id,
+                    cause: Cause.pretty(cause),
+                  }),
+            ),
+          ),
+        { concurrency: 4, discard: true },
+      );
+    }
   });
 
   const runSweep = () =>

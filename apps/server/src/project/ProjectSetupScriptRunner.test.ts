@@ -54,6 +54,7 @@ const makeProjectionSnapshotQueryLayer = (project: OrchestrationProject) =>
     getAutomationById: () => Effect.die("unused"),
     listVisibleAutomations: () => Effect.die("unused"),
     listDueAutomations: () => Effect.die("unused"),
+    listSettleCandidateAutomations: () => Effect.die("unused"),
   });
 
 const makeTerminalManagerLayer = (

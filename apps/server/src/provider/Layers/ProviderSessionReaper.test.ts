@@ -262,6 +262,7 @@ describe("ProviderSessionReaper", () => {
           getAutomationById: () => Effect.die("unused"),
           listVisibleAutomations: () => Effect.die("unused"),
           listDueAutomations: () => Effect.die("unused"),
+          listSettleCandidateAutomations: () => Effect.die("unused"),
         }),
       ),
       Layer.provideMerge(NodeServices.layer),

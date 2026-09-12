@@ -31,6 +31,7 @@ function insertAutomation(input: {
   readonly state: string;
   readonly nextFireAt: string | null;
   readonly deletedAt?: string | null;
+  readonly lastFiredAt?: string | null;
 }) {
   return Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
@@ -44,7 +45,7 @@ function insertAutomation(input: {
         ${input.automationId}, 'project-1', ${`thread-for-${input.automationId}`},
         ${`Automation ${input.automationId}`}, 'Summarize overnight activity.',
         '{"kind":"daily","time":"09:00","timezone":"UTC"}',
-        ${input.state}, ${input.nextFireAt}, NULL, '[]',
+        ${input.state}, ${input.nextFireAt}, ${input.lastFiredAt ?? null}, '[]',
         '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z', ${input.deletedAt ?? null}
       )
     `;
@@ -76,19 +77,32 @@ snapshotLayer("ProjectionSnapshotQuery automations", (it) => {
         nextFireAt: null,
         deletedAt: NOW,
       });
+      yield* insertAutomation({
+        automationId: "automation-fired",
+        state: "active",
+        nextFireAt: "2026-09-19T09:00:00.000Z",
+        lastFiredAt: "2026-09-18T09:05:00.000Z",
+      });
 
       // The command read model carries every row (the decider needs
       // tombstones for idempotent deletes).
       const commandModel = yield* snapshots.getCommandReadModel();
       assert.deepStrictEqual(
         (commandModel.automations ?? []).map((automation) => automation.id).sort(),
-        ["automation-due", "automation-future", "automation-gone", "automation-paused"],
+        [
+          "automation-due",
+          "automation-fired",
+          "automation-future",
+          "automation-gone",
+          "automation-paused",
+        ],
       );
 
       // The shell snapshot only carries live rows.
       const shell = yield* snapshots.getShellSnapshot();
       assert.deepStrictEqual((shell.automations ?? []).map((automation) => automation.id).sort(), [
         "automation-due",
+        "automation-fired",
         "automation-future",
         "automation-paused",
       ]);
@@ -108,6 +122,17 @@ snapshotLayer("ProjectionSnapshotQuery automations", (it) => {
         nowIso: "2026-09-01T00:00:00.000Z",
       });
       assert.deepStrictEqual(emptySweep, []);
+
+      // Settle candidates are fired rows past the grace cutoff.
+      const candidates = yield* snapshots.listSettleCandidateAutomations({ firedBeforeIso: NOW });
+      assert.deepStrictEqual(
+        candidates.map((automation) => automation.id),
+        ["automation-fired"],
+      );
+      const noCandidates = yield* snapshots.listSettleCandidateAutomations({
+        firedBeforeIso: "2026-09-01T00:00:00.000Z",
+      });
+      assert.deepStrictEqual(noCandidates, []);
 
       const byId = yield* snapshots.getAutomationById(AutomationId.make("automation-due"));
       assert.isTrue(Option.isSome(byId));

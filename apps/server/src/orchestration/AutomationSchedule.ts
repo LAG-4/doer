@@ -215,8 +215,7 @@ export interface PlannedAutomationFiring {
  * Decide what a scheduler sweep does with one stored row. Returns null when
  * the row is not due (`nextFireAt` null or in the future). A slot older than
  * the missed threshold (the server was off) fires once as `missed-then-ran`.
- */
-export function planFiring(input: {
+ */ export function planFiring(input: {
   readonly schedule: AutomationSchedule;
   readonly nextFireAt: string | null;
   readonly nowIso: string;
@@ -233,4 +232,11 @@ export function planFiring(input: {
     outcome: nowMs - slotMs > MISSED_THRESHOLD_MS ? "missed-then-ran" : "ran",
     nextFireAt: computeNextFireAt(schedule, nowIso),
   };
+}
+
+/** Shift an ISO instant back by milliseconds. Null for unparseable input. */
+export function isoMinusMs(iso: string, millis: number): string | null {
+  const parsed = Date.parse(iso);
+  if (!Number.isFinite(parsed)) return null;
+  return new Date(parsed - millis).toISOString();
 }

@@ -64,6 +64,14 @@ export const ListDueProjectionAutomationsInput = Schema.Struct({
 });
 export type ListDueProjectionAutomationsInput = typeof ListDueProjectionAutomationsInput.Type;
 
+export const ListSettleCandidateProjectionAutomationsInput = Schema.Struct({
+  /** Only rows whose last firing is at or before this instant. */
+  firedBeforeIso: IsoDateTime,
+  limit: Schema.Number,
+});
+export type ListSettleCandidateProjectionAutomationsInput =
+  typeof ListSettleCandidateProjectionAutomationsInput.Type;
+
 export const RecordProjectionAutomationRunInput = Schema.Struct({
   automationId: AutomationId,
   occurrenceKey: TrimmedNonEmptyString,
@@ -93,6 +101,13 @@ export class ProjectionAutomationRepository extends Context.Service<
     /** Active rows whose slot came due, oldest slot first. The scheduler sweep reads this. */
     readonly listDue: (
       input: ListDueProjectionAutomationsInput,
+    ) => Effect.Effect<ReadonlyArray<ProjectionAutomation>, ProjectionRepositoryError>;
+    /**
+     * Active rows with a recorded firing at or before the cutoff, oldest
+     * firing first. The scheduler sweep settles the ones whose run finished.
+     */
+    readonly listSettleCandidates: (
+      input: ListSettleCandidateProjectionAutomationsInput,
     ) => Effect.Effect<ReadonlyArray<ProjectionAutomation>, ProjectionRepositoryError>;
     readonly recordRun: (
       input: RecordProjectionAutomationRunInput,
@@ -251,6 +266,33 @@ export const make = Effect.gen(function* () {
     `,
   });
 
+  const listSettleCandidateProjectionAutomationRows = SqlSchema.findAll({
+    Request: ListSettleCandidateProjectionAutomationsInput,
+    Result: ProjectionAutomationDbRow,
+    execute: ({ firedBeforeIso, limit }) => sql`
+      SELECT
+        automation_id AS "automationId",
+        project_id AS "projectId",
+        thread_id AS "threadId",
+        title,
+        prompt,
+        schedule_json AS "schedule",
+        state,
+        next_fire_at AS "nextFireAt",
+        last_fired_at AS "lastFiredAt",
+        runs_json AS "runs",
+        created_at AS "createdAt",
+        updated_at AS "updatedAt",
+        deleted_at AS "deletedAt"
+      FROM projection_automations
+      WHERE state = 'active'
+        AND last_fired_at IS NOT NULL
+        AND last_fired_at <= ${firedBeforeIso}
+      ORDER BY last_fired_at ASC, automation_id ASC
+      LIMIT ${limit}
+    `,
+  });
+
   const recordProjectionAutomationRunRow = SqlSchema.void({
     Request: RecordProjectionAutomationRunInput,
     execute: (input) => sql`
@@ -296,6 +338,15 @@ export const make = Effect.gen(function* () {
       Effect.mapError(toPersistenceSqlError("ProjectionAutomationRepository.listDue:query")),
     );
 
+  const listSettleCandidates: ProjectionAutomationRepository["Service"]["listSettleCandidates"] = (
+    input,
+  ) =>
+    listSettleCandidateProjectionAutomationRows(input).pipe(
+      Effect.mapError(
+        toPersistenceSqlError("ProjectionAutomationRepository.listSettleCandidates:query"),
+      ),
+    );
+
   const recordRun: ProjectionAutomationRepository["Service"]["recordRun"] = (input) =>
     recordProjectionAutomationRunRow(input).pipe(
       Effect.mapError(toPersistenceSqlError("ProjectionAutomationRepository.recordRun:query")),
@@ -307,6 +358,7 @@ export const make = Effect.gen(function* () {
     listAll,
     listVisible,
     listDue,
+    listSettleCandidates,
     recordRun,
   } satisfies ProjectionAutomationRepository["Service"];
 });

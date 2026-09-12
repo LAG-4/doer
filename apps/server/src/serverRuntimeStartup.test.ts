@@ -185,6 +185,7 @@ it.effect("resolveAutoBootstrapWelcomeTargets returns existing project and threa
         getAutomationById: () => Effect.die("unused"),
         listVisibleAutomations: () => Effect.die("unused"),
         listDueAutomations: () => Effect.die("unused"),
+        listSettleCandidateAutomations: () => Effect.die("unused"),
       }),
       Effect.provideService(OrchestrationEngine.OrchestrationEngineService, {
         readEvents: () => Stream.empty,
@@ -275,6 +276,7 @@ it.effect.each([
         getAutomationById: () => Effect.die("unused"),
         listVisibleAutomations: () => Effect.die("unused"),
         listDueAutomations: () => Effect.die("unused"),
+        listSettleCandidateAutomations: () => Effect.die("unused"),
       }),
       Effect.provideService(OrchestrationEngine.OrchestrationEngineService, {
         readEvents: () => Stream.empty,
@@ -347,6 +349,7 @@ it.effect(
           getAutomationById: () => Effect.die("unused"),
           listVisibleAutomations: () => Effect.die("unused"),
           listDueAutomations: () => Effect.die("unused"),
+          listSettleCandidateAutomations: () => Effect.die("unused"),
         }),
         Effect.provideService(OrchestrationEngine.OrchestrationEngineService, {
           readEvents: () => Stream.empty,
@@ -412,6 +415,7 @@ it.effect("resolveAutoBootstrapWelcomeTargets preserves typed UUID generation fa
         getAutomationById: () => Effect.die("unused"),
         listVisibleAutomations: () => Effect.die("unused"),
         listDueAutomations: () => Effect.die("unused"),
+        listSettleCandidateAutomations: () => Effect.die("unused"),
       }),
       Effect.provideService(OrchestrationEngine.OrchestrationEngineService, {
         readEvents: () => Stream.empty,

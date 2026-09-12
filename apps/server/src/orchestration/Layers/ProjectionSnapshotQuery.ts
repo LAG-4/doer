@@ -3089,6 +3089,20 @@ pending_approval_requests AS (
       Effect.map((rows) => rows.map(mapAutomationRow)),
     );
 
+  const listSettleCandidateAutomations: ProjectionSnapshotQueryShape["listSettleCandidateAutomations"] =
+    (input) =>
+      projectionAutomationRepository
+        .listSettleCandidates({ firedBeforeIso: input.firedBeforeIso, limit: input.limit ?? 50 })
+        .pipe(
+          Effect.mapError(
+            toPersistenceSqlOrDecodeError(
+              "ProjectionSnapshotQuery.listSettleCandidateAutomations:query",
+              "ProjectionSnapshotQuery.listSettleCandidateAutomations:decodeRows",
+            ),
+          ),
+          Effect.map((rows) => rows.map(mapAutomationRow)),
+        );
+
   const getImportedAgentSessionSources: ProjectionSnapshotQueryShape["getImportedAgentSessionSources"] =
     Effect.fn("ProjectionSnapshotQuery.getImportedAgentSessionSources")(function* (projectId) {
       const rows = yield* listImportedAgentSessionSourceRows({ projectId }).pipe(
@@ -3771,6 +3785,7 @@ pending_approval_requests AS (
     getAutomationById,
     listVisibleAutomations,
     listDueAutomations,
+    listSettleCandidateAutomations,
     getThreadRuntimeContext,
     getTurnStartMessage,
     getThreadDetailById,

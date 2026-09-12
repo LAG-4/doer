@@ -65,6 +65,7 @@ const makeProjectionSnapshotQueryLayer = (importedWorkspaceRoots: ReadonlyArray<
     getAutomationById: () => Effect.die("unused"),
     listVisibleAutomations: () => Effect.die("unused"),
     listDueAutomations: () => Effect.die("unused"),
+    listSettleCandidateAutomations: () => Effect.die("unused"),
   });
 
 /**
