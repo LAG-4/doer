@@ -1,14 +1,14 @@
 {
-  "name": "t3",
+  "name": "doer-cli",
   "version": "0.0.40",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pingdotgg/t3code",
+    "url": "https://github.com/LAG-4/t3code",
     "directory": "apps/server"
   },
   "bin": {
-    "t3": "./dist/bin.mjs"
+    "doer": "./dist/bin.mjs"
   },
   "files": [
     "dist"

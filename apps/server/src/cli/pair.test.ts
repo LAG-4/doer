@@ -229,8 +229,8 @@ describe("t3 pair", () => {
         typeof error === "object" && error !== null && "cause" in error ? error.cause : error,
       );
       assert.include(rendered, "No running Doer server found.");
-      assert.include(rendered, "npx t3 serve");
-      assert.include(rendered, "npx t3 connect");
+      assert.include(rendered, "npx doer-cli serve");
+      assert.include(rendered, "npx doer-cli connect");
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
