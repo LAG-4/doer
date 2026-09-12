@@ -80,6 +80,7 @@ function makeAutomation(id: string, projectId: ProjectId = PROJECT_ID): Automati
     title: `Automation ${id}`,
     prompt: "Do the thing.",
     schedule: { kind: "daily", time: "09:00", timezone: "UTC" },
+    dedicatedThread: true,
     state: "active",
     nextFireAt: "2026-09-19T09:00:00.000Z",
     lastFiredAt: null,
@@ -174,7 +175,7 @@ describe("scheduled tasks toolkit handlers", () => {
     }),
   );
 
-  it.effect("creates a full-access thread plus the automation", () =>
+  it.effect("creates inside the calling thread by default, with no extra chat", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness();
       const summary = yield* harness.call("create_scheduled_task", {
@@ -185,19 +186,45 @@ describe("scheduled tasks toolkit handlers", () => {
       expect(summary.title).toBe("Morning brief");
       expect(summary.state).toBe("active");
       expect(summary.projectId).toBe(PROJECT_ID);
+      // The run lives in the chat that asked: no thread.create dispatched.
+      expect(summary.threadId).toBe(THREAD_ID);
       const dispatched = yield* Ref.get(harness.commands);
-      assertTypes(dispatched);
-      function assertTypes(commands: ReadonlyArray<OrchestrationCommand>) {
-        expect(commands.map((command) => command.type)).toEqual([
-          "thread.create",
-          "automation.create",
-        ]);
-        const create = commands[0];
-        if (create?.type === "thread.create") {
-          expect(create.runtimeMode).toBe("full-access");
-        } else {
-          expect.unreachable("expected thread.create first");
-        }
+      expect(dispatched.map((command) => command.type)).toEqual(["automation.create"]);
+      const create = dispatched[0];
+      if (create?.type === "automation.create") {
+        expect(create.dedicatedThread).toBe(false);
+      } else {
+        expect.unreachable("expected automation.create");
+      }
+    }),
+  );
+
+  it.effect("mints a full-access thread when asked for a new one", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      const summary = yield* harness.call("create_scheduled_task", {
+        title: "Morning brief",
+        prompt: "Summarize overnight activity.",
+        schedule: { kind: "daily", time: "09:00", timezone: "UTC" },
+        thread: "new",
+      });
+      expect(summary.threadId).not.toBe(THREAD_ID);
+      const dispatched = yield* Ref.get(harness.commands);
+      expect(dispatched.map((command) => command.type)).toEqual([
+        "thread.create",
+        "automation.create",
+      ]);
+      const create = dispatched[0];
+      if (create?.type === "thread.create") {
+        expect(create.runtimeMode).toBe("full-access");
+      } else {
+        expect.unreachable("expected thread.create first");
+      }
+      const automationCreate = dispatched[1];
+      if (automationCreate?.type === "automation.create") {
+        expect(automationCreate.dedicatedThread).toBe(true);
+      } else {
+        expect.unreachable("expected automation.create second");
       }
     }),
   );

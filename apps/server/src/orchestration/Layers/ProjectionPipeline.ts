@@ -1924,6 +1924,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             prompt: event.payload.prompt,
             schedule: event.payload.schedule,
             state: "active",
+            dedicatedThread: event.payload.dedicatedThread,
             nextFireAt: event.payload.nextFireAt,
             lastFiredAt: null,
             runs: [],

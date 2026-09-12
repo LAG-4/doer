@@ -69,10 +69,10 @@ export const make = Effect.gen(function* () {
     const turnCommandId = CommandId.make(
       `server:automation:${automation.id}:${planned.occurrenceKey}`,
     );
-    // Scheduled runs are unattended by contract: the thread runs on full
-    // access even if its mode drifted (the user flipped it, an import set
-    // it) since the last firing.
-    if (thread.value.runtimeMode !== "full-access") {
+    // Scheduled runs are unattended by contract, but only on threads minted
+    // for the automation: a shared chat keeps whatever mode its user chose,
+    // and the run inherits it (stalling on approvals until they answer).
+    if (automation.dedicatedThread !== false && thread.value.runtimeMode !== "full-access") {
       yield* engine.dispatch({
         type: "thread.runtime-mode.set",
         commandId: CommandId.make(`${turnCommandId}:mode`),
@@ -110,14 +110,15 @@ export const make = Effect.gen(function* () {
 
   /**
    * Settle the thread of a firing whose run finished: a completed scheduled
-   * run parks itself instead of lingering in Active. Only the automation's
-   * own turn qualifies — a newer user turn (requested after the firing)
-   * skips settlement — and settle's own guards (session, approvals, queued
-   * turns) still apply inside the decider.
+   * run parks its dedicated thread instead of lingering in Active. Shared
+   * chats are never parked. Only the automation's own turn qualifies — a
+   * newer user turn (requested after the firing) skips settlement — and
+   * settle's own guards (session, approvals, queued turns) still apply
+   * inside the decider.
    */
   const settleAutomationThread = Effect.fn("AutomationSchedulerReactor.settleAutomationThread")(
     function* (automation: Automation) {
-      if (automation.lastFiredAt === null) {
+      if (automation.lastFiredAt === null || automation.dedicatedThread === false) {
         return;
       }
       const thread = yield* snapshots.getThreadShellById(automation.threadId);

@@ -440,6 +440,7 @@ function mapAutomationRow(row: ProjectionAutomations.ProjectionAutomation): Auto
     prompt: row.prompt,
     schedule: row.schedule,
     state: row.state,
+    dedicatedThread: row.dedicatedThread,
     nextFireAt: row.nextFireAt,
     lastFiredAt: row.lastFiredAt,
     runs: [...row.runs],

@@ -10,6 +10,7 @@ import {
   TrimmedNonEmptyString,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
+import * as SchemaTransformation from "effect/SchemaTransformation";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -28,6 +29,7 @@ export const ProjectionAutomation = Schema.Struct({
   prompt: TrimmedNonEmptyString,
   schedule: AutomationSchedule,
   state: AutomationState,
+  dedicatedThread: Schema.Boolean,
   nextFireAt: Schema.NullOr(IsoDateTime),
   lastFiredAt: Schema.NullOr(IsoDateTime),
   runs: Schema.Array(AutomationRun),
@@ -37,6 +39,16 @@ export const ProjectionAutomation = Schema.Struct({
 });
 export type ProjectionAutomation = typeof ProjectionAutomation.Type;
 
+const IntToBoolean = Schema.Int.pipe(
+  Schema.decodeTo(
+    Schema.Boolean,
+    SchemaTransformation.transformOrFail({
+      decode: (value) => Effect.succeed(value !== 0),
+      encode: (value) => Effect.succeed(value ? 1 : 0),
+    }),
+  ),
+);
+
 const ProjectionAutomationDbRow = Schema.Struct({
   automationId: AutomationId,
   projectId: ProjectId,
@@ -45,6 +57,7 @@ const ProjectionAutomationDbRow = Schema.Struct({
   prompt: TrimmedNonEmptyString,
   schedule: Schema.fromJsonString(AutomationSchedule),
   state: AutomationState,
+  dedicatedThread: IntToBoolean,
   nextFireAt: Schema.NullOr(IsoDateTime),
   lastFiredAt: Schema.NullOr(IsoDateTime),
   runs: Schema.fromJsonString(Schema.Array(AutomationRun)),
@@ -130,6 +143,7 @@ export const make = Effect.gen(function* () {
         prompt,
         schedule_json,
         state,
+        dedicated_thread,
         next_fire_at,
         last_fired_at,
         runs_json,
@@ -145,6 +159,7 @@ export const make = Effect.gen(function* () {
         ${row.prompt},
         ${JSON.stringify(row.schedule)},
         ${row.state},
+        ${row.dedicatedThread ? 1 : 0},
         ${row.nextFireAt},
         ${row.lastFiredAt},
         ${JSON.stringify(row.runs)},
@@ -160,6 +175,7 @@ export const make = Effect.gen(function* () {
         prompt = excluded.prompt,
         schedule_json = excluded.schedule_json,
         state = excluded.state,
+        dedicated_thread = excluded.dedicated_thread,
         next_fire_at = excluded.next_fire_at,
         last_fired_at = excluded.last_fired_at,
         runs_json = excluded.runs_json,
@@ -181,6 +197,7 @@ export const make = Effect.gen(function* () {
         prompt,
         schedule_json AS "schedule",
         state,
+        dedicated_thread AS "dedicatedThread",
         next_fire_at AS "nextFireAt",
         last_fired_at AS "lastFiredAt",
         runs_json AS "runs",
@@ -204,6 +221,7 @@ export const make = Effect.gen(function* () {
         prompt,
         schedule_json AS "schedule",
         state,
+        dedicated_thread AS "dedicatedThread",
         next_fire_at AS "nextFireAt",
         last_fired_at AS "lastFiredAt",
         runs_json AS "runs",
@@ -227,6 +245,7 @@ export const make = Effect.gen(function* () {
         prompt,
         schedule_json AS "schedule",
         state,
+        dedicated_thread AS "dedicatedThread",
         next_fire_at AS "nextFireAt",
         last_fired_at AS "lastFiredAt",
         runs_json AS "runs",
@@ -251,6 +270,7 @@ export const make = Effect.gen(function* () {
         prompt,
         schedule_json AS "schedule",
         state,
+        dedicated_thread AS "dedicatedThread",
         next_fire_at AS "nextFireAt",
         last_fired_at AS "lastFiredAt",
         runs_json AS "runs",
@@ -278,6 +298,7 @@ export const make = Effect.gen(function* () {
         prompt,
         schedule_json AS "schedule",
         state,
+        dedicated_thread AS "dedicatedThread",
         next_fire_at AS "nextFireAt",
         last_fired_at AS "lastFiredAt",
         runs_json AS "runs",

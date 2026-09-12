@@ -60,6 +60,7 @@ function makeAutomation(overrides: Partial<Automation> = {}): Automation {
     title: "Morning brief",
     prompt: "Summarize overnight activity.",
     schedule: ONCE_FUTURE,
+    dedicatedThread: true,
     state: "active",
     nextFireAt: FUTURE_FIRE,
     lastFiredAt: null,
@@ -116,6 +117,7 @@ it.layer(NodeServices.layer)("automation decider", (it) => {
           title: "Morning brief",
           prompt: "Summarize overnight activity.",
           schedule: ONCE_FUTURE,
+          dedicatedThread: true,
           createdAt: NOW,
         },
         readModel: makeReadModel({}),
@@ -179,6 +181,7 @@ it.layer(NodeServices.layer)("automation decider", (it) => {
         title: "Morning brief",
         prompt: "Summarize overnight activity.",
         schedule: ONCE_FUTURE,
+        dedicatedThread: true,
         createdAt: NOW,
       };
       const unknownProject = yield* decideOrchestrationCommand({

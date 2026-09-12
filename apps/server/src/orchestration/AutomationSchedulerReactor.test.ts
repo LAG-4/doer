@@ -41,6 +41,7 @@ function makeAutomation(id: string, overrides: Partial<Automation> = {}): Automa
     title: `Automation ${id}`,
     prompt: `Prompt for ${id}.`,
     schedule: { kind: "daily", time: "09:00", timezone: "UTC" },
+    dedicatedThread: true,
     state: "active",
     nextFireAt: SLOT,
     lastFiredAt: null,
@@ -411,6 +412,50 @@ describe("AutomationSchedulerReactor", () => {
               `server:automation:automation-settle:settle:${lastFiredAt}`,
             );
           }
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
+
+  it.effect("leaves shared chats alone: no mode enforcement, no settling", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(Date.parse(NOW));
+        const lastFiredAt = "2026-09-18T11:40:00.000Z";
+        const automation = makeAutomation("automation-shared", {
+          nextFireAt: FRESH_SLOT,
+          lastFiredAt,
+          dedicatedThread: false,
+        });
+        const fixture = yield* makeHarness({
+          dueRows: [automation],
+          settleRows: [automation],
+          threadShellsById: new Map([
+            [
+              "thread-for-automation-shared",
+              makeThreadShell("thread-for-automation-shared", {
+                runtimeMode: "approval-required",
+                latestTurn: {
+                  turnId: TurnId.make("turn-1"),
+                  state: "completed" as const,
+                  requestedAt: lastFiredAt,
+                  startedAt: lastFiredAt,
+                  completedAt: "2026-09-18T11:45:00.000Z",
+                  assistantMessageId: null,
+                },
+              }),
+            ],
+          ]),
+        });
+        yield* Effect.gen(function* () {
+          const reactor = yield* AutomationSchedulerReactor.AutomationSchedulerReactor;
+          yield* startHarness(reactor, fixture.activation, fixture.sweepReads);
+          // Fires the turn and records the run, but never flips the user's
+          // mode and never parks their chat.
+          assert.deepStrictEqual(
+            (yield* Ref.get(fixture.commands)).map((command) => command.type),
+            ["thread.turn.start", "automation.fired"],
+          );
         }).pipe(Effect.provide(fixture.layer));
       }),
     ),

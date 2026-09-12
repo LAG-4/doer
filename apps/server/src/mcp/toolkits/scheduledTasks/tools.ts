@@ -170,6 +170,12 @@ const CreateScheduledTaskInput = Schema.Struct({
         "Project the task runs in. Defaults to this thread's project; pass another id only to schedule explicitly elsewhere on this machine.",
     }),
   ),
+  thread: Schema.optional(
+    Schema.Literals(["current", "new"]).annotate({
+      description:
+        "Which thread the runs live in. 'current' (default) reuses this thread: no extra chat is created and the scheduled prompts appear right here. 'new' mints a dedicated thread for the task, which runs on full access and settles itself after each run.",
+    }),
+  ),
 });
 
 const UpdateScheduledTaskInput = Schema.Struct({
@@ -203,7 +209,7 @@ export type ScheduledTaskSummary = typeof ScheduledTaskSummary.Type;
 
 const CreateScheduledTaskTool = Tool.make("create_scheduled_task", {
   description:
-    "Schedule an agent run for later: once, daily, or weekly. The prompt runs unattended on full access in the task's own thread, and a finished run settles itself. Prefer this over telling the user to come back later. Only use it when the user asks for repetition ('every day', 'remind me', 'keep doing this'), or after offering ('want me to schedule this daily?') and hearing yes. Never invent schedules the user did not ask for or agree to.",
+    "Schedule an agent run for later: once, daily, or weekly. By default the prompt runs inside THIS thread on its next firings — no extra chat is created. Pass thread:'new' for a dedicated thread instead, which runs on full access and settles itself after each run. Prefer this over telling the user to come back later. Only use it when the user asks for repetition ('every day', 'remind me', 'keep doing this'), or after offering ('want me to schedule this daily?') and hearing yes. Never invent schedules the user did not ask for or agree to.",
   parameters: CreateScheduledTaskInput,
   success: ScheduledTaskSummary,
   failure: ScheduledTaskToolError,

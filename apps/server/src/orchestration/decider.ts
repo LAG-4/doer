@@ -1334,6 +1334,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           title: command.title,
           prompt: command.prompt,
           schedule: command.schedule,
+          dedicatedThread: command.dedicatedThread ?? true,
           nextFireAt,
           createdAt: command.createdAt,
           updatedAt: occurredAt,

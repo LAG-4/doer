@@ -1077,6 +1077,7 @@ export function projectEvent(
             title: payload.title,
             prompt: payload.prompt,
             schedule: payload.schedule,
+            dedicatedThread: payload.dedicatedThread,
             state: "active" as const,
             nextFireAt: payload.nextFireAt,
             lastFiredAt: null,

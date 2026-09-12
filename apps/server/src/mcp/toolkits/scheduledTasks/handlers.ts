@@ -123,23 +123,37 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const { thread } = yield* requireScopeThread(ScheduledTaskCreateFailedError);
         const projectId = input.projectId ?? thread.projectId;
+        const useCurrentThread = (input.thread ?? "current") === "current";
+        if (
+          useCurrentThread &&
+          input.projectId !== undefined &&
+          input.projectId !== thread.projectId
+        ) {
+          return yield* new ScheduledTaskCreateFailedError({
+            cause: new Error(
+              `This thread lives in project '${thread.projectId}', not '${input.projectId}'. Omit projectId to schedule in this thread, or pass thread:'new' for another project.`,
+            ),
+          });
+        }
         const occurredAt = yield* nowIso;
-        const threadId = yield* newId(ThreadId.make);
-        yield* engine
-          .dispatch({
-            type: "thread.create",
-            commandId: yield* commandId("thread", threadId),
-            threadId,
-            projectId,
-            title: input.title,
-            modelSelection: thread.modelSelection,
-            runtimeMode: "full-access",
-            interactionMode: thread.interactionMode,
-            branch: null,
-            worktreePath: null,
-            createdAt: occurredAt,
-          })
-          .pipe(Effect.catchCause(dispatchFailure(ScheduledTaskCreateFailedError)));
+        const threadId = useCurrentThread ? thread.id : yield* newId(ThreadId.make);
+        if (!useCurrentThread) {
+          yield* engine
+            .dispatch({
+              type: "thread.create",
+              commandId: yield* commandId("thread", threadId),
+              threadId,
+              projectId,
+              title: input.title,
+              modelSelection: thread.modelSelection,
+              runtimeMode: "full-access",
+              interactionMode: thread.interactionMode,
+              branch: null,
+              worktreePath: null,
+              createdAt: occurredAt,
+            })
+            .pipe(Effect.catchCause(dispatchFailure(ScheduledTaskCreateFailedError)));
+        }
         const automationId = yield* newId(AutomationId.make);
         const nextFireAt = computeNextFireAt(input.schedule as AutomationSchedule, occurredAt);
         yield* engine
@@ -152,6 +166,7 @@ const make = Effect.gen(function* () {
             title: input.title,
             prompt: input.prompt,
             schedule: input.schedule as AutomationSchedule,
+            dedicatedThread: !useCurrentThread,
             createdAt: occurredAt,
           })
           .pipe(Effect.catchCause(dispatchFailure(ScheduledTaskCreateFailedError)));

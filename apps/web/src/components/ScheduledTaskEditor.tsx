@@ -367,6 +367,7 @@ function ScheduledTaskEditorForm(props: {
           title: trimmedTitle,
           prompt: trimmedPrompt,
           schedule,
+          dedicatedThread: true,
         },
       });
       if (automationResult._tag === "Failure") {

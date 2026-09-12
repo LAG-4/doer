@@ -21,6 +21,7 @@ function makeAutomation(id: string): Automation {
     prompt: "Summarize overnight activity.",
     schedule: { kind: "daily", time: "09:00", timezone: "UTC" },
     state: "active",
+    dedicatedThread: true,
     nextFireAt: "2026-09-19T09:00:00.000Z",
     lastFiredAt: null,
     runs: [],

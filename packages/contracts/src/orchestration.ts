@@ -526,6 +526,13 @@ export const Automation = Schema.Struct({
   prompt: TrimmedNonEmptyString.check(Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_INPUT_CHARS)),
   schedule: AutomationSchedule,
   state: AutomationState,
+  /**
+   * Whether the thread was minted for this automation (true) or is a shared
+   * chat the automation runs inside (false, e.g. agent-scheduled from a
+   * conversation). The scheduler only enforces full access and auto-settles
+   * dedicated threads — it never reparents or parks the user's own chat.
+   */
+  dedicatedThread: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /** Next scheduled firing, null when nothing remains (fired once, paused, or completed). */
   nextFireAt: Schema.NullOr(IsoDateTime),
   lastFiredAt: Schema.NullOr(IsoDateTime),
@@ -1401,6 +1408,9 @@ const AutomationCreateCommand = Schema.Struct({
   title: TrimmedNonEmptyString,
   prompt: TrimmedNonEmptyString.check(Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_INPUT_CHARS)),
   schedule: AutomationSchedule,
+  // Absent means a dedicated thread (the UI always sends it; the agent
+  // tools send false when scheduling inside the calling thread).
+  dedicatedThread: Schema.optional(Schema.Boolean),
   createdAt: IsoDateTime,
 });
 
@@ -1981,6 +1991,7 @@ export const AutomationCreatedPayload = Schema.Struct({
   title: TrimmedNonEmptyString,
   prompt: TrimmedNonEmptyString,
   schedule: AutomationSchedule,
+  dedicatedThread: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   nextFireAt: Schema.NullOr(IsoDateTime),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
