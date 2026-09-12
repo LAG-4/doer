@@ -1,7 +1,7 @@
 /**
  * OpenCodeInstall — locating and bootstrapping the OpenCode CLI.
  *
- * T3 Code shells out to an `opencode` binary for version probes, the local
+ * Doer shells out to an `opencode` binary for version probes, the local
  * server, and CLI inventory. A bare `"opencode"` resolves through PATH, which
  * GUI-launched servers (desktop app, launchd/systemd units) often see
  * sparsely — even when the user installed OpenCode via the official script
@@ -169,7 +169,7 @@ export function openCodeManagedPackageJson(): string {
     {
       name: "t3-managed-opencode",
       private: true,
-      description: "T3 Code-managed OpenCode CLI install. Safe to delete; it reinstalls on demand.",
+      description: "Doer-managed OpenCode CLI install. Safe to delete; it reinstalls on demand.",
     },
     null,
     2,

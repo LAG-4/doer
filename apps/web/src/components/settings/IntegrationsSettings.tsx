@@ -1,6 +1,6 @@
 import { DeviceHostsSettings } from "./DeviceHostsSettings";
 /**
- * Integrations settings - preferences for surfaces T3 Code embeds rather than
+ * Integrations settings - preferences for surfaces Doer embeds rather than
  * owns. Browser is the first section: the defaults a preview tab opens at,
  * applied to both hand-opened tabs and agent `preview_open` calls that don't
  * state their own size.
@@ -519,7 +519,7 @@ function BrowserRecordingFrameRateSetting({ disabled }: { readonly disabled: boo
 
 const LINK_TARGET_LABELS: Readonly<Record<BrowserLinkTarget, string>> = {
   system: "Your default browser",
-  app: "T3 Code",
+  app: "Doer",
 };
 
 function BrowserLinkTargetSetting({ disabled }: { readonly disabled: boolean }) {

@@ -236,3 +236,11 @@ main` workflow fast-forwards it; any direct commit breaks the sync.
   fast-forward", someone committed to fork `main`. Move those commits onto
   `lite` (`git cherry-pick`), then reset the mirror:
   `git fetch upstream && git checkout main && git reset --hard upstream/main && git push --force-with-lease origin main`.
+- **Never touch the developer's running apps.** This machine runs the
+  developer's real T3 Code (and other apps) alongside agent work. Never
+  `kill`, `pkill`, `killall`, or stop any process you did not spawn yourself —
+  not even by exact PID, since PIDs get reused. Never start dev servers,
+  builds, test runs, or bulk file rewrites without explicit permission: they
+  spike CPU/RAM and file watchers in running apps rebuild off your writes.
+  Default to read-only (`rg`, `git diff`, `Read`); ask before anything that
+  consumes significant resources.
