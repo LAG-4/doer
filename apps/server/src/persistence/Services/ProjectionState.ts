@@ -68,4 +68,4 @@ export interface ProjectionStateRepositoryShape {
 export class ProjectionStateRepository extends Context.Service<
   ProjectionStateRepository,
   ProjectionStateRepositoryShape
->()("doer-cli/persistence/Services/ProjectionState/ProjectionStateRepository") {}
+>()("@lag4/doer-cli/persistence/Services/ProjectionState/ProjectionStateRepository") {}

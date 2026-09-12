@@ -126,7 +126,7 @@ export class ProjectionAutomationRepository extends Context.Service<
       input: RecordProjectionAutomationRunInput,
     ) => Effect.Effect<void, ProjectionRepositoryError>;
   }
->()("doer-cli/persistence/ProjectionAutomations/ProjectionAutomationRepository") {}
+>()("@lag4/doer-cli/persistence/ProjectionAutomations/ProjectionAutomationRepository") {}
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {

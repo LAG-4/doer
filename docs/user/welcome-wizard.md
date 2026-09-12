@@ -13,12 +13,12 @@ browser.
 You can add more computers before continuing:
 
 - **T3 Connect** connects computers that are signed in to your account. Run
-  `npx doer-cli connect` on each computer you want to add, then start T3 Code or run
-  `npx doer-cli serve` so the computer stays available.
+  `npx @lag4/doer-cli connect` on each computer you want to add, then start T3 Code or run
+  `npx @lag4/doer-cli serve` so the computer stays available.
 - **Add a computer** connects directly to a server on your network or tailnet.
-  Start the server with `npx doer-cli serve`, then run `npx doer-cli pair --tailscale` and
-  paste the pairing link. You can also run `npx doer-cli serve --host <address>` and
-  use `npx doer-cli pair` when the server is already reachable on your network.
+  Start the server with `npx @lag4/doer-cli serve`, then run `npx @lag4/doer-cli pair --tailscale` and
+  paste the pairing link. You can also run `npx @lag4/doer-cli serve --host <address>` and
+  use `npx @lag4/doer-cli pair` when the server is already reachable on your network.
 
 Saved computers and computers discovered through T3 Connect are selected by
 default. Uncheck any you do not want to set up; this does not disconnect them.

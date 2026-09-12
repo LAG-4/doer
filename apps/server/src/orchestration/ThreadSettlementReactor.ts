@@ -30,7 +30,7 @@ export class ThreadSettlementReactor extends Context.Service<
     readonly start: () => Effect.Effect<void, never, Scope.Scope>;
     readonly drain: Effect.Effect<void>;
   }
->()("doer-cli/orchestration/ThreadSettlementReactor") {}
+>()("@lag4/doer-cli/orchestration/ThreadSettlementReactor") {}
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {

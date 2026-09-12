@@ -70,5 +70,5 @@ export class OrchestrationCommandReceiptRepository extends Context.Service<
   OrchestrationCommandReceiptRepository,
   OrchestrationCommandReceiptRepositoryShape
 >()(
-  "doer-cli/persistence/Services/OrchestrationCommandReceipts/OrchestrationCommandReceiptRepository",
+  "@lag4/doer-cli/persistence/Services/OrchestrationCommandReceipts/OrchestrationCommandReceiptRepository",
 ) {}

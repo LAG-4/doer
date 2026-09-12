@@ -378,7 +378,7 @@ jobs:
           cache: true
           run-install: |
             args:
-              - --filter=doer-cli...
+              - --filter=@lag4/doer-cli...
 
       - name: Build node-pty linux-x64 prebuild
         shell: bash
@@ -500,7 +500,7 @@ jobs:
       - name: Install desktop dependencies
         env:
           pnpm_config_cache_dir: ${{ runner.temp }}/pnpm-metadata
-        run: vp install --filter=@t3tools/desktop... --filter=doer-cli... --filter=@t3tools/scripts...
+        run: vp install --filter=@t3tools/desktop... --filter=@lag4/doer-cli... --filter=@t3tools/scripts...
 
       - name: Cache resource monitor
         id: resource_monitor_cache
@@ -831,7 +831,7 @@ jobs:
           cache: true
           run-install: |
             args:
-              - --filter=doer-cli...
+              - --filter=@lag4/doer-cli...
               - --filter=@t3tools/web...
               - --filter=@t3tools/scripts...
 
@@ -858,7 +858,7 @@ jobs:
       # The doer-cli build task depends on @t3tools/web#build, so the web client is
       # built (once) as part of this step.
       - name: Build CLI package
-        run: vp run --filter doer-cli build
+        run: vp run --filter @lag4/doer-cli build
 
       - name: Download resource monitors
         uses: actions/download-artifact@v8

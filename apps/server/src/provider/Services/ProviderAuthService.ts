@@ -56,4 +56,4 @@ export interface ProviderAuthServiceShape {
 export class ProviderAuthService extends Context.Service<
   ProviderAuthService,
   ProviderAuthServiceShape
->()("doer-cli/provider/Services/ProviderAuthService") {}
+>()("@lag4/doer-cli/provider/Services/ProviderAuthService") {}

@@ -51,11 +51,11 @@ Diagnosis grounded in source beats guessing.
 First establish the shape of the install, because the same symptom points at
 different code depending on it:
 
-- How is Doer running on this machine: `npx doer-cli serve` in a terminal, the
+- How is Doer running on this machine: `npx @lag4/doer-cli serve` in a terminal, the
   background service, or the desktop app?
 - Which surface is the user connecting from: the desktop app against a local
   server, the desktop app against a remote server, or a terminal
-  (`npx doer-cli`)?
+  (`npx @lag4/doer-cli`)?
 
 Then work from evidence, not assumption. In rough order of value:
 

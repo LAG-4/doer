@@ -8,7 +8,7 @@ How Doer ships to users, for free. Agent-oriented rules live in
 - **Desktop app** (Windows x64, Linux x64, macOS arm64 + x64, unsigned) from
   [GitHub Releases](https://github.com/LAG-4/t3code/releases), with in-app
   auto-update. Stable channel tracks finished releases, Nightly tracks previews.
-- **Terminal**: `npx doer-cli@latest` (stable) or `npx doer-cli@nightly`
+- **Terminal**: `npx @lag4/doer-cli@latest` (stable) or `npx @lag4/doer-cli@nightly`
   (preview). The package also installs a short `doer` command. Same backend,
   no desktop app needed.
 - **Website**: https://doer.lagaryan.click/download always shows the newest
@@ -17,8 +17,8 @@ How Doer ships to users, for free. Agent-oriented rules live in
 ## One-time setup (all free)
 
 1. **npm token**: on npmjs.com create a granular access token with publish
-   access for the `doer-cli` package (scope it to "All packages" until the
-   first publish creates `doer-cli`, then narrow it). Add it as the
+   access for the `@lag4/doer-cli` package (scope it to "All packages" until the
+   first publish creates `@lag4/doer-cli`, then narrow it). Add it as the
    `NPM_TOKEN` secret in the GitHub repo (Settings → Secrets → Actions).
    Without it, `publish_cli` fails and no GitHub Release ships.
 2. **Vercel**: the marketing site deploys from the repo (production tracks
@@ -39,11 +39,11 @@ How Doer ships to users, for free. Agent-oriented rules live in
 
 ## Identity (do not change casually)
 
-- npm package `doer-cli`, binaries `doer` + `doer-cli` (both must exist or
-  `npx doer-cli` breaks).
+- npm package `@lag4/doer-cli`, binaries `doer` + `doer-cli` (both must exist or
+  `npx @lag4/doer-cli` breaks).
 - Desktop app ID `click.lagaryan.doer`, URL schemes `doer://` / `doer-dev://`,
   artifacts `Doer-<version>-<arch>.*` (the site matches on the arch suffixes).
-- Effect service IDs follow the package name (`doer-cli/...` in `apps/server`);
+- Effect service IDs follow the package name (`@lag4/doer-cli/...` in `apps/server`);
   the `deterministicKeys` lint enforces this and the release gate runs it.
 - Triage prompt and `.github/triage/PLAYBOOK.md` must stay byte-identical
   (there is a test); both point at `LAG-4/t3code` on branch `lite`.

@@ -17,7 +17,7 @@ export class HostPowerMonitor extends Context.Service<
     readonly report: (snapshot: HostPowerSnapshot) => Effect.Effect<void>;
     readonly streamChanges: Stream.Stream<HostPowerSnapshot>;
   }
->()("doer-cli/background/HostPowerMonitor") {}
+>()("@lag4/doer-cli/background/HostPowerMonitor") {}
 
 const makeUnknownSnapshot = (
   source: HostPowerSnapshot["source"],

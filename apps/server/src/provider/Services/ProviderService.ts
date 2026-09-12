@@ -140,5 +140,5 @@ export interface ProviderServiceShape {
  * ProviderService - Service tag for provider orchestration.
  */
 export class ProviderService extends Context.Service<ProviderService, ProviderServiceShape>()(
-  "doer-cli/provider/Services/ProviderService",
+  "@lag4/doer-cli/provider/Services/ProviderService",
 ) {}

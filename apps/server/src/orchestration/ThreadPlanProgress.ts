@@ -40,7 +40,7 @@ export class ThreadPlanProgressService extends Context.Service<
 
     readonly getThreadPlanProgress: (threadId: string) => ThreadPlanProgress | null;
   }
->()("doer-cli/orchestration/ThreadPlanProgress/ThreadPlanProgressService") {}
+>()("@lag4/doer-cli/orchestration/ThreadPlanProgress/ThreadPlanProgressService") {}
 
 export function make(): ThreadPlanProgressService["Service"] {
   const progressByThreadId = new Map<string, ThreadPlanProgress>();

@@ -62,5 +62,5 @@ export interface RuntimeReceiptBusShape {
 }
 
 export class RuntimeReceiptBus extends Context.Service<RuntimeReceiptBus, RuntimeReceiptBusShape>()(
-  "doer-cli/orchestration/Services/RuntimeReceiptBus",
+  "@lag4/doer-cli/orchestration/Services/RuntimeReceiptBus",
 ) {}

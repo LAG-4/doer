@@ -12,12 +12,12 @@ Connections**, sign in, and enable **T3 Connect** for that environment.
 For a command-line host, run:
 
 ```bash
-npx doer-cli@latest connect
+npx @lag4/doer-cli@latest connect
 ```
 
 Follow the sign-in instructions. Setup offers a
 [background service](./background-service.md); if you decline it, start the
-server with `npx doer-cli serve`. Saving your sign-in alone does not make the machine
+server with `npx @lag4/doer-cli serve`. Saving your sign-in alone does not make the machine
 reachable.
 
 On your other device, sign in to the same T3 Connect account and choose the
@@ -41,13 +41,13 @@ For a command-line host, replace `<private-ip>` with the host's LAN or tailnet
 address:
 
 ```bash
-npx doer-cli serve --host <private-ip>
+npx @lag4/doer-cli serve --host <private-ip>
 ```
 
 If a server is already running, generate a fresh link without restarting it:
 
 ```bash
-npx doer-cli pair
+npx @lag4/doer-cli pair
 ```
 
 Scan the QR code on your phone or paste the pairing URL into **Add environment**
@@ -86,13 +86,13 @@ HTTPS** in **Settings → Connections**. Turn it off there to remove that route.
 To start a command-line server with Tailscale HTTPS:
 
 ```bash
-npx doer-cli serve --tailscale-serve
+npx @lag4/doer-cli serve --tailscale-serve
 ```
 
 For an already-running server:
 
 ```bash
-npx doer-cli pair --tailscale
+npx @lag4/doer-cli pair --tailscale
 ```
 
 The pairing link uses an address such as `https://machine.tailnet.ts.net/`.
@@ -104,7 +104,7 @@ tailscale serve --https=443 off
 ```
 
 If that port is already in use, choose another with
-`--tailscale-serve-port`. See `npx doer-cli pair --help` for other pairing options.
+`--tailscale-serve-port`. See `npx @lag4/doer-cli pair --help` for other pairing options.
 
 ### Hosted web app
 
@@ -147,7 +147,7 @@ For Antigravity's Google callback on a remote host, see
 On the host, **Settings → Connections** lets authorized administrators create
 pairing links and revoke client sessions. Revoking an unused link prevents new
 pairings; revoke a device's session to remove its existing access. Command-line
-management is available through `npx doer-cli auth --help`.
+management is available through `npx @lag4/doer-cli auth --help`.
 
 A session with an open connection stays listed after its access credential
 expires.

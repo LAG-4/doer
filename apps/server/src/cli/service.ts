@@ -78,20 +78,20 @@ export function formatServiceStatus(
   ) {
     return [
       "Doer service",
-      `  Status: installed · doer-cli@${installedVersion} (newer than this doer-cli@${cliVersion} CLI)`,
+      `  Status: installed · @lag4/doer-cli@${installedVersion} (newer than this @lag4/doer-cli@${cliVersion} CLI)`,
       `  Unit: ${status.unitPath}`,
       `  Logs: ${status.logPath}`,
       ...problems,
-      `  Next: Use \`npx doer-cli@${installedVersion} service update\` to repair it, or pass \`--allow-downgrade\` explicitly.`,
+      `  Next: Use \`npx @lag4/doer-cli@${installedVersion} service update\` to repair it, or pass \`--allow-downgrade\` explicitly.`,
     ].join("\n");
   }
   return [
     "Doer service",
-    `  Status: ${status.current ? `installed · doer-cli@${installedVersion}` : "needs an update or repair"}`,
+    `  Status: ${status.current ? `installed · @lag4/doer-cli@${installedVersion}` : "needs an update or repair"}`,
     `  Unit: ${status.unitPath}`,
     `  Logs: ${status.logPath}`,
     ...problems,
-    ...(status.current ? [] : [`  Next: Run \`npx doer-cli@${cliVersion} service update\`.`]),
+    ...(status.current ? [] : [`  Next: Run \`npx @lag4/doer-cli@${cliVersion} service update\`.`]),
   ].join("\n");
 }
 
@@ -121,12 +121,12 @@ const serviceInstallCommand = Command.make("install", serviceReconcileFlags).pip
         const result = yield* reconcileService({ allowDowngrade: flags.allowDowngrade });
         if (!result.changed) {
           yield* Console.log(
-            `Doer service is already installed with doer-cli@${packageJson.version}.`,
+            `Doer service is already installed with @lag4/doer-cli@${packageJson.version}.`,
           );
           return;
         }
         yield* Console.log(
-          `${result.previouslyInstalled ? "Updated" : "Installed"} Doer service with doer-cli@${packageJson.version}.\nLogs: ${result.plan.logPath}`,
+          `${result.previouslyInstalled ? "Updated" : "Installed"} Doer service with @lag4/doer-cli@${packageJson.version}.\nLogs: ${result.plan.logPath}`,
         );
       }),
     ),
@@ -135,7 +135,7 @@ const serviceInstallCommand = Command.make("install", serviceReconcileFlags).pip
 
 const serviceUpdateCommand = Command.make("update", serviceReconcileFlags).pipe(
   Command.withDescription(
-    "Update or repair the background service using this CLI version. Use `npx doer-cli@latest service update` for the latest release.",
+    "Update or repair the background service using this CLI version. Use `npx @lag4/doer-cli@latest service update` for the latest release.",
   ),
   Command.withHandler((flags) =>
     runServiceCommand(
@@ -143,11 +143,13 @@ const serviceUpdateCommand = Command.make("update", serviceReconcileFlags).pipe(
       Effect.gen(function* () {
         const result = yield* reconcileService({ allowDowngrade: flags.allowDowngrade });
         if (!result.changed) {
-          yield* Console.log(`Doer service is already using doer-cli@${packageJson.version}.`);
+          yield* Console.log(
+            `Doer service is already using @lag4/doer-cli@${packageJson.version}.`,
+          );
           return;
         }
         yield* Console.log(
-          `${result.previouslyInstalled ? "Updated" : "Installed"} Doer service with doer-cli@${packageJson.version}.\nLogs: ${result.plan.logPath}`,
+          `${result.previouslyInstalled ? "Updated" : "Installed"} Doer service with @lag4/doer-cli@${packageJson.version}.\nLogs: ${result.plan.logPath}`,
         );
       }),
     ),
@@ -203,7 +205,7 @@ export const offerServiceDuringOnboarding = Effect.gen(function* () {
     compareExactServiceVersions(status.installedVersion, packageJson.version) > 0
   ) {
     yield* Console.log(
-      `A newer doer-cli@${status.installedVersion} background service is installed. Leaving it unchanged.`,
+      `A newer @lag4/doer-cli@${status.installedVersion} background service is installed. Leaving it unchanged.`,
     );
     // This CLI cannot verify the newer service. Keep the manual fallback available.
     return false;

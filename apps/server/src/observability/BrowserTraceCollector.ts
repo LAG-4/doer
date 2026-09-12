@@ -8,7 +8,7 @@ export class BrowserTraceCollector extends Context.Service<
   {
     readonly record: (records: ReadonlyArray<TraceRecord>) => Effect.Effect<void>;
   }
->()("doer-cli/observability/BrowserTraceCollector") {}
+>()("@lag4/doer-cli/observability/BrowserTraceCollector") {}
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = (sink: TraceSink): BrowserTraceCollector["Service"] =>

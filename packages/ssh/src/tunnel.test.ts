@@ -108,9 +108,12 @@ describe("ssh tunnel scripts", () => {
     assert.include(script, "T3_NODE_SCRIPT_PATH=''");
     assert.include(script, 'exec doer "$@"');
     assert.include(script, 'exec "$T3_CLI_PATH" "$@"');
-    assert.include(script, "could not install 'doer-cli@latest'");
-    assert.include(script, "require_installed_t3_cli npx --yes --package 'doer-cli@latest'");
-    assert.include(script, "require_installed_t3_cli npm exec --yes --package 'doer-cli@latest'");
+    assert.include(script, "could not install '@lag4/doer-cli@latest'");
+    assert.include(script, "require_installed_t3_cli npx --yes --package '@lag4/doer-cli@latest'");
+    assert.include(
+      script,
+      "require_installed_t3_cli npm exec --yes --package '@lag4/doer-cli@latest'",
+    );
     assert.include(script, "npm produced no doer executable");
     assert.include(script, 'prepend_path_if_dir "$HOME/.local/bin"');
     assert.include(script, `T3_NODE_ENGINE_RANGE='${TEST_NODE_ENGINE_RANGE}'`);
@@ -139,14 +142,14 @@ describe("ssh tunnel scripts", () => {
 
   it("shell-quotes package specs in the remote doer runner", () => {
     const script = buildRemoteT3RunnerScript({
-      packageSpec: "doer-cli@nightly; touch /tmp/doer-owned",
+      packageSpec: "@lag4/doer-cli@nightly; touch /tmp/doer-owned",
     });
 
     assert.include(
       script,
-      "require_installed_t3_cli npx --yes --package 'doer-cli@nightly; touch /tmp/doer-owned'",
+      "require_installed_t3_cli npx --yes --package '@lag4/doer-cli@nightly; touch /tmp/doer-owned'",
     );
-    assert.notInclude(script, "exec npx --yes doer-cli@nightly; touch /tmp/doer-owned");
+    assert.notInclude(script, "exec npx --yes @lag4/doer-cli@nightly; touch /tmp/doer-owned");
   });
 
   it("builds the remote doer runner with a node script override", () => {
@@ -194,8 +197,8 @@ describe("ssh tunnel scripts", () => {
     assert.include(buildRemoteLaunchScript(), 'if [ -s "$LOG_FILE" ]; then');
     assert.include(buildRemoteLaunchScript(), "It wrote nothing to %s");
     assert.include(
-      buildRemoteLaunchScript({ packageSpec: "doer-cli@nightly" }),
-      "doer-cli@nightly",
+      buildRemoteLaunchScript({ packageSpec: "@lag4/doer-cli@nightly" }),
+      "@lag4/doer-cli@nightly",
     );
     assert.include(
       buildRemotePairingScript(target),
@@ -204,8 +207,8 @@ describe("ssh tunnel scripts", () => {
     assert.include(buildRemotePairingScript(target), 'PAIRING_BASE_DIR="$DEFAULT_SERVER_HOME"');
     assert.notInclude(buildRemotePairingScript(target), "server-home");
     assert.include(
-      buildRemotePairingScript(target, { packageSpec: "doer-cli@nightly" }),
-      "doer-cli@nightly",
+      buildRemotePairingScript(target, { packageSpec: "@lag4/doer-cli@nightly" }),
+      "@lag4/doer-cli@nightly",
     );
     assert.include(
       buildRemoteStopScript(target),

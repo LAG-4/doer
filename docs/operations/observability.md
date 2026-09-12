@@ -85,7 +85,7 @@ You do not need any extra env vars. Just run the app normally and inspect `serve
 Examples:
 
 ```bash
-npx doer-cli
+npx @lag4/doer-cli
 ```
 
 ```bash
@@ -136,7 +136,7 @@ export T3CODE_TRACE_TIMING_ENABLED=true
 CLI:
 
 ```bash
-npx doer-cli
+npx @lag4/doer-cli
 ```
 
 Monorepo web/server dev:

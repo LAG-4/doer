@@ -35,7 +35,7 @@ it("reports the installed service version and host paths", () => {
     formatServiceStatus(status, "0.0.29"),
     [
       "Doer service",
-      "  Status: installed · doer-cli@0.0.29",
+      "  Status: installed · @lag4/doer-cli@0.0.29",
       "  Unit: /home/me/.config/systemd/user/doer.service",
       "  Logs: /home/me/.t3/userdata/logs/boot-service.log",
     ].join("\n"),
@@ -45,7 +45,7 @@ it("reports the installed service version and host paths", () => {
 it("gives a direct repair command for a stale service", () => {
   assert.include(
     formatServiceStatus({ ...status, current: false }, "0.0.29"),
-    "Next: Run `npx doer-cli@0.0.29 service update`.",
+    "Next: Run `npx @lag4/doer-cli@0.0.29 service update`.",
   );
 });
 
@@ -64,8 +64,8 @@ it("explains an incomplete nightly installation and keeps repair on its installe
   expect(output).toContain("last login session ends");
   expect(output).toContain('sudo loginctl enable-linger "$(id -un)"');
   expect(output).toContain("[service-stopped]");
-  expect(output).toContain("npx doer-cli@0.0.32-nightly.1 service update");
-  expect(output).not.toContain("doer-cli@latest");
+  expect(output).toContain("npx @lag4/doer-cli@0.0.32-nightly.1 service update");
+  expect(output).not.toContain("@lag4/doer-cli@latest");
 });
 
 it("suggests the newer CLI version when the installed service needs an update", () => {
@@ -73,8 +73,8 @@ it("suggests the newer CLI version when the installed service needs an update", 
     { ...status, current: false, installedVersion: "0.0.28" },
     "0.0.29",
   );
-  expect(output).toContain("npx doer-cli@0.0.29 service update");
-  expect(output).not.toContain("npx doer-cli@0.0.28 service update");
+  expect(output).toContain("npx @lag4/doer-cli@0.0.29 service update");
+  expect(output).not.toContain("npx @lag4/doer-cli@0.0.28 service update");
 });
 
 it("explains where the service is supported", () => {
@@ -90,9 +90,12 @@ it("reports a newer installed service and gives an exact-version repair command"
     "0.0.31",
   );
 
-  assert.include(output, "doer-cli@0.0.32-nightly.1 (newer than this doer-cli@0.0.31 CLI)");
-  assert.include(output, "npx doer-cli@0.0.32-nightly.1 service update");
-  assert.notInclude(output, "npx doer-cli@latest service update");
+  assert.include(
+    output,
+    "@lag4/doer-cli@0.0.32-nightly.1 (newer than this @lag4/doer-cli@0.0.31 CLI)",
+  );
+  assert.include(output, "npx @lag4/doer-cli@0.0.32-nightly.1 service update");
+  assert.notInclude(output, "npx @lag4/doer-cli@latest service update");
 });
 
 const newerServiceStatus = { ...status, current: false, installedVersion: "999.0.0" };

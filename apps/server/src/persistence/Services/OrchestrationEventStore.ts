@@ -109,4 +109,4 @@ export interface OrchestrationEventStoreShape {
 export class OrchestrationEventStore extends Context.Service<
   OrchestrationEventStore,
   OrchestrationEventStoreShape
->()("doer-cli/persistence/Services/OrchestrationEventStore") {}
+>()("@lag4/doer-cli/persistence/Services/OrchestrationEventStore") {}

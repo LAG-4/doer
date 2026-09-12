@@ -289,4 +289,4 @@ export interface ProjectionSnapshotQueryShape {
 export class ProjectionSnapshotQuery extends Context.Service<
   ProjectionSnapshotQuery,
   ProjectionSnapshotQueryShape
->()("doer-cli/orchestration/Services/ProjectionSnapshotQuery") {}
+>()("@lag4/doer-cli/orchestration/Services/ProjectionSnapshotQuery") {}
