@@ -275,7 +275,7 @@ export class BitbucketPullRequestApi extends Context.Service<
       readonly resolved: boolean;
     }) => Effect.Effect<void, BitbucketPullRequestApiError>;
   }
->()("doer-cli/pullRequest/BitbucketPullRequestApi") {}
+>()("@lag4/doer-cli/pullRequest/BitbucketPullRequestApi") {}
 
 /** `workspace/slug`; Bitbucket has no deeper nesting to address. */
 function repositorySegments(

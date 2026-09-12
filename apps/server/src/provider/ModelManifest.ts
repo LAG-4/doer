@@ -308,7 +308,7 @@ export class ModelManifest extends Context.Service<
      * the teardown of whichever instance happened to trigger it. */
     readonly refreshInBackground: Effect.Effect<void>;
   }
->()("doer-cli/provider/ModelManifest") {}
+>()("@lag4/doer-cli/provider/ModelManifest") {}
 
 /** Constant service backing the bundled-data test layer. */
 const BundledOnlyModelManifest: ModelManifest["Service"] = {

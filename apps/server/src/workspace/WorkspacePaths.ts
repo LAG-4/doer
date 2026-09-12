@@ -116,7 +116,7 @@ export class WorkspacePaths extends Context.Service<
       WorkspacePathOutsideRootError
     >;
   }
->()("doer-cli/workspace/WorkspacePaths") {}
+>()("@lag4/doer-cli/workspace/WorkspacePaths") {}
 
 function toPosixRelativePath(input: string): string {
   return input.replaceAll("\\", "/");

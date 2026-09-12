@@ -33,7 +33,7 @@ export class ThreadPullRequestReactor extends Context.Service<
     readonly start: () => Effect.Effect<void, never, Scope.Scope>;
     readonly drain: Effect.Effect<void>;
   }
->()("doer-cli/orchestration/ThreadPullRequestReactor") {}
+>()("@lag4/doer-cli/orchestration/ThreadPullRequestReactor") {}
 
 function samePullRequest(
   left: ThreadLinkedPullRequest | null | undefined,

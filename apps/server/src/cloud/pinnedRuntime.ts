@@ -37,7 +37,7 @@ export function pinnedRuntimePaths(
   const versionDir = path.join(baseDir, PINNED_RUNTIME_DIR, "versions", version);
   return {
     versionDir,
-    entryPath: path.join(versionDir, "node_modules", "doer-cli", "dist", "bin.mjs"),
+    entryPath: path.join(versionDir, "node_modules", "@lag4/doer-cli", "dist", "bin.mjs"),
     sentinelPath: path.join(versionDir, ".install-complete"),
   };
 }
@@ -147,7 +147,7 @@ const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(
     );
   const stagingPaths: PinnedRuntimePaths = {
     versionDir: stagingDir,
-    entryPath: input.path.join(stagingDir, "node_modules", "doer-cli", "dist", "bin.mjs"),
+    entryPath: input.path.join(stagingDir, "node_modules", "@lag4/doer-cli", "dist", "bin.mjs"),
     sentinelPath: input.path.join(stagingDir, ".install-complete"),
   };
 
@@ -159,7 +159,7 @@ const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(
       stagingDir,
       "--no-fund",
       "--no-audit",
-      `doer-cli@${input.version}`,
+      `@lag4/doer-cli@${input.version}`,
     ];
     yield* runner
       .run({

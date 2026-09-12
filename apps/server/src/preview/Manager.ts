@@ -58,7 +58,7 @@ export class PreviewManager extends Context.Service<
     readonly events: Stream.Stream<PreviewEvent>;
     readonly subscribeEvents: Effect.Effect<PubSub.Subscription<PreviewEvent>, never, Scope.Scope>;
   }
->()("doer-cli/preview/Manager/PreviewManager") {}
+>()("@lag4/doer-cli/preview/Manager/PreviewManager") {}
 
 interface PreviewSessionState {
   readonly threadId: string;

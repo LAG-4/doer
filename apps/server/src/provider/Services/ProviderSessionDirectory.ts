@@ -79,4 +79,4 @@ export interface ProviderSessionDirectoryShape {
 export class ProviderSessionDirectory extends Context.Service<
   ProviderSessionDirectory,
   ProviderSessionDirectoryShape
->()("doer-cli/provider/Services/ProviderSessionDirectory") {}
+>()("@lag4/doer-cli/provider/Services/ProviderSessionDirectory") {}

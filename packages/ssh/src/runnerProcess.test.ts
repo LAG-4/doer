@@ -34,7 +34,7 @@ describe.skipIf(HostProcessPlatform.defaultValue() === "win32")(
           const bin = path.join(fixture, "bin");
           const cliPath = path.join(fixture, "installed cli.mjs");
           const callsPath = path.join(fixture, "package-manager-calls.jsonl");
-          const packageSpec = "doer-cli@0.0.35";
+          const packageSpec = "@lag4/doer-cli@0.0.35";
           yield* fs.makeDirectory(bin);
           yield* fs.symlink(process.execPath, path.join(bin, "node"));
           yield* fs.writeFileString(
@@ -318,7 +318,7 @@ describe.skipIf(HostProcessPlatform.defaultValue() === "win32")(
         const bin = path.join(fixture, "bin");
         const cliPath = path.join(fixture, "installed cli.mjs");
         const callsPath = path.join(fixture, "installer-calls.jsonl");
-        const packageSpec = "doer-cli@0.0.39-nightly.20260905.1286";
+        const packageSpec = "@lag4/doer-cli@0.0.39-nightly.20260905.1286";
         const args = ["serve", "a path with spaces"];
         yield* fs.makeDirectory(bin);
         yield* fs.symlink(process.execPath, path.join(bin, "node"));

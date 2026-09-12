@@ -394,7 +394,7 @@ export class GitLabPullRequestCli extends Context.Service<
       readonly reacted: boolean;
     }) => Effect.Effect<void, GitLabPullRequestCliError>;
   }
->()("doer-cli/pullRequest/GitLabPullRequestCli") {}
+>()("@lag4/doer-cli/pullRequest/GitLabPullRequestCli") {}
 
 /** The REST API addresses a project by its URL-encoded full path. */
 function projectPath(repository: string): string {

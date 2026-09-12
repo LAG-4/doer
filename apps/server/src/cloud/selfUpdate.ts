@@ -54,7 +54,7 @@ export class ServerSelfUpdate extends Context.Service<
       onHandoffAccepted?: () => Effect.Effect<void>,
     ) => Effect.Effect<never, ServerSelfUpdateError>;
   }
->()("doer-cli/cloud/selfUpdate/ServerSelfUpdate") {}
+>()("@lag4/doer-cli/cloud/selfUpdate/ServerSelfUpdate") {}
 
 export const withRunningThreadContinuation = Effect.fn(
   "cloud.server_self_update.withRunningThreadContinuation",
@@ -289,7 +289,7 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
         Effect.mapError((error) =>
           error._tag === "PinnedRuntimePreflightBlockedError"
             ? failWith(error.reason, error)
-            : failWith(`Could not prepare doer-cli@${targetVersion}.`, error),
+            : failWith(`Could not prepare @lag4/doer-cli@${targetVersion}.`, error),
         ),
       );
 

@@ -459,7 +459,7 @@ export class BootServiceDowngradeRefusedError extends Schema.TaggedError<BootSer
   },
 ) {
   override get message(): string {
-    return `Refusing to replace doer-cli@${this.installedVersion} with older doer-cli@${this.targetVersion}. Run the command again with --allow-downgrade to continue.`;
+    return `Refusing to replace @lag4/doer-cli@${this.installedVersion} with older @lag4/doer-cli@${this.targetVersion}. Run the command again with --allow-downgrade to continue.`;
   }
 }
 
@@ -490,7 +490,7 @@ export class BootService extends Context.Service<
     readonly uninstall: Effect.Effect<boolean, BootServiceError>;
     readonly status: Effect.Effect<BootServiceStatus, BootServiceError>;
   }
->()("doer-cli/cloud/bootService") {}
+>()("@lag4/doer-cli/cloud/bootService") {}
 
 export interface BootServiceHost {
   readonly execPath: string;

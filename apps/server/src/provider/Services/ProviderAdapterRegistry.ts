@@ -65,4 +65,4 @@ export interface ProviderAdapterRegistryShape {
 export class ProviderAdapterRegistry extends Context.Service<
   ProviderAdapterRegistry,
   ProviderAdapterRegistryShape
->()("doer-cli/provider/Services/ProviderAdapterRegistry") {}
+>()("@lag4/doer-cli/provider/Services/ProviderAdapterRegistry") {}

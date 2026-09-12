@@ -106,14 +106,14 @@ describe("ssh command", () => {
           appVersion: "0.0.17",
           updateChannel: "latest",
         }),
-        "doer-cli@0.0.17",
+        "@lag4/doer-cli@0.0.17",
       );
       assert.equal(
         resolveRemoteT3CliPackageSpec({
           appVersion: "0.0.17-nightly.20260415.44",
           updateChannel: "nightly",
         }),
-        "doer-cli@0.0.17-nightly.20260415.44",
+        "@lag4/doer-cli@0.0.17-nightly.20260415.44",
       );
       assert.equal(
         resolveRemoteT3CliPackageSpec({
@@ -121,7 +121,7 @@ describe("ssh command", () => {
           updateChannel: "nightly",
           isDevelopment: true,
         }),
-        "doer-cli@nightly",
+        "@lag4/doer-cli@nightly",
       );
       assert.equal(
         resolveRemoteT3CliPackageSpec({
@@ -129,7 +129,7 @@ describe("ssh command", () => {
           updateChannel: "latest",
           isDevelopment: true,
         }),
-        "doer-cli@nightly",
+        "@lag4/doer-cli@nightly",
       );
     }),
   );

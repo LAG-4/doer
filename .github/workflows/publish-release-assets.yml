@@ -25,6 +25,8 @@ on:
 
 permissions:
   contents: write
+  # Reading artifacts that belong to a different workflow run.
+  actions: read
 
 jobs:
   publish_assets:

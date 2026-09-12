@@ -108,5 +108,5 @@ export class ProjectionThreadActivityRepository extends Context.Service<
   ProjectionThreadActivityRepository,
   ProjectionThreadActivityRepositoryShape
 >()(
-  "doer-cli/persistence/Services/ProjectionThreadActivities/ProjectionThreadActivityRepository",
+  "@lag4/doer-cli/persistence/Services/ProjectionThreadActivities/ProjectionThreadActivityRepository",
 ) {}

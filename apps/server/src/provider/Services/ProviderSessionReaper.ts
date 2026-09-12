@@ -12,4 +12,4 @@ export interface ProviderSessionReaperShape {
 export class ProviderSessionReaper extends Context.Service<
   ProviderSessionReaper,
   ProviderSessionReaperShape
->()("doer-cli/provider/Services/ProviderSessionReaper") {}
+>()("@lag4/doer-cli/provider/Services/ProviderSessionReaper") {}

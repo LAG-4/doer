@@ -411,7 +411,7 @@ export class SessionStore extends Context.Service<
       },
     ) => Effect.Effect<void, never>;
   }
->()("doer-cli/auth/SessionStore") {}
+>()("@lag4/doer-cli/auth/SessionStore") {}
 
 const SIGNING_SECRET_NAME = "server-signing-key";
 const DEFAULT_SESSION_TTL = Duration.days(30);

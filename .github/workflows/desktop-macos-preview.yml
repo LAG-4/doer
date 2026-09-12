@@ -52,7 +52,7 @@ jobs:
           run-install: false
 
       - name: Install desktop dependencies
-        run: vp install --filter=@t3tools/desktop... --filter=doer-cli... --filter=@t3tools/scripts...
+        run: vp install --filter=@t3tools/desktop... --filter=@lag4/doer-cli... --filter=@t3tools/scripts...
 
       - name: Cache resource monitor
         id: resource_monitor_cache

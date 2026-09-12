@@ -12,7 +12,7 @@ export class EnvironmentAuthPolicy extends Context.Service<
   {
     readonly getDescriptor: () => Effect.Effect<ServerAuthDescriptor>;
   }
->()("doer-cli/auth/EnvironmentAuthPolicy") {}
+>()("@lag4/doer-cli/auth/EnvironmentAuthPolicy") {}
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {

@@ -371,12 +371,12 @@ export function resolveRemoteT3CliPackageSpec(input: {
 }): string {
   const appVersion = input.appVersion.trim();
   if (!input.isDevelopment && PUBLISHABLE_T3_VERSION_PATTERN.test(appVersion)) {
-    return `doer-cli@${appVersion}`;
+    return `@lag4/doer-cli@${appVersion}`;
   }
 
   if (input.isDevelopment) {
-    return "doer-cli@nightly";
+    return "@lag4/doer-cli@nightly";
   }
 
-  return input.updateChannel === "nightly" ? "doer-cli@nightly" : "doer-cli@latest";
+  return input.updateChannel === "nightly" ? "@lag4/doer-cli@nightly" : "@lag4/doer-cli@latest";
 }

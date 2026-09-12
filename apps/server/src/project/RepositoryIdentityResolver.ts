@@ -30,7 +30,7 @@ export class RepositoryIdentityResolver extends Context.Service<
       options?: { readonly refresh?: boolean },
     ) => Effect.Effect<RepositoryIdentity | null>;
   }
->()("doer-cli/project/RepositoryIdentityResolver") {}
+>()("@lag4/doer-cli/project/RepositoryIdentityResolver") {}
 
 function parseRemoteFetchUrls(stdout: string): Map<string, string> {
   const remotes = new Map<string, string>();
