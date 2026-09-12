@@ -64,6 +64,7 @@ import { ScrollArea } from "~/components/ui/scroll-area";
 import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
 import { faviconUrlForOrigin } from "~/lib/favicon";
 import { useTheme } from "~/hooks/useTheme";
+import { useClientSettings } from "~/hooks/useSettings";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
@@ -182,6 +183,26 @@ const SURFACE_UNAVAILABLE_HINTS = {
   agents: "Available from a thread.",
   device: "Available from a thread.",
 } as const;
+
+/**
+ * Simple mode hides the dev/git-centric launcher entries (Terminal, Diff,
+ * Pull request, Linked pull requests). Keyed by shortcut so the empty-state
+ * list and the "+" menu stay in sync.
+ */
+export const SIMPLE_MODE_HIDDEN_SURFACE_SHORTCUTS: ReadonlySet<string> = new Set([
+  "T",
+  "D",
+  "P",
+  "L",
+]);
+
+export function filterSimpleModeSurfaceActions<Action extends { shortcut: string }>(
+  actions: readonly Action[],
+  simpleModeEnabled: boolean,
+): readonly Action[] {
+  if (!simpleModeEnabled) return actions;
+  return actions.filter((action) => !SIMPLE_MODE_HIDDEN_SURFACE_SHORTCUTS.has(action.shortcut));
+}
 
 type TabContextMenuAction =
   | "rename"
@@ -333,82 +354,86 @@ function RightPanelEmptyState(props: {
 }) {
   // -1 means no highlight: it only appears on hover or arrow use.
   const [highlight, setHighlight] = useState(-1);
+  const simpleModeEnabled = useClientSettings((settings) => settings.simpleModeEnabled);
 
-  const actions = [
-    {
-      label: "Browser",
-      icon: Globe2,
-      shortcut: "B",
-      available: props.browserAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.browser,
-      onClick: props.onAddBrowser,
-      badgeCount: 0,
-    },
-    {
-      label: "Terminal",
-      icon: TerminalSquare,
-      shortcut: "T",
-      available: props.terminalAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.terminal,
-      onClick: props.onAddTerminal,
-      badgeCount: 0,
-    },
-    {
-      label: "Files",
-      icon: Files,
-      shortcut: "F",
-      available: props.filesAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.files,
-      onClick: props.onAddFiles,
-      badgeCount: 0,
-    },
-    {
-      label: "Diff",
-      icon: FileDiff,
-      shortcut: "D",
-      available: props.diffAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.diff,
-      onClick: props.onAddDiff,
-      badgeCount: 0,
-    },
-    {
-      label: "Pull request",
-      icon: GitPullRequest,
-      shortcut: "P",
-      available: props.pullRequestAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequest,
-      onClick: props.onAddPullRequest,
-      badgeCount: 0,
-    },
-    {
-      label: "Linked pull requests",
-      icon: GitPullRequestArrow,
-      shortcut: "L",
-      available: props.pullRequestsAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequests,
-      onClick: props.onAddPullRequests,
-      badgeCount: 0,
-    },
-    {
-      label: "Agents",
-      icon: Bot,
-      shortcut: "A",
-      available: props.agentsAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.agents,
-      onClick: props.onAddAgents,
-      badgeCount: props.liveAgentCount,
-    },
-    {
-      label: "Device",
-      description: "Watch an iOS Simulator or Android Emulator.",
-      icon: Smartphone,
-      shortcut: "M",
-      available: props.deviceAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.device,
-      onClick: props.onAddDevice,
-      badgeCount: 0,
-    },
-  ] as const;
+  const actions = filterSimpleModeSurfaceActions(
+    [
+      {
+        label: "Browser",
+        icon: Globe2,
+        shortcut: "B",
+        available: props.browserAvailable,
+        disabledReason: SURFACE_UNAVAILABLE_HINTS.browser,
+        onClick: props.onAddBrowser,
+        badgeCount: 0,
+      },
+      {
+        label: "Terminal",
+        icon: TerminalSquare,
+        shortcut: "T",
+        available: props.terminalAvailable,
+        disabledReason: SURFACE_UNAVAILABLE_HINTS.terminal,
+        onClick: props.onAddTerminal,
+        badgeCount: 0,
+      },
+      {
+        label: "Files",
+        icon: Files,
+        shortcut: "F",
+        available: props.filesAvailable,
+        disabledReason: SURFACE_UNAVAILABLE_HINTS.files,
+        onClick: props.onAddFiles,
+        badgeCount: 0,
+      },
+      {
+        label: "Diff",
+        icon: FileDiff,
+        shortcut: "D",
+        available: props.diffAvailable,
+        disabledReason: SURFACE_UNAVAILABLE_HINTS.diff,
+        onClick: props.onAddDiff,
+        badgeCount: 0,
+      },
+      {
+        label: "Pull request",
+        icon: GitPullRequest,
+        shortcut: "P",
+        available: props.pullRequestAvailable,
+        disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequest,
+        onClick: props.onAddPullRequest,
+        badgeCount: 0,
+      },
+      {
+        label: "Linked pull requests",
+        icon: GitPullRequestArrow,
+        shortcut: "L",
+        available: props.pullRequestsAvailable,
+        disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequests,
+        onClick: props.onAddPullRequests,
+        badgeCount: 0,
+      },
+      {
+        label: "Agents",
+        icon: Bot,
+        shortcut: "A",
+        available: props.agentsAvailable,
+        disabledReason: SURFACE_UNAVAILABLE_HINTS.agents,
+        onClick: props.onAddAgents,
+        badgeCount: props.liveAgentCount,
+      },
+      {
+        label: "Device",
+        description: "Watch an iOS Simulator or Android Emulator.",
+        icon: Smartphone,
+        shortcut: "M",
+        available: props.deviceAvailable,
+        disabledReason: SURFACE_UNAVAILABLE_HINTS.device,
+        onClick: props.onAddDevice,
+        badgeCount: 0,
+      },
+    ] as const,
+    simpleModeEnabled,
+  );
 
   type SurfaceAction = (typeof actions)[number];
 
@@ -820,6 +845,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   const ownsDesktopTitleBar = isElectron && props.mode === "inline";
   const browserProfiles = useBrowserDefaults().profiles;
   const { resolvedTheme } = useTheme();
+  const simpleModeEnabled = useClientSettings((settings) => settings.simpleModeEnabled);
   const tabListRef = useRef<HTMLDivElement>(null);
   const [renamingDevice, setRenamingDevice] = useState<string | null>(null);
   const [addSurfaceMenuOpen, setAddSurfaceMenuOpen] = useState(false);
@@ -860,72 +886,75 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     });
   }, []);
 
-  const addSurfaceActions = [
-    {
-      label: "Browser",
-      icon: Globe2,
-      shortcut: "B",
-      available: props.browserAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.browser,
-      onClick: props.onAddBrowser,
-    },
-    {
-      label: "Terminal",
-      icon: TerminalSquare,
-      shortcut: "T",
-      available: props.terminalAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.terminal,
-      onClick: props.onAddTerminal,
-    },
-    {
-      label: "Files",
-      icon: Files,
-      shortcut: "F",
-      available: props.filesAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.files,
-      onClick: props.onAddFiles,
-    },
-    {
-      label: "Diff",
-      icon: FileDiff,
-      shortcut: "D",
-      available: props.diffAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.diff,
-      onClick: props.onAddDiff,
-    },
-    {
-      label: "Pull request",
-      icon: GitPullRequest,
-      shortcut: "P",
-      available: props.pullRequestAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.pullRequest,
-      onClick: props.onAddPullRequest,
-    },
-    {
-      label: "Linked pull requests",
-      icon: GitPullRequestArrow,
-      shortcut: "L",
-      available: props.pullRequestsAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.pullRequests,
-      onClick: props.onAddPullRequests,
-    },
-    {
-      label: "Agents",
-      icon: Bot,
-      shortcut: "A",
-      available: props.agentsAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.agents,
-      onClick: props.onAddAgents,
-    },
-    {
-      label: "Device",
-      icon: Smartphone,
-      shortcut: "M",
-      available: props.deviceAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.device,
-      onClick: props.onAddDevice,
-    },
-  ] as const;
+  const addSurfaceActions = filterSimpleModeSurfaceActions(
+    [
+      {
+        label: "Browser",
+        icon: Globe2,
+        shortcut: "B",
+        available: props.browserAvailable,
+        disabledReason: SURFACE_DISABLED_REASONS.browser,
+        onClick: props.onAddBrowser,
+      },
+      {
+        label: "Terminal",
+        icon: TerminalSquare,
+        shortcut: "T",
+        available: props.terminalAvailable,
+        disabledReason: SURFACE_DISABLED_REASONS.terminal,
+        onClick: props.onAddTerminal,
+      },
+      {
+        label: "Files",
+        icon: Files,
+        shortcut: "F",
+        available: props.filesAvailable,
+        disabledReason: SURFACE_DISABLED_REASONS.files,
+        onClick: props.onAddFiles,
+      },
+      {
+        label: "Diff",
+        icon: FileDiff,
+        shortcut: "D",
+        available: props.diffAvailable,
+        disabledReason: SURFACE_DISABLED_REASONS.diff,
+        onClick: props.onAddDiff,
+      },
+      {
+        label: "Pull request",
+        icon: GitPullRequest,
+        shortcut: "P",
+        available: props.pullRequestAvailable,
+        disabledReason: SURFACE_DISABLED_REASONS.pullRequest,
+        onClick: props.onAddPullRequest,
+      },
+      {
+        label: "Linked pull requests",
+        icon: GitPullRequestArrow,
+        shortcut: "L",
+        available: props.pullRequestsAvailable,
+        disabledReason: SURFACE_DISABLED_REASONS.pullRequests,
+        onClick: props.onAddPullRequests,
+      },
+      {
+        label: "Agents",
+        icon: Bot,
+        shortcut: "A",
+        available: props.agentsAvailable,
+        disabledReason: SURFACE_DISABLED_REASONS.agents,
+        onClick: props.onAddAgents,
+      },
+      {
+        label: "Device",
+        icon: Smartphone,
+        shortcut: "M",
+        available: props.deviceAvailable,
+        disabledReason: SURFACE_DISABLED_REASONS.device,
+        onClick: props.onAddDevice,
+      },
+    ] as const,
+    simpleModeEnabled,
+  );
 
   const handleAddSurfaceMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     const action = surfaceShortcutActionForKey(addSurfaceActions, event.nativeEvent);
