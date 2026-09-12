@@ -102,7 +102,9 @@ describe("deriveProviderModelsForDisplay", () => {
     const markup = renderToStaticMarkup(
       createElement(ProviderInstanceCard, {
         instanceId,
-        instance: { driver },
+        // Built-in providers default to disabled on the fork; the card under
+        // test opts back in so the authenticated state renders.
+        instance: { driver, enabled: true },
         driverOption: undefined,
         liveProvider,
         mode: "editor",
@@ -142,7 +144,7 @@ describe("deriveProviderModelsForDisplay", () => {
     };
     const props = {
       instanceId,
-      instance: { driver },
+      instance: { driver, enabled: true },
       driverOption: undefined,
       liveProvider,
       onUpdate: () => undefined,

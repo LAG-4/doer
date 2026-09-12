@@ -769,8 +769,8 @@ it.layer(integrationLayer)("AgentSessionImporter integration", (it) => {
         });
         const settingsLayer = ServerSettingsService.layerTest({
           providers: {
-            claudeAgent: { homePath: claudeHomePath },
-            codex: { homePath: codexHomePath },
+            claudeAgent: { homePath: claudeHomePath, enabled: true },
+            codex: { homePath: codexHomePath, enabled: true },
           },
         });
         const transcriptPaths = new Set(transcripts.map((transcript) => transcript.filePath));

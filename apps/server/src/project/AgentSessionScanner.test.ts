@@ -87,12 +87,15 @@ const makeScannerTestLayer = (input: ScannerTestInput) =>
       Layer.mergeAll(
         ServerSettings.layerTest({
           providers: {
-            claudeAgent: { homePath: input.claudeHomePath },
-            codex: { homePath: input.codexHomePath },
+            // Built-in providers default to disabled on the fork (OpenCode
+            // free is the default), so tests opt back in. An explicit
+            // `enabled: false` below always wins over this default.
+            claudeAgent: { homePath: input.claudeHomePath, enabled: true },
+            codex: { homePath: input.codexHomePath, enabled: true },
           },
           ...(input.providerInstances === undefined
             ? {}
-            : { providerInstances: input.providerInstances }),
+            : { providerInstances: enableTestProviderInstances(input.providerInstances) }),
         }),
         ServerConfig.layerTest(
           input.claudeHomePath,
@@ -102,6 +105,28 @@ const makeScannerTestLayer = (input: ScannerTestInput) =>
       ),
     ),
   );
+
+/**
+ * Test instances opt into the fork's default-disabled built-in providers
+ * unless a test says otherwise. An explicit `false` on the envelope or the
+ * config blob always wins, so the disabled-instances test keeps working.
+ */
+const enableTestProviderInstances = (
+  instances: NonNullable<ScannerTestInput["providerInstances"]>,
+): NonNullable<ScannerTestInput["providerInstances"]> =>
+  Object.fromEntries(
+    Object.entries(instances).map(([instanceId, instance]) => {
+      const envelopeEnabled = (instance as { readonly enabled?: unknown }).enabled;
+      const config = (instance as { readonly config?: unknown }).config;
+      const configEnabled =
+        config !== null && typeof config === "object" && !Array.isArray(config)
+          ? (config as { readonly enabled?: unknown }).enabled
+          : undefined;
+      return envelopeEnabled === undefined && configEnabled === undefined
+        ? ([instanceId, { ...instance, enabled: true }] as const)
+        : ([instanceId, instance] as const);
+    }),
+  ) as NonNullable<ScannerTestInput["providerInstances"]>;
 
 const runScan = (input: ScannerTestInput) =>
   Effect.gen(function* () {

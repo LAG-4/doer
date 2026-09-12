@@ -326,7 +326,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
         preferences: {},
       }),
     ).toMatchObject({
-      bundleId: "com.t3tools.t3code.preview",
+      bundleId: "click.lagaryan.doer.preview",
       apsEnvironment: "production",
     });
   });

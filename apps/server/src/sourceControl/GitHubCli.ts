@@ -59,7 +59,7 @@ export function sanitizeGitHubCliStderr(stderr: string): string | undefined {
       "$1[redacted]$2",
     );
   // Strip control characters that would break single-line transport.
-  // eslint-disable-next-line no-control-regex
+  // (Unicode escapes, so no-control-regex stays quiet.)
   excerpt = excerpt
     .replace(/[\u0000-\u001F\u007F]+/g, " ")
     .replace(/\s+/g, " ")
@@ -346,7 +346,7 @@ export class GitHubCli extends Context.Service<
       readonly force?: boolean;
     }) => Effect.Effect<void, GitHubCliError>;
   }
->()("t3/sourceControl/GitHubCli") {}
+>()("doer-cli/sourceControl/GitHubCli") {}
 
 const RawGitHubRepositoryCloneUrlsSchema = Schema.Struct({
   nameWithOwner: TrimmedNonEmptyString,

@@ -103,7 +103,7 @@ export class UsageService extends Context.Service<
     /** Refetches the rate table ahead of its TTL. See `ensureRates`. */
     readonly refreshRates: Effect.Effect<UsagePricing>;
   }
->()("t3/usage/UsageService") {}
+>()("doer-cli/usage/UsageService") {}
 
 const EMPTY_PRICING: UsagePricing = {
   status: "unavailable",

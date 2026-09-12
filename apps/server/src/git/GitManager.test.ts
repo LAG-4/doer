@@ -2918,6 +2918,11 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
             instanceId: ProviderInstanceId.make("claudeAgent"),
             model: "claude-sonnet-4-6",
           },
+          // Built-in providers default to disabled on the fork; the Claude
+          // writer under test opts back in so its instructions are included.
+          providers: {
+            claudeAgent: { enabled: true },
+          },
           sourceControlWritingStyle: {
             mode: "repo_conventions" as const,
           },
