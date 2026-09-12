@@ -37,6 +37,9 @@ import {
 import {
   listThreadsByProjectId,
   requireActiveProjectWorkspaceRootAbsent,
+  requireAutomation,
+  requireAutomationAbsent,
+  requireLiveAutomation,
   requireProject,
   requireProjectAbsent,
   requireThread,
@@ -46,6 +49,7 @@ import {
 } from "./commandInvariants.ts";
 import { projectEvent } from "./projector.ts";
 import { threadHasQueuedTurnStart } from "./ThreadSettlementPolicy.ts";
+import { computeNextFireAt, validateAutomationSchedule } from "./AutomationSchedule.ts";
 
 const isScriptRunCommand = Schema.is(SCRIPT_RUN_COMMAND_PATTERN);
 
@@ -1264,6 +1268,412 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         payload: {
           threadId: command.threadId,
           interactionMode: command.interactionMode,
+          updatedAt: occurredAt,
+        },
+      };
+    }
+
+    case "automation.create": {
+      yield* requireAutomationAbsent({
+        readModel,
+        command,
+        automationId: command.automationId,
+      });
+      yield* requireProject({
+        readModel,
+        command,
+        projectId: command.projectId,
+      });
+      const automationThread = yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      if (automationThread.projectId !== command.projectId) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Thread '${command.threadId}' does not belong to project '${command.projectId}' for command '${command.type}'.`,
+        });
+      }
+      if (automationThread.deletedAt !== null) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Thread '${command.threadId}' was deleted before automation creation.`,
+        });
+      }
+      const occurredAt = yield* nowIso;
+      const scheduleDetail = validateAutomationSchedule({
+        schedule: command.schedule,
+        nowIso: occurredAt,
+      });
+      if (scheduleDetail !== null) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: scheduleDetail,
+        });
+      }
+      const nextFireAt = computeNextFireAt(command.schedule, occurredAt);
+      if (nextFireAt === null) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Automation schedule has no future firing and cannot be created.`,
+        });
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "automation",
+          aggregateId: command.automationId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "automation.created",
+        payload: {
+          automationId: command.automationId,
+          projectId: command.projectId,
+          threadId: command.threadId,
+          title: command.title,
+          prompt: command.prompt,
+          schedule: command.schedule,
+          dedicatedThread: command.dedicatedThread ?? true,
+          nextFireAt,
+          createdAt: command.createdAt,
+          updatedAt: occurredAt,
+        },
+      };
+    }
+
+    case "automation.update": {
+      const automation = yield* requireLiveAutomation({
+        readModel,
+        command,
+        automationId: command.automationId,
+      });
+      if (automation.state === "completed") {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Automation '${command.automationId}' already ran to completion and cannot be updated.`,
+        });
+      }
+      if (
+        command.title === undefined &&
+        command.prompt === undefined &&
+        command.schedule === undefined
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Automation '${command.automationId}' update carries no changes.`,
+        });
+      }
+      const occurredAt = yield* nowIso;
+      const nextSchedule = command.schedule ?? automation.schedule;
+      if (command.schedule !== undefined) {
+        const scheduleDetail = validateAutomationSchedule({
+          schedule: command.schedule,
+          nowIso: occurredAt,
+        });
+        if (scheduleDetail !== null) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: scheduleDetail,
+          });
+        }
+      }
+      // An active automation keeps its computed next firing unless the
+      // schedule itself changed. A paused one keeps null: resume recomputes.
+      const nextFireAt =
+        command.schedule !== undefined && automation.state === "active"
+          ? computeNextFireAt(nextSchedule, occurredAt)
+          : automation.nextFireAt;
+      if (command.schedule !== undefined && automation.state === "active" && nextFireAt === null) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Automation schedule has no future firing and cannot be updated.`,
+        });
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "automation",
+          aggregateId: command.automationId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "automation.updated",
+        payload: {
+          automationId: command.automationId,
+          ...(command.title !== undefined ? { title: command.title } : {}),
+          ...(command.prompt !== undefined ? { prompt: command.prompt } : {}),
+          ...(command.schedule !== undefined ? { schedule: command.schedule } : {}),
+          ...(command.schedule !== undefined && automation.state === "active"
+            ? { nextFireAt }
+            : {}),
+          updatedAt: occurredAt,
+        },
+      };
+    }
+
+    case "automation.pause": {
+      const automation = yield* requireLiveAutomation({
+        readModel,
+        command,
+        automationId: command.automationId,
+      });
+      if (automation.state === "completed") {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Automation '${command.automationId}' already ran to completion and cannot be paused.`,
+        });
+      }
+      const occurredAt = yield* nowIso;
+      // Re-pausing is a duplicate (double-click, raced clients): re-emit so
+      // the projection is a no-op without churning updatedAt.
+      const alreadyPaused = automation.state === "paused";
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "automation",
+          aggregateId: command.automationId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "automation.paused",
+        payload: {
+          automationId: command.automationId,
+          updatedAt: alreadyPaused ? automation.updatedAt : occurredAt,
+        },
+      };
+    }
+
+    case "automation.resume": {
+      const automation = yield* requireLiveAutomation({
+        readModel,
+        command,
+        automationId: command.automationId,
+      });
+      if (automation.state === "completed") {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Automation '${command.automationId}' already ran to completion and cannot be resumed.`,
+        });
+      }
+      const occurredAt = yield* nowIso;
+      if (automation.state === "active") {
+        return {
+          ...(yield* withEventBase({
+            aggregateKind: "automation",
+            aggregateId: command.automationId,
+            occurredAt,
+            commandId: command.commandId,
+          })),
+          type: "automation.resumed",
+          payload: {
+            automationId: command.automationId,
+            nextFireAt: automation.nextFireAt,
+            updatedAt: automation.updatedAt,
+          },
+        };
+      }
+      const nextFireAt = computeNextFireAt(automation.schedule, occurredAt);
+      if (nextFireAt === null) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Automation '${command.automationId}' schedule has no future firing and cannot be resumed.`,
+        });
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "automation",
+          aggregateId: command.automationId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "automation.resumed",
+        payload: {
+          automationId: command.automationId,
+          nextFireAt,
+          updatedAt: occurredAt,
+        },
+      };
+    }
+
+    case "automation.delete": {
+      const automation = yield* requireAutomation({
+        readModel,
+        command,
+        automationId: command.automationId,
+      });
+      const occurredAt = yield* nowIso;
+      // Re-deleting is a duplicate: re-emit with the original timestamps so
+      // the projection is a no-op.
+      if (automation.deletedAt !== null) {
+        return {
+          ...(yield* withEventBase({
+            aggregateKind: "automation",
+            aggregateId: command.automationId,
+            occurredAt,
+            commandId: command.commandId,
+          })),
+          type: "automation.deleted",
+          payload: {
+            automationId: command.automationId,
+            deletedAt: automation.deletedAt,
+            updatedAt: automation.updatedAt,
+          },
+        };
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "automation",
+          aggregateId: command.automationId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "automation.deleted",
+        payload: {
+          automationId: command.automationId,
+          deletedAt: occurredAt,
+          updatedAt: occurredAt,
+        },
+      };
+    }
+
+    case "automation.run-now": {
+      const automation = yield* requireLiveAutomation({
+        readModel,
+        command,
+        automationId: command.automationId,
+      });
+      if (automation.state === "completed") {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Automation '${command.automationId}' already ran to completion and cannot be run.`,
+        });
+      }
+      const runThread = yield* requireThread({
+        readModel,
+        command,
+        threadId: automation.threadId,
+      });
+      if (runThread.deletedAt !== null) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Thread '${automation.threadId}' was deleted before automation '${command.automationId}' could run.`,
+        });
+      }
+      const occurredAt = yield* nowIso;
+      // A manual run reuses the existing turn machinery: the turn starts on
+      // the automation's thread, then the run is recorded. Manual runs never
+      // advance the schedule — both sub-commands share the outer command id
+      // (like project.delete's fan-out) so a retry stays a single run.
+      return yield* decideCommandSequence({
+        readModel,
+        commands: [
+          {
+            type: "thread.turn.start",
+            commandId: command.commandId,
+            threadId: automation.threadId,
+            message: {
+              messageId: MessageId.make(`automation-run:${command.commandId}`),
+              role: "user",
+              text: automation.prompt,
+              attachments: [],
+            },
+            runtimeMode: runThread.runtimeMode,
+            interactionMode: runThread.interactionMode,
+            createdAt: occurredAt,
+          },
+          {
+            type: "automation.fired",
+            commandId: command.commandId,
+            automationId: command.automationId,
+            occurrenceKey: `manual:${command.commandId}`,
+            firedAt: occurredAt,
+            outcome: "manual",
+          },
+        ],
+      });
+    }
+
+    case "automation.fired": {
+      const automation = yield* requireAutomation({
+        readModel,
+        command,
+        automationId: command.automationId,
+      });
+      if (automation.deletedAt !== null) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Automation '${command.automationId}' was deleted before firing.`,
+        });
+      }
+      if (automation.runs.some((run) => run.occurrenceKey === command.occurrenceKey)) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Automation '${command.automationId}' already recorded occurrence '${command.occurrenceKey}'.`,
+        });
+      }
+      const occurredAt = yield* nowIso;
+      if (command.outcome === "manual") {
+        if (automation.state === "completed") {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: `Automation '${command.automationId}' already ran to completion and cannot be run.`,
+          });
+        }
+        return {
+          ...(yield* withEventBase({
+            aggregateKind: "automation",
+            aggregateId: command.automationId,
+            occurredAt,
+            commandId: command.commandId,
+          })),
+          type: "automation.fired",
+          payload: {
+            automationId: command.automationId,
+            run: {
+              occurrenceKey: command.occurrenceKey,
+              threadId: automation.threadId,
+              firedAt: command.firedAt,
+              outcome: command.outcome,
+            },
+            state: automation.state,
+            nextFireAt: automation.nextFireAt,
+            updatedAt: occurredAt,
+          },
+        };
+      }
+      // Scheduled firings only land on active automations at their stored
+      // slot: a pause/update/delete that landed between the sweep read and
+      // this dispatch rejects here instead of firing stale work.
+      if (automation.state !== "active" || automation.nextFireAt !== command.occurrenceKey) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Automation '${command.automationId}' is no longer due for occurrence '${command.occurrenceKey}'.`,
+        });
+      }
+      const nextFireAt = computeNextFireAt(automation.schedule, command.firedAt);
+      if (automation.schedule.kind !== "once" && nextFireAt === null) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Automation '${command.automationId}' schedule has no future firing.`,
+        });
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "automation",
+          aggregateId: command.automationId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "automation.fired",
+        payload: {
+          automationId: command.automationId,
+          run: {
+            occurrenceKey: command.occurrenceKey,
+            threadId: automation.threadId,
+            firedAt: command.firedAt,
+            outcome: command.outcome,
+          },
+          state: automation.schedule.kind === "once" ? "completed" : automation.state,
+          nextFireAt,
           updatedAt: occurredAt,
         },
       };

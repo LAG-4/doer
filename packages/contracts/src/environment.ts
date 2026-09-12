@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import {
+  AutomationId,
   EnvironmentId,
   ForwardCompatibleOptional,
   ProjectId,
@@ -131,6 +132,10 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
       version-skew contract as threadSettlement. */
   threadPullRequests: Schema.optionalKey(Schema.Boolean),
   pullRequestStackActions: Schema.optionalKey(Schema.Boolean),
+  /** Server understands automation.* commands (Scheduled tasks), exposes
+      `automations` on shell snapshots, and fires due automations itself. Same
+      version-skew contract as threadSettlement. */
+  automationScheduling: Schema.optionalKey(Schema.Boolean),
   /** The update path clients should offer for this server. Absent on
       servers that must be relaunched manually (dev checkouts, Windows
       foreground runs, pre-update servers). */
@@ -205,6 +210,12 @@ export const ScopedThreadRef = Schema.Struct({
   threadId: ThreadId,
 });
 export type ScopedThreadRef = typeof ScopedThreadRef.Type;
+
+export const ScopedAutomationRef = Schema.Struct({
+  environmentId: EnvironmentId,
+  automationId: AutomationId,
+});
+export type ScopedAutomationRef = typeof ScopedAutomationRef.Type;
 
 export const ScopedThreadSessionRef = Schema.Struct({
   environmentId: EnvironmentId,

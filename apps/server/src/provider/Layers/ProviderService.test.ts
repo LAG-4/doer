@@ -4862,6 +4862,10 @@ describe("agent browser access", () => {
         getThreadDetailById: () => Effect.die("unused"),
         getThreadDetailSnapshot: () => Effect.die("unused"),
         searchThreads: () => Effect.die("unused"),
+        getAutomationById: () => Effect.die("unused"),
+        listVisibleAutomations: () => Effect.die("unused"),
+        listDueAutomations: () => Effect.die("unused"),
+        listSettleCandidateAutomations: () => Effect.die("unused"),
       });
       const providerLayer = makeProviderServiceLive({
         issueMcpCredential: (request) =>
@@ -4916,7 +4920,7 @@ describe("agent browser access", () => {
 
       const issued = yield* startSessionWith(false, threadId);
 
-      assert.deepEqual(issued, [{ threadId, capabilities: ["pull-requests"] }]);
+      assert.deepEqual(issued, [{ threadId, capabilities: ["automations", "pull-requests"] }]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
@@ -4927,7 +4931,7 @@ describe("agent browser access", () => {
       const issued = yield* startSessionWith(true, threadId);
 
       assert.deepEqual(issued, [
-        { threadId, capabilities: ["device", "preview", "pull-requests"] },
+        { threadId, capabilities: ["automations", "device", "preview", "pull-requests"] },
       ]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
@@ -4938,7 +4942,9 @@ describe("agent browser access", () => {
 
       const issued = yield* startSessionWith({ browser: false, device: true }, threadId);
 
-      assert.deepEqual(issued, [{ threadId, capabilities: ["device", "pull-requests"] }]);
+      assert.deepEqual(issued, [
+        { threadId, capabilities: ["automations", "device", "pull-requests"] },
+      ]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
@@ -4946,7 +4952,7 @@ describe("agent browser access", () => {
     Effect.gen(function* () {
       const threadId = asThreadId("thread-project-browser-off");
       const issued = yield* startSessionWith({ browser: true, device: false }, threadId, false);
-      assert.deepEqual(issued, [{ threadId, capabilities: ["pull-requests"] }]);
+      assert.deepEqual(issued, [{ threadId, capabilities: ["automations", "pull-requests"] }]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
@@ -4954,7 +4960,9 @@ describe("agent browser access", () => {
     Effect.gen(function* () {
       const threadId = asThreadId("thread-project-browser-off-device-on");
       const issued = yield* startSessionWith(true, threadId, false);
-      assert.deepEqual(issued, [{ threadId, capabilities: ["device", "pull-requests"] }]);
+      assert.deepEqual(issued, [
+        { threadId, capabilities: ["automations", "device", "pull-requests"] },
+      ]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
@@ -4962,7 +4970,9 @@ describe("agent browser access", () => {
     Effect.gen(function* () {
       const threadId = asThreadId("thread-project-browser-on");
       const issued = yield* startSessionWith({ browser: false, device: false }, threadId, true);
-      assert.deepEqual(issued, [{ threadId, capabilities: ["preview", "pull-requests"] }]);
+      assert.deepEqual(issued, [
+        { threadId, capabilities: ["automations", "preview", "pull-requests"] },
+      ]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 });

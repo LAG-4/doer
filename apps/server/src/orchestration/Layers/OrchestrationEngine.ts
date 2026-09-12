@@ -1,4 +1,5 @@
 import type {
+  AutomationId,
   OrchestrationClientOrigin,
   OrchestrationEvent,
   OrchestrationReadModel,
@@ -62,8 +63,8 @@ interface CommandEnvelope {
 }
 
 function commandToAggregateRef(command: OrchestrationCommand): {
-  readonly aggregateKind: "project" | "thread";
-  readonly aggregateId: ProjectId | ThreadId;
+  readonly aggregateKind: "project" | "thread" | "automation";
+  readonly aggregateId: ProjectId | ThreadId | AutomationId;
 } {
   switch (command.type) {
     case "project.create":
@@ -72,6 +73,17 @@ function commandToAggregateRef(command: OrchestrationCommand): {
       return {
         aggregateKind: "project",
         aggregateId: command.projectId,
+      };
+    case "automation.create":
+    case "automation.update":
+    case "automation.pause":
+    case "automation.resume":
+    case "automation.delete":
+    case "automation.run-now":
+    case "automation.fired":
+      return {
+        aggregateKind: "automation",
+        aggregateId: command.automationId,
       };
     default:
       return {

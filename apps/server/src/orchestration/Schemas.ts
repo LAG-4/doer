@@ -1,4 +1,10 @@
 import {
+  AutomationCreatedPayload as ContractsAutomationCreatedPayloadSchema,
+  AutomationDeletedPayload as ContractsAutomationDeletedPayloadSchema,
+  AutomationFiredPayload as ContractsAutomationFiredPayloadSchema,
+  AutomationPausedPayload as ContractsAutomationPausedPayloadSchema,
+  AutomationResumedPayload as ContractsAutomationResumedPayloadSchema,
+  AutomationUpdatedPayload as ContractsAutomationUpdatedPayloadSchema,
   ProjectCreatedPayload as ContractsProjectCreatedPayloadSchema,
   ProjectMetaUpdatedPayload as ContractsProjectMetaUpdatedPayloadSchema,
   ProjectDeletedPayload as ContractsProjectDeletedPayloadSchema,
@@ -70,3 +76,9 @@ export const ThreadApprovalResponseRequestedPayload =
 export const ThreadCheckpointRevertRequestedPayload =
   ContractsThreadCheckpointRevertRequestedPayloadSchema;
 export const ThreadSessionStopRequestedPayload = ContractsThreadSessionStopRequestedPayloadSchema;
+export const AutomationCreatedPayload = ContractsAutomationCreatedPayloadSchema;
+export const AutomationUpdatedPayload = ContractsAutomationUpdatedPayloadSchema;
+export const AutomationPausedPayload = ContractsAutomationPausedPayloadSchema;
+export const AutomationResumedPayload = ContractsAutomationResumedPayloadSchema;
+export const AutomationDeletedPayload = ContractsAutomationDeletedPayloadSchema;
+export const AutomationFiredPayload = ContractsAutomationFiredPayloadSchema;

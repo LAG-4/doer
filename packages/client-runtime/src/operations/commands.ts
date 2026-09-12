@@ -55,6 +55,12 @@ export type RespondToThreadUserInputInput = CommandInput<"thread.user-input.resp
 export type DismissThreadUserInputInput = CommandInput<"thread.user-input.dismiss">;
 export type RevertThreadCheckpointInput = CommandInput<"thread.checkpoint.revert">;
 export type StopThreadSessionInput = CommandInput<"thread.session.stop">;
+export type CreateAutomationInput = CommandInput<"automation.create">;
+export type UpdateAutomationInput = CommandInput<"automation.update">;
+export type PauseAutomationInput = CommandInput<"automation.pause">;
+export type ResumeAutomationInput = CommandInput<"automation.resume">;
+export type DeleteAutomationInput = CommandInput<"automation.delete">;
+export type RunAutomationNowInput = CommandInput<"automation.run-now">;
 
 type DispatchTag = typeof ORCHESTRATION_WS_METHODS.dispatchCommand;
 type CommandEffect = Effect.Effect<
@@ -372,5 +378,67 @@ export const stopThreadSession: (input: StopThreadSessionInput) => CommandEffect
     type: "thread.session.stop",
     commandId: metadata.commandId,
     createdAt: metadata.createdAt,
+  });
+});
+
+export const createAutomation: (input: CreateAutomationInput) => CommandEffect = Effect.fn(
+  "EnvironmentCommands.createAutomation",
+)(function* (input) {
+  const metadata = yield* timestampedCommandMetadata(input);
+  return yield* dispatch({
+    ...input,
+    type: "automation.create",
+    commandId: metadata.commandId,
+    createdAt: metadata.createdAt,
+  });
+});
+
+export const updateAutomation: (input: UpdateAutomationInput) => CommandEffect = Effect.fn(
+  "EnvironmentCommands.updateAutomation",
+)(function* (input) {
+  return yield* dispatch({
+    ...input,
+    type: "automation.update",
+    commandId: yield* commandId(input),
+  });
+});
+
+export const pauseAutomation: (input: PauseAutomationInput) => CommandEffect = Effect.fn(
+  "EnvironmentCommands.pauseAutomation",
+)(function* (input) {
+  return yield* dispatch({
+    ...input,
+    type: "automation.pause",
+    commandId: yield* commandId(input),
+  });
+});
+
+export const resumeAutomation: (input: ResumeAutomationInput) => CommandEffect = Effect.fn(
+  "EnvironmentCommands.resumeAutomation",
+)(function* (input) {
+  return yield* dispatch({
+    ...input,
+    type: "automation.resume",
+    commandId: yield* commandId(input),
+  });
+});
+
+export const deleteAutomation: (input: DeleteAutomationInput) => CommandEffect = Effect.fn(
+  "EnvironmentCommands.deleteAutomation",
+)(function* (input) {
+  return yield* dispatch({
+    ...input,
+    type: "automation.delete",
+    commandId: yield* commandId(input),
+  });
+});
+
+export const runAutomationNow: (input: RunAutomationNowInput) => CommandEffect = Effect.fn(
+  "EnvironmentCommands.runAutomationNow",
+)(function* (input) {
+  return yield* dispatch({
+    ...input,
+    type: "automation.run-now",
+    commandId: yield* commandId(input),
   });
 });

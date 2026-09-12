@@ -1,4 +1,5 @@
 import type {
+  Automation,
   EnvironmentId,
   OrchestrationMessage,
   OrchestrationProjectShell,
@@ -17,6 +18,10 @@ export interface EnvironmentThreadShell extends OrchestrationThreadShell {
 export type EnvironmentMessage = OrchestrationMessage;
 
 export interface EnvironmentThread extends OrchestrationThread {
+  readonly environmentId: EnvironmentId;
+}
+
+export interface EnvironmentAutomation extends Automation {
   readonly environmentId: EnvironmentId;
 }
 
@@ -39,4 +44,11 @@ export function scopeThread(
   thread: OrchestrationThread,
 ): EnvironmentThread {
   return { ...thread, environmentId };
+}
+
+export function scopeAutomation(
+  environmentId: EnvironmentId,
+  automation: Automation,
+): EnvironmentAutomation {
+  return { ...automation, environmentId };
 }

@@ -16,6 +16,7 @@ import {
   ProjectScript,
   ProjectIconOverride,
   TurnId,
+  type Automation,
   type OrchestrationCheckpointSummary,
   type OrchestrationLatestTurn,
   type OrchestrationMessage,
@@ -51,6 +52,7 @@ import {
   type ProjectionRepositoryError,
 } from "../../persistence/Errors.ts";
 import { ProjectionCheckpoint } from "../../persistence/Services/ProjectionCheckpoints.ts";
+import * as ProjectionAutomations from "../../persistence/ProjectionAutomations.ts";
 import { ThreadBackgroundLivenessService } from "../ThreadBackgroundLiveness.ts";
 import { ThreadPlanProgressService } from "../ThreadPlanProgress.ts";
 import { ProjectionProject } from "../../persistence/Services/ProjectionProjects.ts";
@@ -429,6 +431,25 @@ function mapPullRequestRow(
   };
 }
 
+function mapAutomationRow(row: ProjectionAutomations.ProjectionAutomation): Automation {
+  return {
+    id: row.automationId,
+    projectId: row.projectId,
+    threadId: row.threadId,
+    title: row.title,
+    prompt: row.prompt,
+    schedule: row.schedule,
+    state: row.state,
+    dedicatedThread: row.dedicatedThread,
+    nextFireAt: row.nextFireAt,
+    lastFiredAt: row.lastFiredAt,
+    runs: [...row.runs],
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    deletedAt: row.deletedAt,
+  };
+}
+
 function groupPullRequestRowsByThread(
   rows: ReadonlyArray<Schema.Schema.Type<typeof ProjectionThreadPullRequestDbRowSchema>>,
 ): Map<string, Array<ThreadPullRequestLink>> {
@@ -484,6 +505,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
   const threadPlanProgress = yield* ThreadPlanProgressService;
   const sql = yield* SqlClient.SqlClient;
   const repositoryIdentityResolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+  const projectionAutomationRepository =
+    yield* ProjectionAutomations.ProjectionAutomationRepository;
   const repositoryIdentityResolutionConcurrency = 4;
   const resolveRepositoryIdentitiesForProjects = Effect.fn(
     "ProjectionSnapshotQuery.resolveRepositoryIdentitiesForProjects",
@@ -2043,6 +2066,16 @@ pending_approval_requests AS (
               ),
             ),
           ),
+          projectionAutomationRepository
+            .listAll()
+            .pipe(
+              Effect.mapError(
+                toPersistenceSqlOrDecodeError(
+                  "ProjectionSnapshotQuery.getSnapshot:listAutomations:query",
+                  "ProjectionSnapshotQuery.getSnapshot:listAutomations:decodeRows",
+                ),
+              ),
+            ),
         ]),
       )
       .pipe(
@@ -2058,6 +2091,7 @@ pending_approval_requests AS (
             checkpointRows,
             latestTurnRows,
             stateRows,
+            automationRows,
           ]) =>
             Effect.gen(function* () {
               const messagesByThread = new Map<string, Array<OrchestrationMessage>>();
@@ -2078,6 +2112,11 @@ pending_approval_requests AS (
               }
               for (const row of stateRows) {
                 updatedAt = maxIso(updatedAt, row.updatedAt);
+              }
+              const automations: Automation[] = [];
+              for (const row of automationRows) {
+                updatedAt = maxIso(updatedAt, row.updatedAt);
+                automations.push(mapAutomationRow(row));
               }
 
               for (const row of messageRows) {
@@ -2255,6 +2294,7 @@ pending_approval_requests AS (
                 snapshotSequence: computeSnapshotSequence(stateRows),
                 projects,
                 threads,
+                automations,
                 updatedAt: updatedAt ?? "1970-01-01T00:00:00.000Z",
               };
 
@@ -2333,6 +2373,16 @@ pending_approval_requests AS (
               ),
             ),
           ),
+          projectionAutomationRepository
+            .listAll()
+            .pipe(
+              Effect.mapError(
+                toPersistenceSqlOrDecodeError(
+                  "ProjectionSnapshotQuery.getCommandReadModel:listAutomations:query",
+                  "ProjectionSnapshotQuery.getCommandReadModel:listAutomations:decodeRows",
+                ),
+              ),
+            ),
         ]),
       )
       .pipe(
@@ -2345,6 +2395,7 @@ pending_approval_requests AS (
             sessionRows,
             latestTurnRows,
             stateRows,
+            automationRows,
           ]) =>
             Effect.gen(function* () {
               const linkedThreadIds = new Set(pullRequestRows.map((row) => row.threadId));
@@ -2423,6 +2474,15 @@ pending_approval_requests AS (
                 }
                 updatedAt = maxIso(updatedAt, row.updatedAt);
               }
+              const automations: Automation[] = [];
+              for (let index = 0; index < automationRows.length; index += 1) {
+                const row = automationRows[index];
+                if (!row) {
+                  continue;
+                }
+                updatedAt = maxIso(updatedAt, row.updatedAt);
+                automations.push(mapAutomationRow(row));
+              }
 
               const latestTurnByThread = new Map<string, OrchestrationLatestTurn>();
               for (let index = 0; index < latestTurnRows.length; index += 1) {
@@ -2500,6 +2560,7 @@ pending_approval_requests AS (
                 snapshotSequence: computeSnapshotSequence(stateRows),
                 projects,
                 threads,
+                automations,
                 updatedAt: updatedAt ?? "1970-01-01T00:00:00.000Z",
               } satisfies OrchestrationReadModel;
             }),
@@ -2564,11 +2625,29 @@ pending_approval_requests AS (
               ),
             ),
           ),
+          projectionAutomationRepository
+            .listVisible()
+            .pipe(
+              Effect.mapError(
+                toPersistenceSqlOrDecodeError(
+                  "ProjectionSnapshotQuery.getShellSnapshot:listAutomations:query",
+                  "ProjectionSnapshotQuery.getShellSnapshot:listAutomations:decodeRows",
+                ),
+              ),
+            ),
         ]),
       )
       .pipe(
         Effect.flatMap(
-          ([projectRows, threadRows, sessionRows, pullRequestRows, latestTurnRows, stateRows]) =>
+          ([
+            projectRows,
+            threadRows,
+            sessionRows,
+            pullRequestRows,
+            latestTurnRows,
+            stateRows,
+            automationRows,
+          ]) =>
             Effect.gen(function* () {
               let updatedAt: string | null = null;
               for (const row of projectRows) {
@@ -2591,6 +2670,11 @@ pending_approval_requests AS (
               }
               for (const row of stateRows) {
                 updatedAt = maxIso(updatedAt, row.updatedAt);
+              }
+              const automations: Automation[] = [];
+              for (const row of automationRows) {
+                updatedAt = maxIso(updatedAt, row.updatedAt);
+                automations.push(mapAutomationRow(row));
               }
 
               const repositoryIdentities =
@@ -2654,6 +2738,7 @@ pending_approval_requests AS (
                       } satisfies OrchestrationThreadShell)
                     : Result.failVoid,
                 ),
+                automations,
                 updatedAt: updatedAt ?? "1970-01-01T00:00:00.000Z",
               };
 
@@ -2969,6 +3054,55 @@ pending_approval_requests AS (
         ),
         Effect.map(Option.map((row) => row.threadId)),
       );
+
+  const getAutomationById: ProjectionSnapshotQueryShape["getAutomationById"] = (automationId) =>
+    projectionAutomationRepository
+      .getById({ automationId })
+      .pipe(
+        Effect.mapError(
+          toPersistenceSqlOrDecodeError(
+            "ProjectionSnapshotQuery.getAutomationById:query",
+            "ProjectionSnapshotQuery.getAutomationById:decodeRow",
+          ),
+        ),
+        Effect.map(Option.map(mapAutomationRow)),
+      );
+
+  const listVisibleAutomations: ProjectionSnapshotQueryShape["listVisibleAutomations"] = () =>
+    projectionAutomationRepository.listVisible().pipe(
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "ProjectionSnapshotQuery.listVisibleAutomations:query",
+          "ProjectionSnapshotQuery.listVisibleAutomations:decodeRows",
+        ),
+      ),
+      Effect.map((rows) => rows.map(mapAutomationRow)),
+    );
+
+  const listDueAutomations: ProjectionSnapshotQueryShape["listDueAutomations"] = (input) =>
+    projectionAutomationRepository.listDue({ nowIso: input.nowIso, limit: input.limit ?? 50 }).pipe(
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "ProjectionSnapshotQuery.listDueAutomations:query",
+          "ProjectionSnapshotQuery.listDueAutomations:decodeRows",
+        ),
+      ),
+      Effect.map((rows) => rows.map(mapAutomationRow)),
+    );
+
+  const listSettleCandidateAutomations: ProjectionSnapshotQueryShape["listSettleCandidateAutomations"] =
+    (input) =>
+      projectionAutomationRepository
+        .listSettleCandidates({ firedBeforeIso: input.firedBeforeIso, limit: input.limit ?? 50 })
+        .pipe(
+          Effect.mapError(
+            toPersistenceSqlOrDecodeError(
+              "ProjectionSnapshotQuery.listSettleCandidateAutomations:query",
+              "ProjectionSnapshotQuery.listSettleCandidateAutomations:decodeRows",
+            ),
+          ),
+          Effect.map((rows) => rows.map(mapAutomationRow)),
+        );
 
   const getImportedAgentSessionSources: ProjectionSnapshotQueryShape["getImportedAgentSessionSources"] =
     Effect.fn("ProjectionSnapshotQuery.getImportedAgentSessionSources")(function* (projectId) {
@@ -3649,6 +3783,10 @@ pending_approval_requests AS (
     getThreadCheckpointContext,
     getFullThreadDiffContext,
     getThreadShellById,
+    getAutomationById,
+    listVisibleAutomations,
+    listDueAutomations,
+    listSettleCandidateAutomations,
     getThreadRuntimeContext,
     getTurnStartMessage,
     getThreadDetailById,
@@ -3659,4 +3797,4 @@ pending_approval_requests AS (
 export const OrchestrationProjectionSnapshotQueryLive = Layer.effect(
   ProjectionSnapshotQuery,
   makeProjectionSnapshotQuery,
-);
+).pipe(Layer.provideMerge(ProjectionAutomations.layer));

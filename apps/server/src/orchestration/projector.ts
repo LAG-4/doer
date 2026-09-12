@@ -52,11 +52,20 @@ import {
   ThreadRevertedPayload,
   ThreadSessionSetPayload,
   ThreadTurnDiffCompletedPayload,
+  AutomationCreatedPayload,
+  AutomationUpdatedPayload,
+  AutomationPausedPayload,
+  AutomationResumedPayload,
+  AutomationDeletedPayload,
+  AutomationFiredPayload,
 } from "./Schemas.ts";
 
 type ThreadPatch = Partial<Omit<OrchestrationThread, "id" | "projectId">>;
 const MAX_THREAD_MESSAGES = 2_000;
 const MAX_THREAD_CHECKPOINTS = 500;
+// Run history per automation: enough for the "Scheduled tasks" row history
+// without growing the read model without bound.
+const MAX_AUTOMATION_RUNS = 50;
 
 // Async questions can stay open while the agent produces more activity.
 // Match the database snapshot's pending-question retention.
@@ -310,6 +319,7 @@ export function createEmptyReadModel(nowIso: string): OrchestrationReadModel {
     snapshotSequence: 0,
     projects: [],
     threads: [],
+    automations: [],
     updatedAt: nowIso,
   };
 }
@@ -1052,6 +1062,130 @@ export function projectEvent(
             }),
           };
         }),
+      );
+
+    case "automation.created":
+      return decodeForEvent(AutomationCreatedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => {
+          const automations = nextBase.automations ?? [];
+          const existing = automations.find((entry) => entry.id === payload.automationId);
+          // Recreating a deleted id resets it (mirrors thread recreation).
+          const nextAutomation = {
+            id: payload.automationId,
+            projectId: payload.projectId,
+            threadId: payload.threadId,
+            title: payload.title,
+            prompt: payload.prompt,
+            schedule: payload.schedule,
+            dedicatedThread: payload.dedicatedThread,
+            state: "active" as const,
+            nextFireAt: payload.nextFireAt,
+            lastFiredAt: null,
+            runs: [],
+            createdAt: payload.createdAt,
+            updatedAt: payload.updatedAt,
+            deletedAt: null,
+          };
+          return {
+            ...nextBase,
+            automations: existing
+              ? automations.map((entry) =>
+                  entry.id === payload.automationId ? nextAutomation : entry,
+                )
+              : [...automations, nextAutomation],
+          };
+        }),
+      );
+
+    case "automation.updated":
+      return decodeForEvent(AutomationUpdatedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          automations: (nextBase.automations ?? []).map((automation) =>
+            automation.id === payload.automationId
+              ? {
+                  ...automation,
+                  ...(payload.title !== undefined ? { title: payload.title } : {}),
+                  ...(payload.prompt !== undefined ? { prompt: payload.prompt } : {}),
+                  ...(payload.schedule !== undefined ? { schedule: payload.schedule } : {}),
+                  ...(payload.nextFireAt !== undefined ? { nextFireAt: payload.nextFireAt } : {}),
+                  updatedAt: payload.updatedAt,
+                }
+              : automation,
+          ),
+        })),
+      );
+
+    case "automation.paused":
+      return decodeForEvent(AutomationPausedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          automations: (nextBase.automations ?? []).map((automation) =>
+            automation.id === payload.automationId
+              ? {
+                  ...automation,
+                  state: "paused" as const,
+                  nextFireAt: null,
+                  updatedAt: payload.updatedAt,
+                }
+              : automation,
+          ),
+        })),
+      );
+
+    case "automation.resumed":
+      return decodeForEvent(AutomationResumedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          automations: (nextBase.automations ?? []).map((automation) =>
+            automation.id === payload.automationId
+              ? {
+                  ...automation,
+                  state: "active" as const,
+                  nextFireAt: payload.nextFireAt,
+                  updatedAt: payload.updatedAt,
+                }
+              : automation,
+          ),
+        })),
+      );
+
+    case "automation.deleted":
+      return decodeForEvent(AutomationDeletedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          automations: (nextBase.automations ?? []).map((automation) =>
+            automation.id === payload.automationId
+              ? {
+                  ...automation,
+                  // A deleted automation never fires again: clear the slot
+                  // alongside the tombstone.
+                  nextFireAt: null,
+                  deletedAt: payload.deletedAt,
+                  updatedAt: payload.updatedAt,
+                }
+              : automation,
+          ),
+        })),
+      );
+
+    case "automation.fired":
+      return decodeForEvent(AutomationFiredPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          automations: (nextBase.automations ?? []).map((automation) =>
+            automation.id === payload.automationId
+              ? {
+                  ...automation,
+                  state: payload.state,
+                  nextFireAt: payload.nextFireAt,
+                  lastFiredAt: payload.run.firedAt,
+                  runs: [...automation.runs, payload.run].slice(-MAX_AUTOMATION_RUNS),
+                  updatedAt: payload.updatedAt,
+                }
+              : automation,
+          ),
+        })),
       );
 
     default:
