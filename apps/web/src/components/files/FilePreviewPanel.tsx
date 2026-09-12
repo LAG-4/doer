@@ -54,6 +54,8 @@ import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 import FileBrowserPanel from "./FileBrowserPanel";
 import { FileBreadcrumbs } from "./FileBreadcrumbs";
 import { FileMarkdownPreview } from "./FileMarkdownPreview";
+import { SpreadsheetAttachmentSurface } from "./SpreadsheetAttachmentSurface";
+import { SpreadsheetSurface } from "./SpreadsheetSurface";
 import {
   type FileCommentAnnotationEntry,
   type FileCommentAnnotationGroup,
@@ -69,6 +71,7 @@ import { DiffCommentAnnotation } from "../diffs/DiffCommentAnnotation";
 import { projectFileCacheKey, projectFileEditorCacheKey } from "./fileContentRevision";
 import {
   isMarkdownPreviewFile,
+  isSpreadsheetPreviewFile,
   setMarkdownTaskChecked,
   shouldShowFileExplorer,
 } from "./filePreviewMode";
@@ -989,11 +992,20 @@ export default function FilePreviewPanel({
   // A file outside the workspace (an absolute path) is shown, never edited.
   const isHostFile =
     attachment !== undefined || (relativePath !== null && isAbsolutePath(relativePath));
+  // Spreadsheets open in the editable Sheet grid backed by base64 over the
+  // same file API. Host files and attachments have no writable path, so only
+  // workspace files get the editable surface.
+  const isSheetEditable =
+    relativePath !== null &&
+    attachment === undefined &&
+    !isHostFile &&
+    isSpreadsheetPreviewFile(relativePath);
+  const isSheetAttachment = attachment !== undefined && isSpreadsheetPreviewFile(attachment.name);
   const file = useProjectFileQuery(
     environmentId,
     cwd,
     relativePath,
-    attachment === undefined && !isMedia && !isPdf,
+    attachment === undefined && !isMedia && !isPdf && !isSheetEditable,
   );
   const [explorerOpen, setExplorerOpen] = useState(initialExplorerOpen);
   const showExplorer = shouldShowFileExplorer({
@@ -1047,6 +1059,7 @@ export default function FilePreviewPanel({
       relativePath !== null &&
       !isMedia &&
       !isPdf &&
+      !isSheetEditable &&
       !selectedFilePending,
     mutationId: workspaceMutationId,
     refresh: file.refresh,
@@ -1226,7 +1239,15 @@ export default function FilePreviewPanel({
           )}
         >
           {relativePath && attachment ? (
-            <AttachmentBrowserPreview environmentId={environmentId} attachment={attachment} />
+            isSheetAttachment ? (
+              <SpreadsheetAttachmentSurface
+                key={attachment.id}
+                environmentId={environmentId}
+                attachment={attachment}
+              />
+            ) : (
+              <AttachmentBrowserPreview environmentId={environmentId} attachment={attachment} />
+            )
           ) : relativePath && isVideo && absolutePath ? (
             <WorkspaceVideoPreview
               key={`${environmentId}:${threadRef.threadId}:${absolutePath}`}
@@ -1261,6 +1282,15 @@ export default function FilePreviewPanel({
             <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs leading-relaxed text-destructive">
               {file.error}
             </div>
+          ) : relativePath && isSheetEditable ? (
+            <SpreadsheetSurface
+              key={relativePath}
+              environmentId={environmentId}
+              cwd={cwd}
+              relativePath={relativePath}
+              workspaceMutationId={workspaceMutationId}
+              onPendingChange={onPendingChange}
+            />
           ) : relativePath && file.data === null ? (
             <div className="flex min-h-0 flex-1 items-center justify-center text-muted-foreground">
               <Spinner className="size-5" />
@@ -1346,7 +1376,7 @@ export default function FilePreviewPanel({
               selectedPathRevealId={revealRequestId}
               onOpenFile={onOpenFile}
               workspaceMutationId={workspaceMutationId}
-              {...(relativePath && !isMedia && !isPdf
+              {...(relativePath && !isMedia && !isPdf && !isSheetEditable
                 ? { onRefreshSelectedFile: file.refresh }
                 : {})}
             />

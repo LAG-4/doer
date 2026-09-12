@@ -45,6 +45,28 @@ describe("FileSaveCoordinator", () => {
     expect(onPendingChange.mock.calls).toEqual([[true], [true], [false]]);
   });
 
+  it("persists an explicit save immediately without waiting for the debounce", async () => {
+    vi.useFakeTimers();
+    const persist = vi
+      .fn<(contents: string) => Promise<AtomCommandResult<void, never>>>()
+      .mockResolvedValue(AsyncResult.success(undefined));
+    const onPendingChange = vi.fn();
+    const onConfirmed = vi.fn();
+    const coordinator = new FileSaveCoordinator({
+      debounceMs: 500,
+      persist,
+      onPendingChange,
+      onConfirmed,
+    });
+
+    coordinator.save("sheet-bytes");
+    await Promise.resolve();
+    expect(persist).toHaveBeenCalledOnce();
+    expect(persist).toHaveBeenCalledWith("sheet-bytes");
+    expect(onConfirmed).toHaveBeenCalledWith("sheet-bytes");
+    expect(onPendingChange.mock.calls).toEqual([[true], [false]]);
+  });
+
   it("keeps pending state until an edit made during a write is also saved", async () => {
     vi.useFakeTimers();
     const firstWrite = deferred();

@@ -48,6 +48,27 @@ export function getProjectFileQueryAtom(
   });
 }
 
+/**
+ * Backing query for spreadsheet (.xlsx) files. Binary workbooks travel over
+ * the same file API with base64 encoding; the text optimistic cache in this
+ * module is deliberately untouched so binary payloads can never read as text
+ * elsewhere (mentions, defaults, text preview).
+ */
+export function getProjectBinaryFileQueryAtom(
+  environmentId: EnvironmentId,
+  cwd: string,
+  relativePath: string | null,
+) {
+  return projectEnvironment.readFile({
+    environmentId,
+    input: {
+      cwd,
+      relativePath: relativePath ?? EMPTY_PROJECT_FILE_PATH,
+      encoding: "base64",
+    },
+  });
+}
+
 export function setProjectFileQueryData(
   environmentId: EnvironmentId,
   cwd: string,
@@ -200,6 +221,28 @@ export function useProjectFileQuery(
 
   return {
     data: optimisticFile?.data ?? data,
+    error: errorMessage(result),
+    isPending: result.waiting,
+    refresh,
+  };
+}
+
+/** Binary counterpart to {@link useProjectFileQuery} for spreadsheet files. */
+export function useProjectBinaryFileQuery(
+  environmentId: EnvironmentId,
+  cwd: string,
+  relativePath: string | null,
+  enabled = true,
+): ProjectQueryState<ProjectReadFileResult> {
+  const atom =
+    enabled && relativePath !== null
+      ? getProjectBinaryFileQueryAtom(environmentId, cwd, relativePath)
+      : EMPTY_PROJECT_FILE_QUERY_ATOM;
+  const result = useAtomValue(atom);
+  const refreshAtom = useAtomRefresh(atom);
+  const refresh = useCallback(() => refreshAtom(), [refreshAtom]);
+  return {
+    data: Option.getOrNull(AsyncResult.value(result)),
     error: errorMessage(result),
     isPending: result.waiting,
     refresh,

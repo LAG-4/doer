@@ -219,6 +219,10 @@
       "types": "./src/filePreview.ts",
       "import": "./src/filePreview.ts"
     },
+    "./spreadsheetWorkbook": {
+      "types": "./src/spreadsheetWorkbook.ts",
+      "import": "./src/spreadsheetWorkbook.ts"
+    },
     "./imageDimensions": {
       "types": "./src/imageDimensions.ts",
       "import": "./src/imageDimensions.ts"

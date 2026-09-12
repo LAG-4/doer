@@ -2,6 +2,9 @@ import { isAbsolutePath } from "~/terminal-links";
 
 export const isMarkdownPreviewFile = (path: string): boolean => /\.(?:md|mdx)$/i.test(path);
 
+export const isSpreadsheetPreviewFile = (path: string): boolean =>
+  /\.xlsx$/i.test(path.split(/[?#]/, 1)[0] ?? "");
+
 export function shouldShowFileExplorer(input: {
   readonly relativePath: string | null;
   readonly explorerOpen: boolean;

@@ -164,6 +164,7 @@ import {
 import { useTheme } from "../hooks/useTheme";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
+import { isSpreadsheetPreviewFile } from "./files/filePreviewMode";
 import { subscribeSnapShotComposerFocus } from "../lib/desktopSnapShot";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import { useMediaQuery } from "../hooks/useMediaQuery";
@@ -4661,6 +4662,24 @@ export default function ChatView(props: ChatViewProps) {
         closeAfterAgentBrowserConfirmation([surface], finishClose);
         return;
       }
+      // Sheet edits save explicitly, so a pending spreadsheet may hold
+      // unsaved changes. Confirm instead of dropping them silently. Text
+      // files autosave on close and never linger as pending.
+      if (
+        surface.kind === "file" &&
+        pendingFileSurfaceIds.has(surface.id) &&
+        isSpreadsheetPreviewFile(surface.attachment?.name ?? surface.relativePath)
+      ) {
+        const localApi = readLocalApi();
+        void (
+          localApi?.dialogs.confirm(
+            `Discard unsaved changes to ${surface.attachment?.name ?? surface.relativePath}?`,
+          ) ?? Promise.resolve(false)
+        ).then((confirmed) => {
+          if (confirmed) finishClose();
+        });
+        return;
+      }
       if (surface.kind !== "terminal") {
         finishClose();
         return;
@@ -4682,6 +4701,7 @@ export default function ChatView(props: ChatViewProps) {
       activeTerminalLabelsById,
       closeAfterAgentBrowserConfirmation,
       finishRightPanelSurfaceClose,
+      pendingFileSurfaceIds,
     ],
   );
   const closeOtherRightPanelSurfaces = useCallback(
