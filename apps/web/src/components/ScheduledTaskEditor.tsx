@@ -159,7 +159,7 @@ export function ScheduledTaskEditor(props: {
         if (!next) close();
       }}
     >
-      <DialogPopup>
+      <DialogPopup className="sm:mt-10">
         <DialogPanel>
           {open ? (
             <ScheduledTaskEditorForm
