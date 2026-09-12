@@ -9,16 +9,22 @@ import { useRightPanelStore } from "~/rightPanelStore";
 
 import { openPreviewSession } from "./openPreviewSession";
 
+/** Homepage opened whenever a browser tab is created manually (no URL given). */
+export const DEFAULT_MANUAL_BROWSER_URL = "https://www.google.com";
+
 /** Creates a new browser tab. Reopening an existing tab is a separate UI action. */
 export async function addBrowserSurface<E>(input: {
   readonly threadRef: ScopedThreadRef;
   readonly openPreview: OpenPreviewMutation<E>;
   /** Omit to use the configured default profile. */
   readonly profileId?: string | undefined;
+  /** Omit to open the default homepage. */
+  readonly url?: string | undefined;
 }): Promise<AtomCommandResult<void, E | BrowserSettingsReadError>> {
   const result = await openPreviewSession({
     openPreview: input.openPreview,
     threadRef: input.threadRef,
+    url: input.url ?? DEFAULT_MANUAL_BROWSER_URL,
     ...(input.profileId === undefined ? {} : { profileId: input.profileId }),
   });
   return mapAtomCommandResult(result, (snapshot) => {

@@ -17,7 +17,7 @@ import {
 import { selectThreadRightPanelState, useRightPanelStore } from "~/rightPanelStore";
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
 
-import { addBrowserSurface } from "./addBrowserSurface";
+import { addBrowserSurface, DEFAULT_MANUAL_BROWSER_URL } from "./addBrowserSurface";
 
 const threadRef = {
   environmentId: "local" as ScopedThreadRef["environmentId"],
@@ -53,9 +53,25 @@ describe("addBrowserSurface", () => {
 
     expect(openPreview).toHaveBeenCalledWith({
       threadId: "thread-1",
+      url: DEFAULT_MANUAL_BROWSER_URL,
       viewport: FILL_PREVIEW_VIEWPORT,
       profileId: "profile-work",
     });
+  });
+
+  it("opens google.com by default for manually created tabs", async () => {
+    const openPreview = vi.fn(async (_input: PreviewOpenInput) =>
+      AsyncResult.success(snapshot("tab-1")),
+    );
+
+    await addBrowserSurface({
+      threadRef,
+      openPreview: ({ input }) => openPreview(input),
+    });
+
+    expect(openPreview).toHaveBeenCalledWith(
+      expect.objectContaining({ url: "https://www.google.com" }),
+    );
   });
 
   it("creates another preview session when a browser tab is already active", async () => {
@@ -69,6 +85,7 @@ describe("addBrowserSurface", () => {
 
     expect(openPreview).toHaveBeenCalledWith({
       threadId: "thread-1",
+      url: DEFAULT_MANUAL_BROWSER_URL,
       viewport: FILL_PREVIEW_VIEWPORT,
       profileId: DEFAULT_BROWSER_PROFILE_ID,
     });
