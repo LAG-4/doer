@@ -17,7 +17,10 @@ concurrency:
 jobs:
   deploy_relay:
     name: Deploy production relay
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    # FORK: the fork has no relay deployment; without this gate every upstream
+    # mirror sync to main would run (and fail) here for lack of secrets.
+    if: github.repository == 'pingdotgg/t3code'
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment:
       name: production
