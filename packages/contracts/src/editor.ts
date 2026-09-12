@@ -221,3 +221,58 @@ export const ExternalLauncherError = Schema.Union([
   ExternalLauncherEditorSpawnError,
 ]);
 export type ExternalLauncherError = typeof ExternalLauncherError.Type;
+
+/**
+ * Open a workspace file in the host's default application (Excel for .xlsx
+ * where associated). Paths never leave the workspace root: absolute host
+ * paths are rejected, unlike reads.
+ */
+export const ShellOpenFileInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  relativePath: TrimmedNonEmptyString,
+});
+export type ShellOpenFileInput = typeof ShellOpenFileInput.Type;
+
+export const ShellOpenFileResult = Schema.Struct({
+  relativePath: TrimmedNonEmptyString,
+  absolutePath: TrimmedNonEmptyString,
+});
+export type ShellOpenFileResult = typeof ShellOpenFileResult.Type;
+
+export const ShellOpenFileFailure = Schema.Literals([
+  "path_outside_root",
+  "path_not_file",
+  "launch_failed",
+]);
+export type ShellOpenFileFailure = typeof ShellOpenFileFailure.Type;
+
+type ShellOpenFileFailureContext = {
+  readonly cwd: string;
+  readonly relativePath: string;
+  readonly failure: ShellOpenFileFailure;
+  readonly cause?: unknown;
+};
+
+export class ShellOpenFileError extends Schema.TaggedError<ShellOpenFileError>()(
+  "ShellOpenFileError",
+  {
+    cwd: Schema.optional(TrimmedNonEmptyString),
+    relativePath: Schema.optional(TrimmedNonEmptyString),
+    failure: Schema.optional(ShellOpenFileFailure),
+    message: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  // @effect-diagnostics-next-line overriddenSchemaConstructor:off
+  constructor(props: ShellOpenFileFailureContext) {
+    super({
+      ...props,
+      message:
+        props.failure === "path_outside_root"
+          ? `Cannot open '${props.relativePath}': it resolves outside workspace root '${props.cwd}'.`
+          : props.failure === "path_not_file"
+            ? `Cannot open '${props.relativePath}' in '${props.cwd}': not a file.`
+            : `Failed to open '${props.relativePath}' in '${props.cwd}' in the default application.`,
+    } as any);
+  }
+}

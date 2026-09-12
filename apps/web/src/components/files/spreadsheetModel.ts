@@ -85,6 +85,25 @@ export function discardSpreadsheetChanges(document: SpreadsheetDocument): Spread
 }
 
 /**
+ * Tab-separated values for the clipboard: paste straight into Excel or
+ * Google Sheets and the grid survives. Cells holding tabs, newlines, or
+ * quotes are quoted with doubled quotes, mirroring CSV conventions.
+ */
+export function spreadsheetGridToTsv(rows: readonly (readonly string[])[]): string {
+  return rows
+    .map((row) =>
+      row
+        .map((cell) => {
+          const text = cell ?? "";
+          if (!/[\t\n\r"]/.test(text)) return text;
+          return `"${text.replace(/"/g, '""')}"`;
+        })
+        .join("\t"),
+    )
+    .join("\n");
+}
+
+/**
  * Snapshot a confirmed write. The live grid is kept as-is: edits typed while
  * the save was in flight stay dirty against the new snapshot instead of
  * being clobbered by it.

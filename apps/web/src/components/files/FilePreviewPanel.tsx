@@ -1290,6 +1290,11 @@ export default function FilePreviewPanel({
               relativePath={relativePath}
               workspaceMutationId={workspaceMutationId}
               onPendingChange={onPendingChange}
+              canOpenInExternalApp={
+                absolutePath !== null &&
+                (environmentId === primaryEnvironmentId || remoteOpenState.mode !== "local-exec") &&
+                availableEditors.includes("file-manager")
+              }
             />
           ) : relativePath && file.data === null ? (
             <div className="flex min-h-0 flex-1 items-center justify-center text-muted-foreground">

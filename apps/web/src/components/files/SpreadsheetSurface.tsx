@@ -7,13 +7,21 @@ import {
   serializeSpreadsheet,
   spreadsheetGridsEqual,
 } from "@t3tools/shared/spreadsheetWorkbook";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
+import { CopyIcon, DownloadIcon, ExternalLinkIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "~/components/ui/button";
 import { Spinner } from "~/components/ui/spinner";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
 import { readLocalApi } from "~/localApi";
+import { shellEnvironment } from "~/state/shell";
+import { useAtomCommand } from "~/state/use-atom-command";
 
 import { SpreadsheetGridEditor } from "./SpreadsheetGridEditor";
 import { installFileEditorDismissal } from "./fileEditorDismissal";
@@ -33,6 +41,7 @@ import {
   discardSpreadsheetChanges,
   isSpreadsheetDirty,
   setSpreadsheetCell,
+  spreadsheetGridToTsv,
   type SpreadsheetDocument,
 } from "./spreadsheetModel";
 import { useFileSaveCoordinator } from "./useFileSaveCoordinator";
@@ -43,6 +52,8 @@ interface SpreadsheetSurfaceProps {
   readonly relativePath: string;
   readonly workspaceMutationId: string | null;
   readonly onPendingChange: (relativePath: string, pending: boolean) => void;
+  /** True when the host can open files in an external app (Excel). */
+  readonly canOpenInExternalApp: boolean;
 }
 
 export function SpreadsheetSurface({
@@ -51,6 +62,7 @@ export function SpreadsheetSurface({
   relativePath,
   workspaceMutationId,
   onPendingChange,
+  canOpenInExternalApp,
 }: SpreadsheetSurfaceProps) {
   const file = useProjectBinaryFileQuery(environmentId, cwd, relativePath, true);
   const [document, setDocument] = useState<SpreadsheetDocument | null>(null);
@@ -260,6 +272,95 @@ export function SpreadsheetSurface({
     [onPendingChange, relativePath],
   );
 
+  const openFileInExternalApp = useAtomCommand(shellEnvironment.openFile, {
+    label: "open in excel",
+    reportFailure: false,
+  });
+
+  const handleOpenInExcel = useCallback(async () => {
+    if (saveInFlightRef.current || !documentRef.current) return;
+    // Excel opens the bytes on disk, not the grid: confirm instead of
+    // silently opening stale data.
+    if (dirtyRef.current) {
+      const localApi = readLocalApi();
+      const confirmed =
+        (await localApi?.dialogs.confirm(
+          "Open the saved file in Excel? Unsaved changes won't be included.",
+        )) ?? false;
+      if (!confirmed) return;
+    }
+    const result = await openFileInExternalApp({ environmentId, input: { cwd, relativePath } });
+    if (result._tag === "Failure") {
+      if (isAtomCommandInterrupted(result)) return;
+      const error = squashAtomCommandFailure(result);
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Couldn't open in Excel",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        }),
+      );
+      return;
+    }
+    toastManager.add({ type: "success", title: "Opened in Excel" });
+  }, [cwd, environmentId, openFileInExternalApp, relativePath]);
+
+  const handleDownload = useCallback(async () => {
+    const current = documentRef.current;
+    if (!current) return;
+    const baseName = relativePath.split(/[\\/]/).at(-1)?.trim() || "sheet.xlsx";
+    try {
+      const displayGrid = displaysRef.current ?? current.rows;
+      const bytes = await serializeSpreadsheet(current.sourceBytes, current.rows, displayGrid);
+      const url = URL.createObjectURL(
+        new Blob([bytes.slice().buffer as ArrayBuffer], {
+          type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        }),
+      );
+      try {
+        const anchor = window.document.createElement("a");
+        anchor.href = url;
+        anchor.download = baseName;
+        anchor.click();
+      } finally {
+        setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      }
+      toastManager.add({ type: "success", title: "Download started" });
+    } catch {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Couldn't download this sheet",
+          description: "The spreadsheet couldn't be packed up. Try again.",
+        }),
+      );
+    }
+  }, [relativePath]);
+
+  const handleCopySheet = useCallback(async () => {
+    const current = documentRef.current;
+    if (!current) return;
+    try {
+      if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
+        throw new Error("Clipboard unavailable");
+      }
+      const displayGrid = displaysRef.current ?? current.rows;
+      await navigator.clipboard.writeText(spreadsheetGridToTsv(displayGrid));
+      toastManager.add({
+        type: "success",
+        title: "Copied — paste into Excel or Google Sheets",
+      });
+    } catch {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Couldn't copy this sheet",
+          description: "Clipboard access was denied. Download the file instead.",
+        }),
+      );
+    }
+  }, []);
+
   const confirmDiscard = useCallback(async () => {
     if (!dirtyRef.current || saveInFlightRef.current) return;
     const localApi = readLocalApi();
@@ -327,6 +428,54 @@ export function SpreadsheetSurface({
         <Button size="xs" disabled={!dirty || saveInFlight} onClick={() => void handleSave()}>
           Save
         </Button>
+        {canOpenInExternalApp ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => void handleOpenInExcel()}
+                  aria-label="Open in Excel"
+                >
+                  <ExternalLinkIcon className="size-3.5" />
+                  Excel
+                </Button>
+              }
+            />
+            <TooltipPopup>Open the saved file in Excel</TooltipPopup>
+          </Tooltip>
+        ) : null}
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="xs"
+                onClick={() => void handleDownload()}
+                aria-label="Download spreadsheet"
+              >
+                <DownloadIcon className="size-3.5" />
+              </Button>
+            }
+          />
+          <TooltipPopup>Download spreadsheet</TooltipPopup>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="xs"
+                onClick={() => void handleCopySheet()}
+                aria-label="Copy sheet for Excel or Google Sheets"
+              >
+                <CopyIcon className="size-3.5" />
+              </Button>
+            }
+          />
+          <TooltipPopup>Copy sheet for Excel or Google Sheets</TooltipPopup>
+        </Tooltip>
       </div>
       {file.error && file.data === null ? (
         <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs leading-relaxed text-destructive">

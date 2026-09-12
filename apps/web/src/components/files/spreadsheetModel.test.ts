@@ -9,6 +9,7 @@ import {
   discardSpreadsheetChanges,
   isSpreadsheetDirty,
   setSpreadsheetCell,
+  spreadsheetGridToTsv,
 } from "./spreadsheetModel";
 
 function makeDocument(rows: string[][] = [["a", "b"]]) {
@@ -50,6 +51,19 @@ describe("spreadsheet model", () => {
       ["", "", "corner"],
     ]);
     expect(isSpreadsheetDirty(edited)).toBe(true);
+  });
+
+  it("serializes grids as paste-ready TSV", () => {
+    expect(
+      spreadsheetGridToTsv([
+        ["a", "b"],
+        ["c", "d"],
+      ]),
+    ).toBe("a\tb\nc\td");
+    expect(spreadsheetGridToTsv([['a"b', "c\td", "e\nf", "plain"]])).toBe(
+      '"a""b"\t"c\td"\t"e\nf"\tplain',
+    );
+    expect(spreadsheetGridToTsv([])).toBe("");
   });
 
   it("adds columns, seeding an empty grid with one cell", () => {
