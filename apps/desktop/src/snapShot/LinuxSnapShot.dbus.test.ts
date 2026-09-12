@@ -220,9 +220,9 @@ it.runIf(hasDbus)("captures through real D-Bus marshalling on a private bus", as
       "--dest",
       "com.t3tools.T3Code.NiriTest.SnapShot",
       "--object-path",
-      "/com/t3tools/SnapShot",
+      "/click/lagaryan/Doer/SnapShot",
       "--method",
-      "com.t3tools.SnapShot.Capture",
+      "click.lagaryan.Doer.SnapShot.Capture",
     ];
     // Exercise the actual command copied to Niri's configuration, including gdbus introspection.
     await new Promise<void>((resolve, reject) => {
@@ -241,8 +241,8 @@ it.runIf(hasDbus)("captures through real D-Bus marshalling on a private bus", as
     const invalid = server.call(
       new Message({
         destination: "com.t3tools.T3Code.NiriTest.SnapShot",
-        path: "/com/t3tools/SnapShot",
-        interface: "com.t3tools.SnapShot",
+        path: "/click/lagaryan/Doer/SnapShot",
+        interface: "click.lagaryan.Doer.SnapShot",
         member: "Capture",
         signature: "s",
         body: ["not allowed"],
