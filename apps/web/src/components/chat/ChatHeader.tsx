@@ -407,7 +407,11 @@ export const ChatHeader = memo(function ChatHeader({
         data-chat-header-actions
         className={cn(
           "flex shrink-0 items-center justify-end gap-2 @3xl/header-actions:gap-3",
-          rightPanelOpen ? "pr-0" : "pr-16",
+          // Clears the fixed top-right panel controls: two toggles (terminal
+          // + right panel) need pr-16, a lone right-panel toggle only pr-8.
+          // The terminal toggle hides in simple mode, so a fixed pr-16 leaves
+          // a visible gap between the Open button and the toggle.
+          rightPanelOpen ? "pr-0" : simpleModeEnabled ? "pr-8" : "pr-16",
           "[[data-panel-animations=true]_&]:motion-safe:transition-[padding-right] [[data-panel-animations=true]_&]:motion-safe:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:motion-safe:ease-out",
         )}
       >
