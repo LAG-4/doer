@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import {
+  AutomationId,
   EnvironmentId,
   ForwardCompatibleOptional,
   ProjectId,
@@ -209,6 +210,12 @@ export const ScopedThreadRef = Schema.Struct({
   threadId: ThreadId,
 });
 export type ScopedThreadRef = typeof ScopedThreadRef.Type;
+
+export const ScopedAutomationRef = Schema.Struct({
+  environmentId: EnvironmentId,
+  automationId: AutomationId,
+});
+export type ScopedAutomationRef = typeof ScopedAutomationRef.Type;
 
 export const ScopedThreadSessionRef = Schema.Struct({
   environmentId: EnvironmentId,

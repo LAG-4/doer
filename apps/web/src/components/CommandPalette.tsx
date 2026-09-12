@@ -41,6 +41,7 @@ import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import {
   ArrowLeftIcon,
+  CalendarClockIcon,
   CornerLeftUpIcon,
   FileSearchIcon,
   FolderIcon,
@@ -146,6 +147,7 @@ import {
   type SearchOverlayMode,
 } from "./CommandPalette.logic";
 import { orderItemsByPreferredIds, sortLogicalProjectsForSidebar } from "./Sidebar.logic";
+import { useScheduledTaskEditorStore } from "./ScheduledTaskEditor";
 import { resolveEnvironmentOptionLabel } from "./BranchToolbar.logic";
 import { CommandPaletteContent } from "./CommandPaletteContent";
 import { CommandPaletteResults } from "./CommandPaletteResults";
@@ -641,6 +643,7 @@ function OpenCommandPaletteDialog(props: {
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
   const projects = useProjects();
+  const serverConfigs = useServerConfigs();
   const referenceThreadRef =
     pathname === "/pull-requests"
       ? environments.some(
@@ -652,7 +655,7 @@ function OpenCommandPaletteDialog(props: {
         ? scopeThreadRef(activeThread.environmentId, activeThread.id)
         : null;
   const openPanelPullRequestUrl = useOpenPanelPullRequestUrl(referenceThreadRef);
-  const activeThreadServerConfig = useServerConfigs().get(
+  const activeThreadServerConfig = serverConfigs.get(
     activeThread?.environmentId ?? ("" as EnvironmentId),
   );
   const activeThreadReferenceCopyTarget =
@@ -1783,6 +1786,23 @@ function OpenCommandPaletteDialog(props: {
       keepOpen: true,
       run: async () => {
         await startAddProjectBrowse(wslAddProjectEnvironmentOption.environmentId);
+      },
+    });
+  }
+
+  if (
+    [...serverConfigs.values()].some(
+      (config) => config.environment.capabilities.automationScheduling === true,
+    )
+  ) {
+    actionItems.push({
+      kind: "action",
+      value: "action:new-scheduled-task",
+      searchTerms: ["scheduled task", "schedule", "recurring", "automation", "cron", "reminder"],
+      title: "New scheduled task…",
+      icon: <CalendarClockIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        useScheduledTaskEditorStore.getState().openCreate();
       },
     });
   }

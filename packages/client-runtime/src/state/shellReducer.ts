@@ -1,5 +1,9 @@
 import * as Arr from "effect/Array";
-import type { OrchestrationShellSnapshot, OrchestrationShellStreamEvent } from "@t3tools/contracts";
+import type {
+  Automation,
+  OrchestrationShellSnapshot,
+  OrchestrationShellStreamEvent,
+} from "@t3tools/contracts";
 
 /**
  * Reduce a single shell stream event into an existing snapshot, returning a new
@@ -40,6 +44,21 @@ export function applyShellStreamEvent(
         threads: Arr.filter(snapshot.threads, (t) => t.id !== event.threadId),
         snapshotSequence: event.sequence,
       };
+    case "automation-upserted": {
+      const automations: ReadonlyArray<Automation> = snapshot.automations ?? [];
+      const next = automations.some((a) => a.id === event.automation.id)
+        ? Arr.map(automations, (a) => (a.id === event.automation.id ? event.automation : a))
+        : Arr.append(automations, event.automation);
+      return { ...snapshot, automations: next, snapshotSequence: event.sequence };
+    }
+    case "automation-removed": {
+      if ((snapshot.automations ?? []).length === 0) return snapshot;
+      return {
+        ...snapshot,
+        automations: Arr.filter(snapshot.automations ?? [], (a) => a.id !== event.automationId),
+        snapshotSequence: event.sequence,
+      };
+    }
     default:
       return snapshot;
   }
