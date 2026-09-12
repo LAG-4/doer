@@ -428,18 +428,18 @@ describe("shouldShowComposerContextStrip", () => {
     expect(
       shouldShowComposerContextStrip({
         hasActiveProject: true,
-        isGitRepo: false,
+        showGitControls: false,
         showEnvironmentIndicator: true,
         hostsRestingComposerControls: false,
       }),
     ).toBe(true);
   });
 
-  it("hides the strip when a non-Git project has nothing to show", () => {
+  it("hides the strip when git controls are off and nothing else is showing", () => {
     expect(
       shouldShowComposerContextStrip({
         hasActiveProject: true,
-        isGitRepo: false,
+        showGitControls: false,
         showEnvironmentIndicator: false,
         hostsRestingComposerControls: false,
       }),
@@ -450,7 +450,7 @@ describe("shouldShowComposerContextStrip", () => {
     expect(
       shouldShowComposerContextStrip({
         hasActiveProject: true,
-        isGitRepo: false,
+        showGitControls: false,
         showEnvironmentIndicator: false,
         hostsRestingComposerControls: true,
       }),
@@ -461,7 +461,7 @@ describe("shouldShowComposerContextStrip", () => {
     expect(
       shouldShowComposerContextStrip({
         hasActiveProject: true,
-        isGitRepo: true,
+        showGitControls: true,
         showEnvironmentIndicator: false,
         hostsRestingComposerControls: false,
       }),
