@@ -103,5 +103,5 @@ export class ProjectionPendingApprovalRepository extends Context.Service<
   ProjectionPendingApprovalRepository,
   ProjectionPendingApprovalRepositoryShape
 >()(
-  "doer-cli/persistence/Services/ProjectionPendingApprovals/ProjectionPendingApprovalRepository",
+  "@lag4/doer-cli/persistence/Services/ProjectionPendingApprovals/ProjectionPendingApprovalRepository",
 ) {}

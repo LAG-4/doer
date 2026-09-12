@@ -48,4 +48,4 @@ export interface OrchestrationProjectionPipelineShape {
 export class OrchestrationProjectionPipeline extends Context.Service<
   OrchestrationProjectionPipeline,
   OrchestrationProjectionPipelineShape
->()("doer-cli/orchestration/Services/ProjectionPipeline/OrchestrationProjectionPipeline") {}
+>()("@lag4/doer-cli/orchestration/Services/ProjectionPipeline/OrchestrationProjectionPipeline") {}

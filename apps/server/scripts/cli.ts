@@ -190,7 +190,7 @@ const createVpPmPublishArgs = (config: PublishCommandConfig): ReadonlyArray<stri
   const args = [
     "publish",
     "--filter",
-    "doer-cli",
+    "@lag4/doer-cli",
     "--access",
     config.access,
     "--tag",

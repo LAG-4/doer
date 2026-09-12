@@ -126,4 +126,6 @@ export interface ProjectionThreadMessageRepositoryShape {
 export class ProjectionThreadMessageRepository extends Context.Service<
   ProjectionThreadMessageRepository,
   ProjectionThreadMessageRepositoryShape
->()("doer-cli/persistence/Services/ProjectionThreadMessages/ProjectionThreadMessageRepository") {}
+>()(
+  "@lag4/doer-cli/persistence/Services/ProjectionThreadMessages/ProjectionThreadMessageRepository",
+) {}

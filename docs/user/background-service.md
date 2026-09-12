@@ -7,17 +7,17 @@ to keep a terminal open.
 
 Run these commands on the machine that will host T3 Code:
 
-| Task                            | Command                                 |
-| ------------------------------- | --------------------------------------- |
-| Install and start               | `npx doer-cli@latest service install`   |
-| Inspect status and log location | `npx doer-cli@latest service status`    |
-| Update or repair                | `npx doer-cli@latest service update`    |
-| Stop and remove from startup    | `npx doer-cli@latest service uninstall` |
+| Task                            | Command                                       |
+| ------------------------------- | --------------------------------------------- |
+| Install and start               | `npx @lag4/doer-cli@latest service install`   |
+| Inspect status and log location | `npx @lag4/doer-cli@latest service status`    |
+| Update or repair                | `npx @lag4/doer-cli@latest service update`    |
+| Stop and remove from startup    | `npx @lag4/doer-cli@latest service uninstall` |
 
 Uninstalling the service leaves your projects, threads, and settings intact.
 
 Install and update use the version of the CLI you invoke. For nightly, use
-`npx doer-cli@nightly service update`; replace `nightly` with an exact version to pin
+`npx @lag4/doer-cli@nightly service update`; replace `nightly` with an exact version to pin
 one. An older CLI refuses to replace a newer service unless you explicitly add
 `--allow-downgrade`.
 

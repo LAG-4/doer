@@ -70,7 +70,7 @@ export class ThreadBackgroundLivenessService extends Context.Service<
      */
     readonly getThreadBackgroundLiveness: (threadId: string) => ThreadBackgroundLiveness;
   }
->()("doer-cli/orchestration/ThreadBackgroundLiveness/ThreadBackgroundLivenessService") {}
+>()("@lag4/doer-cli/orchestration/ThreadBackgroundLiveness/ThreadBackgroundLivenessService") {}
 
 export function make(): ThreadBackgroundLivenessService["Service"] {
   const stateByThreadId = new Map<string, ThreadLivenessState>();

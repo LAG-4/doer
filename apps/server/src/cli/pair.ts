@@ -79,7 +79,7 @@ export class NoRunningServerError extends Schema.TaggedError<NoRunningServerErro
     return [
       "No running Doer server found.",
       ...this.checkedStatePaths.map((statePath) => `  checked ${statePath}`),
-      "Start one with `npx doer-cli serve`, or connect this machine with T3 Connect: `npx doer-cli connect`.",
+      "Start one with `npx @lag4/doer-cli serve`, or connect this machine with T3 Connect: `npx @lag4/doer-cli connect`.",
     ].join("\n");
   }
 }

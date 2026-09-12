@@ -75,4 +75,6 @@ export interface ProjectionThreadSessionRepositoryShape {
 export class ProjectionThreadSessionRepository extends Context.Service<
   ProjectionThreadSessionRepository,
   ProjectionThreadSessionRepositoryShape
->()("doer-cli/persistence/Services/ProjectionThreadSessions/ProjectionThreadSessionRepository") {}
+>()(
+  "@lag4/doer-cli/persistence/Services/ProjectionThreadSessions/ProjectionThreadSessionRepository",
+) {}

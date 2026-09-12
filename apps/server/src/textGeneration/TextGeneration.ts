@@ -105,7 +105,7 @@ export class TextGeneration extends Context.Service<
       input: ThreadTitleGenerationInput,
     ) => Effect.Effect<ThreadTitleGenerationResult, TextGenerationError>;
   }
->()("doer-cli/textGeneration/TextGeneration") {}
+>()("@lag4/doer-cli/textGeneration/TextGeneration") {}
 
 type TextGenerationOp =
   | "generateCommitMessage"

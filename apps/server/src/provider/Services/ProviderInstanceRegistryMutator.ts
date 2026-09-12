@@ -49,4 +49,4 @@ export interface ProviderInstanceRegistryMutatorShape {
 export class ProviderInstanceRegistryMutator extends Context.Service<
   ProviderInstanceRegistryMutator,
   ProviderInstanceRegistryMutatorShape
->()("doer-cli/provider/Services/ProviderInstanceRegistryMutator") {}
+>()("@lag4/doer-cli/provider/Services/ProviderInstanceRegistryMutator") {}

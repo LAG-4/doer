@@ -96,7 +96,7 @@ export class CheckpointStore extends Context.Service<
       input: DeleteCheckpointRefsInput,
     ) => Effect.Effect<void, CheckpointStoreError>;
   }
->()("doer-cli/checkpointing/CheckpointStore") {}
+>()("@lag4/doer-cli/checkpointing/CheckpointStore") {}
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {

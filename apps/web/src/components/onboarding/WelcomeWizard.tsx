@@ -472,7 +472,7 @@ function ConnectAccountOption({
           <p className="text-sm text-muted-foreground">
             Run this on each computer you want to connect.
           </p>
-          <CommandBlock command="npx doer-cli connect" className="mt-3" />
+          <CommandBlock command="npx @lag4/doer-cli connect" className="mt-3" />
           <p className="mt-3 text-xs text-muted-foreground">
             Keep Doer running. Select the computers you want to set up above.
           </p>
@@ -589,10 +589,10 @@ function PairingForm({
             <p className="text-sm text-muted-foreground">
               Run this on the computer with your code.
             </p>
-            <CommandBlock command="npx doer-cli pair" className="mt-2" />
+            <CommandBlock command="npx @lag4/doer-cli pair" className="mt-2" />
             <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-              Start Doer first, or run <code className="font-mono">npx doer-cli serve</code>. Add{" "}
-              <code className="font-mono">--tailscale</code> to use your tailnet.
+              Start Doer first, or run <code className="font-mono">npx @lag4/doer-cli serve</code>.
+              Add <code className="font-mono">--tailscale</code> to use your tailnet.
             </p>
           </CollapsiblePanel>
         </Collapsible>

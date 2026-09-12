@@ -63,4 +63,4 @@ export class PtyAdapter extends Context.Service<
      */
     readonly spawn: (input: PtySpawnInput) => Effect.Effect<PtyProcess, PtySpawnError>;
   }
->()("doer-cli/terminal/PtyAdapter") {}
+>()("@lag4/doer-cli/terminal/PtyAdapter") {}

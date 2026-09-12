@@ -127,4 +127,4 @@ export class SourceControlProvider extends Context.Service<
       readonly force?: boolean;
     }) => Effect.Effect<void, SourceControlProviderError>;
   }
->()("doer-cli/sourceControl/SourceControlProvider") {}
+>()("@lag4/doer-cli/sourceControl/SourceControlProvider") {}

@@ -114,4 +114,4 @@ export interface OrchestrationEngineShape {
 export class OrchestrationEngineService extends Context.Service<
   OrchestrationEngineService,
   OrchestrationEngineShape
->()("doer-cli/orchestration/Services/OrchestrationEngine/OrchestrationEngineService") {}
+>()("@lag4/doer-cli/orchestration/Services/OrchestrationEngine/OrchestrationEngineService") {}

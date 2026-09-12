@@ -38,4 +38,6 @@ export interface ProviderRuntimeIngestionShape {
 export class ProviderRuntimeIngestionService extends Context.Service<
   ProviderRuntimeIngestionService,
   ProviderRuntimeIngestionShape
->()("doer-cli/orchestration/Services/ProviderRuntimeIngestion/ProviderRuntimeIngestionService") {}
+>()(
+  "@lag4/doer-cli/orchestration/Services/ProviderRuntimeIngestion/ProviderRuntimeIngestionService",
+) {}

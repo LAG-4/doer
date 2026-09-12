@@ -64,7 +64,7 @@ export class PreviewAutomationBroker extends Context.Service<
       request: PreviewAutomationInvokeInput,
     ) => Effect.Effect<A, PreviewAutomationError>;
   }
->()("doer-cli/mcp/PreviewAutomationBroker") {}
+>()("@lag4/doer-cli/mcp/PreviewAutomationBroker") {}
 
 interface ClientConnection {
   readonly clientId: string;

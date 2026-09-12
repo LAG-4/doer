@@ -78,4 +78,4 @@ export class VcsDriver extends Context.Service<
       input: ReviewDiffPreviewInput,
     ) => Effect.Effect<ReviewDiffPreviewResult, VcsError>;
   }
->()("doer-cli/vcs/VcsDriver") {}
+>()("@lag4/doer-cli/vcs/VcsDriver") {}

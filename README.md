@@ -49,12 +49,12 @@ just a computer and something you'd rather not do yourself.
 The easiest way to test Doer is to run the server in your terminal (requires Node.js 22.16+, 23.11+, or 24.10+):
 
 ```bash
-npx doer-cli@latest
+npx @lag4/doer-cli@latest
 ```
 
 This will launch Doer's backend on your machine as well as the local web app to get things done.
 
-Tip: Use `npx doer-cli@latest --help` for the full CLI reference.
+Tip: Use `npx @lag4/doer-cli@latest --help` for the full CLI reference.
 
 ### Desktop app
 

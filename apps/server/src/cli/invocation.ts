@@ -37,19 +37,19 @@ function detectCliRunner(entryPath: string): CliRunner | null {
 }
 
 /**
- * The `doer-cli` package spec to suggest. The literal spec the user typed (e.g.
- * `doer-cli@nightly`) is resolved away before our process starts, so re-derive it
+ * The `@lag4/doer-cli` package spec to suggest. The literal spec the user typed (e.g.
+ * `@lag4/doer-cli@nightly`) is resolved away before our process starts, so re-derive it
  * from the running version: nightly builds re-suggest the nightly channel,
  * anything else suggests the bare package.
  */
 function suggestedPackageSpec(version: string): string {
-  return version.includes("-nightly.") ? "doer-cli@nightly" : "doer-cli";
+  return version.includes("-nightly.") ? "@lag4/doer-cli@nightly" : "@lag4/doer-cli";
 }
 
 /**
  * Render a `doer <subcommand>` suggestion that matches how this process was
- * launched, so copy/pasting it actually works: `npx doer-cli connect` suggests
- * `npx doer-cli serve`, a global install suggests `doer serve`, and a nightly build
+ * launched, so copy/pasting it actually works: `npx @lag4/doer-cli connect` suggests
+ * `npx @lag4/doer-cli serve`, a global install suggests `doer serve`, and a nightly build
  * keeps the `@nightly` tag.
  */
 export function formatCliCommand(input: {

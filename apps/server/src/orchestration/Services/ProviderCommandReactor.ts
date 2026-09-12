@@ -39,4 +39,4 @@ export interface ProviderCommandReactorShape {
 export class ProviderCommandReactor extends Context.Service<
   ProviderCommandReactor,
   ProviderCommandReactorShape
->()("doer-cli/orchestration/Services/ProviderCommandReactor") {}
+>()("@lag4/doer-cli/orchestration/Services/ProviderCommandReactor") {}

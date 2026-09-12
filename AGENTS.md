@@ -248,7 +248,7 @@ main` workflow fast-forwards it; any direct commit breaks the sync.
 ## Distribution (Doer fork — `lite` only, never upstream this section)
 
 Doer ships free-tier only: unsigned desktop apps via GitHub Releases (in-app
-auto-update included), the `doer-cli` npm package, and the marketing site at
+auto-update included), the `@lag4/doer-cli` npm package, and the marketing site at
 https://doer.lagaryan.click. No store builds, no signing certs, no Clerk/relay,
 no Discord, no AUR. Operator checklist: `docs/operations/doer-distribution.md`.
 
@@ -263,8 +263,8 @@ prebuild) → publish_cli → release`. Upstream-only jobs (AUR, Vercel deploys,
   (see `.github/scripts/check-nightly-release.cjs`). Stable ships by pushing a
   `vX.Y.Z` tag above `apps/desktop/package.json`, or `workflow_dispatch
 channel=stable`, which builds the latest nightly commit.
-- **npm CLI**: package `doer-cli`, binaries `doer` + `doer-cli` — both bin
-  entries must exist or `npx doer-cli` breaks. First publish auto-creates the
+- **npm CLI**: package `@lag4/doer-cli`, binaries `doer` + `doer-cli` — both bin
+  entries must exist or `npx @lag4/doer-cli` breaks. First publish auto-creates the
   package; auth is the `NPM_TOKEN` repo secret (granular token, publish
   scope). `publish_cli` must stay before `release` in `needs` — servers
   self-update to the exact client version, so the npm package must exist
@@ -275,16 +275,16 @@ channel=stable`, which builds the latest nightly commit.
   filename suffix (`-arm64.dmg`, `-x64.dmg`, `-x64.exe`, `-x86_64.AppImage`):
   never change the electron-builder `artifactName` arch suffixes without
   updating the site matchers; never point the site back at `pingdotgg/t3code`.
-  Effect service IDs follow the package name (`doer-cli/...` in
+  Effect service IDs follow the package name (`@lag4/doer-cli/...` in
   `apps/server`) — the `deterministicKeys` lint enforces it and the release
   gate runs typecheck, so a rename without updating IDs blocks all releases.
 - **Triage pair**: `apps/server/src/cli/triagePrompt.ts` (`TRIAGE_PLAYBOOK`)
   and `.github/triage/PLAYBOOK.md` must stay byte-identical (a test enforces
   it); both point at `LAG-4/t3code` on branch `lite`. Edit both together.
-- **SSH remote path**: remote hosts install `doer-cli@<spec>` and exec the
+- **SSH remote path**: remote hosts install `@lag4/doer-cli@<spec>` and exec the
   `doer` binary (`packages/ssh/src/tunnel.ts`, `command.ts`); the desktop
   resolves the spec from its release channel. The pinned-runtime and
-  service-launcher entry paths are `node_modules/doer-cli/dist/bin.mjs`.
+  service-launcher entry paths are `node_modules/@lag4/doer-cli/dist/bin.mjs`.
 - **Signing later**: adding `CSC_*`/`APPLE_*` or `AZURE_*` secrets re-enables
   signed macOS/Windows builds with no code change (the workflow already
   branches on their presence).

@@ -29,4 +29,4 @@ export interface OrchestrationReactorShape {
 export class OrchestrationReactor extends Context.Service<
   OrchestrationReactor,
   OrchestrationReactorShape
->()("doer-cli/orchestration/Services/OrchestrationReactor") {}
+>()("@lag4/doer-cli/orchestration/Services/OrchestrationReactor") {}
