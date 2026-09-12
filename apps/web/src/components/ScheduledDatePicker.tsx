@@ -1,5 +1,5 @@
 import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
@@ -67,6 +67,53 @@ function formatTrigger(parts: DateTimeParts): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+const pad2 = (value: number): string => String(value).padStart(2, "0");
+
+/** One scrollable numeric option column (hour / minute). Fully theme-styled. */
+function TimeColumn(props: {
+  readonly label: string;
+  readonly options: ReadonlyArray<number>;
+  readonly value: number;
+  readonly format: (value: number) => string;
+  readonly onChange: (value: number) => void;
+}) {
+  const scrollSelectedIntoView = useCallback((node: HTMLButtonElement | null) => {
+    node?.scrollIntoView({ block: "nearest" });
+  }, []);
+  return (
+    <div className="flex min-w-0 flex-1 flex-col gap-1">
+      <span className="text-center text-[11px] text-muted-foreground">{props.label}</span>
+      <div
+        role="radiogroup"
+        aria-label={props.label}
+        className="flex h-32 flex-col gap-px overflow-y-auto rounded-md border border-input p-1"
+      >
+        {props.options.map((option) => {
+          const selected = option === props.value;
+          return (
+            <button
+              key={option}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              ref={selected ? scrollSelectedIntoView : undefined}
+              onClick={() => props.onChange(option)}
+              className={cn(
+                "cursor-pointer rounded px-1 py-1 text-center text-sm",
+                selected
+                  ? "bg-accent font-medium text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {props.format(option)}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -199,49 +246,55 @@ export function ScheduledDatePicker(props: {
             );
           })}
         </div>
-        <div className="flex items-center gap-1.5 pt-3">
-          <span className="text-xs text-muted-foreground">Time</span>
-          <select
-            aria-label="Hour"
+        <div className="flex items-start gap-1.5 pt-3">
+          <TimeColumn
+            label="Hour"
             value={hour12}
-            onChange={(event) => {
-              const next12 = Number(event.target.value);
+            format={pad2}
+            onChange={(next12) => {
               const next24 = ampm === "AM" ? next12 % 12 : (next12 % 12) + 12;
               setTime(next24, parts.minute);
             }}
-            className="h-8 flex-1 cursor-pointer rounded-md border border-input bg-background text-sm"
-          >
-            {Array.from({ length: 12 }, (_, index) => index + 1).map((hour) => (
-              <option key={hour} value={hour}>
-                {String(hour).padStart(2, "0")}
-              </option>
-            ))}
-          </select>
-          <span aria-hidden>:</span>
-          <select
-            aria-label="Minute"
+            options={Array.from({ length: 12 }, (_, index) => index + 1)}
+          />
+          <TimeColumn
+            label="Minute"
             value={parts.minute}
-            onChange={(event) => setTime(parts.hour24, Number(event.target.value))}
-            className="h-8 flex-1 cursor-pointer rounded-md border border-input bg-background text-sm"
-          >
-            {Array.from({ length: 60 }, (_, minute) => minute).map((minute) => (
-              <option key={minute} value={minute}>
-                {String(minute).padStart(2, "0")}
-              </option>
-            ))}
-          </select>
-          <select
-            aria-label="AM or PM"
-            value={ampm}
-            onChange={(event) => {
-              const next = event.target.value === "AM" ? hour12 % 12 : (hour12 % 12) + 12;
-              setTime(next, parts.minute);
-            }}
-            className="h-8 flex-1 cursor-pointer rounded-md border border-input bg-background text-sm"
-          >
-            <option value="AM">AM</option>
-            <option value="PM">PM</option>
-          </select>
+            format={pad2}
+            onChange={(minute) => setTime(parts.hour24, minute)}
+            options={Array.from({ length: 60 }, (_, minute) => minute)}
+          />
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="text-center text-[11px] text-muted-foreground">AM / PM</span>
+            <div
+              role="radiogroup"
+              aria-label="AM or PM"
+              className="flex h-32 flex-col justify-center gap-1 rounded-md border border-input p-1"
+            >
+              {(["AM", "PM"] as const).map((option) => {
+                const selected = option === ampm;
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() =>
+                      setTime(option === "AM" ? hour12 % 12 : (hour12 % 12) + 12, parts.minute)
+                    }
+                    className={cn(
+                      "cursor-pointer rounded px-1 py-1 text-center text-sm",
+                      selected
+                        ? "bg-accent font-medium text-foreground"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {option}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </PopoverPopup>
     </Popover>

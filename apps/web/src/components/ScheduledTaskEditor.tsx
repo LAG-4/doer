@@ -422,8 +422,8 @@ function ScheduledTaskEditorForm(props: {
                       aria-checked={selected}
                       onClick={() => setProjectId(project.id)}
                       className={cn(
-                        "flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left hover:bg-accent",
-                        selected && "bg-accent",
+                        "flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-1.5 text-left",
+                        selected ? "border-primary/60" : "border-transparent hover:border-input",
                       )}
                     >
                       <span
