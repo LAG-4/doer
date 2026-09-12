@@ -7,6 +7,7 @@ import { ProviderOptionSelections } from "./model.ts";
 import { RepositoryIdentity, ThreadEnvMode } from "./environment.ts";
 import {
   ApprovalRequestId,
+  AutomationId,
   CheckpointRef,
   ClientSurface,
   CommandId,
@@ -458,6 +459,83 @@ export const ProjectIconOverride = Schema.Union([
 ]);
 export type ProjectIconOverride = typeof ProjectIconOverride.Type;
 
+export const AutomationTimeOfDay = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(5),
+  Schema.isPattern(/^([01][0-9]|2[0-3]):[0-5][0-9]$/),
+);
+export type AutomationTimeOfDay = typeof AutomationTimeOfDay.Type;
+
+export const AutomationWeekday = Schema.Int.check(
+  Schema.isGreaterThanOrEqualTo(0),
+  Schema.isLessThanOrEqualTo(6),
+);
+export type AutomationWeekday = typeof AutomationWeekday.Type;
+
+/** IANA timezone name (e.g. "America/New_York"). Validity is checked in the decider. */
+export const AutomationTimezone = TrimmedNonEmptyString.check(Schema.isMaxLength(100));
+export type AutomationTimezone = typeof AutomationTimezone.Type;
+
+/**
+ * When an automation fires, in the owner's local wall-clock time. No cron
+ * expressions in v1: once at an instant, daily at a time, or weekly on one weekday.
+ */
+export const AutomationSchedule = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("once"),
+    at: IsoDateTime,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("daily"),
+    time: AutomationTimeOfDay,
+    timezone: AutomationTimezone,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("weekly"),
+    time: AutomationTimeOfDay,
+    weekday: AutomationWeekday,
+    timezone: AutomationTimezone,
+  }),
+]);
+export type AutomationSchedule = typeof AutomationSchedule.Type;
+
+export const AutomationState = Schema.Literals(["active", "paused", "completed"]);
+export type AutomationState = typeof AutomationState.Type;
+
+export const AutomationRunOutcome = Schema.Literals(["ran", "missed-then-ran", "manual"]);
+export type AutomationRunOutcome = typeof AutomationRunOutcome.Type;
+
+export const AutomationRun = Schema.Struct({
+  occurrenceKey: TrimmedNonEmptyString,
+  threadId: ThreadId,
+  firedAt: IsoDateTime,
+  outcome: AutomationRunOutcome,
+});
+export type AutomationRun = typeof AutomationRun.Type;
+
+/**
+ * `Automation` — the "Scheduled tasks" entity (normie label). Named Automation
+ * in code to avoid collision with Task (= thread) in our vocabulary. One
+ * automation owns one thread; every firing dispatches the existing
+ * `thread.turn.start` with the stored prompt.
+ */
+export const Automation = Schema.Struct({
+  id: AutomationId,
+  projectId: ProjectId,
+  threadId: ThreadId,
+  title: TrimmedNonEmptyString,
+  prompt: TrimmedNonEmptyString.check(Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_INPUT_CHARS)),
+  schedule: AutomationSchedule,
+  state: AutomationState,
+  /** Next scheduled firing, null when nothing remains (fired once, paused, or completed). */
+  nextFireAt: Schema.NullOr(IsoDateTime),
+  lastFiredAt: Schema.NullOr(IsoDateTime),
+  runs: Schema.Array(AutomationRun),
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+  deletedAt: Schema.NullOr(IsoDateTime),
+});
+export type Automation = typeof Automation.Type;
+
 export const OrchestrationProject = Schema.Struct({
   id: ProjectId,
   title: TrimmedNonEmptyString,
@@ -758,6 +836,8 @@ export const OrchestrationReadModel = Schema.Struct({
   snapshotSequence: NonNegativeInt,
   projects: Schema.Array(OrchestrationProject),
   threads: Schema.Array(OrchestrationThread),
+  // Optional so snapshots from pre-automation servers still decode.
+  automations: Schema.optional(Schema.Array(Automation)),
   updatedAt: IsoDateTime,
 });
 export type OrchestrationReadModel = typeof OrchestrationReadModel.Type;
@@ -843,6 +923,8 @@ export const OrchestrationShellSnapshot = Schema.Struct({
   snapshotSequence: NonNegativeInt,
   projects: Schema.Array(OrchestrationProjectShell),
   threads: Schema.Array(OrchestrationThreadShell),
+  // Optional so snapshots from pre-automation servers still decode.
+  automations: Schema.optional(Schema.Array(Automation)),
   updatedAt: IsoDateTime,
 });
 export type OrchestrationShellSnapshot = typeof OrchestrationShellSnapshot.Type;
@@ -867,6 +949,16 @@ export const OrchestrationShellStreamEvent = Schema.Union([
     kind: Schema.Literal("thread-removed"),
     sequence: NonNegativeInt,
     threadId: ThreadId,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("automation-upserted"),
+    sequence: NonNegativeInt,
+    automation: Automation,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("automation-removed"),
+    sequence: NonNegativeInt,
+    automationId: AutomationId,
   }),
 ]);
 export type OrchestrationShellStreamEvent = typeof OrchestrationShellStreamEvent.Type;
@@ -1300,6 +1392,53 @@ const ThreadSessionStopCommand = Schema.Struct({
   onlyIfSettled: Schema.optional(Schema.Boolean),
 });
 
+const AutomationCreateCommand = Schema.Struct({
+  type: Schema.Literal("automation.create"),
+  commandId: CommandId,
+  automationId: AutomationId,
+  projectId: ProjectId,
+  threadId: ThreadId,
+  title: TrimmedNonEmptyString,
+  prompt: TrimmedNonEmptyString.check(Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_INPUT_CHARS)),
+  schedule: AutomationSchedule,
+  createdAt: IsoDateTime,
+});
+
+const AutomationUpdateCommand = Schema.Struct({
+  type: Schema.Literal("automation.update"),
+  commandId: CommandId,
+  automationId: AutomationId,
+  title: Schema.optional(TrimmedNonEmptyString),
+  prompt: Schema.optional(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_INPUT_CHARS)),
+  ),
+  schedule: Schema.optional(AutomationSchedule),
+});
+
+const AutomationPauseCommand = Schema.Struct({
+  type: Schema.Literal("automation.pause"),
+  commandId: CommandId,
+  automationId: AutomationId,
+});
+
+const AutomationResumeCommand = Schema.Struct({
+  type: Schema.Literal("automation.resume"),
+  commandId: CommandId,
+  automationId: AutomationId,
+});
+
+const AutomationDeleteCommand = Schema.Struct({
+  type: Schema.Literal("automation.delete"),
+  commandId: CommandId,
+  automationId: AutomationId,
+});
+
+const AutomationRunNowCommand = Schema.Struct({
+  type: Schema.Literal("automation.run-now"),
+  commandId: CommandId,
+  automationId: AutomationId,
+});
+
 const DispatchableClientOrchestrationCommand = Schema.Union([
   ProjectCreateCommand,
   ProjectMetaUpdateCommand,
@@ -1328,6 +1467,12 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadUserInputDismissCommand,
   ThreadCheckpointRevertCommand,
   ThreadSessionStopCommand,
+  AutomationCreateCommand,
+  AutomationUpdateCommand,
+  AutomationPauseCommand,
+  AutomationResumeCommand,
+  AutomationDeleteCommand,
+  AutomationRunNowCommand,
 ]);
 export type DispatchableClientOrchestrationCommand =
   typeof DispatchableClientOrchestrationCommand.Type;
@@ -1360,6 +1505,12 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadUserInputDismissCommand,
   ThreadCheckpointRevertCommand,
   ThreadSessionStopCommand,
+  AutomationCreateCommand,
+  AutomationUpdateCommand,
+  AutomationPauseCommand,
+  AutomationResumeCommand,
+  AutomationDeleteCommand,
+  AutomationRunNowCommand,
 ]);
 export type ClientOrchestrationCommand = typeof ClientOrchestrationCommand.Type;
 
@@ -1476,6 +1627,21 @@ const ThreadPullRequestLinkSyncCommand = Schema.Struct({
   stack: Schema.NullOr(ThreadPullRequestStack),
 });
 
+/**
+ * Server-internal record of one automation firing. The scheduler (and the
+ * `automation.run-now` expansion) dispatches the turn via the existing
+ * `thread.turn.start` first, then records the run here: the occurrence key
+ * can never be recorded twice, so a repeated sweep can never double-fire.
+ */
+const AutomationFiredCommand = Schema.Struct({
+  type: Schema.Literal("automation.fired"),
+  commandId: CommandId,
+  automationId: AutomationId,
+  occurrenceKey: TrimmedNonEmptyString,
+  firedAt: IsoDateTime,
+  outcome: AutomationRunOutcome,
+});
+
 const InternalOrchestrationCommand = Schema.Union([
   ThreadAutoSettleCommand,
   ThreadPullRequestSyncCommand,
@@ -1491,6 +1657,7 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadTitleRegenerationCompleteCommand,
   ThreadPullRequestSyncCommand,
   ThreadPullRequestLinkSyncCommand,
+  AutomationFiredCommand,
 ]);
 export type InternalOrchestrationCommand = typeof InternalOrchestrationCommand.Type;
 
@@ -1533,10 +1700,16 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.proposed-plan-upserted",
   "thread.turn-diff-completed",
   "thread.activity-appended",
+  "automation.created",
+  "automation.updated",
+  "automation.paused",
+  "automation.resumed",
+  "automation.deleted",
+  "automation.fired",
 ]);
 export type OrchestrationEventType = typeof OrchestrationEventType.Type;
 
-export const OrchestrationAggregateKind = Schema.Literals(["project", "thread"]);
+export const OrchestrationAggregateKind = Schema.Literals(["project", "thread", "automation"]);
 export type OrchestrationAggregateKind = typeof OrchestrationAggregateKind.Type;
 export const OrchestrationActorKind = Schema.Literals(["client", "server", "provider"]);
 
@@ -1801,6 +1974,55 @@ export const ThreadActivityAppendedPayload = Schema.Struct({
   activity: OrchestrationThreadActivity,
 });
 
+export const AutomationCreatedPayload = Schema.Struct({
+  automationId: AutomationId,
+  projectId: ProjectId,
+  threadId: ThreadId,
+  title: TrimmedNonEmptyString,
+  prompt: TrimmedNonEmptyString,
+  schedule: AutomationSchedule,
+  nextFireAt: Schema.NullOr(IsoDateTime),
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const AutomationUpdatedPayload = Schema.Struct({
+  automationId: AutomationId,
+  title: Schema.optional(TrimmedNonEmptyString),
+  prompt: Schema.optional(TrimmedNonEmptyString),
+  schedule: Schema.optional(AutomationSchedule),
+  nextFireAt: Schema.optional(Schema.NullOr(IsoDateTime)),
+  updatedAt: IsoDateTime,
+});
+
+export const AutomationPausedPayload = Schema.Struct({
+  automationId: AutomationId,
+  updatedAt: IsoDateTime,
+});
+
+export const AutomationResumedPayload = Schema.Struct({
+  automationId: AutomationId,
+  /** Resuming recomputes the next firing from now. */
+  nextFireAt: Schema.NullOr(IsoDateTime),
+  updatedAt: IsoDateTime,
+});
+
+export const AutomationDeletedPayload = Schema.Struct({
+  automationId: AutomationId,
+  deletedAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const AutomationFiredPayload = Schema.Struct({
+  automationId: AutomationId,
+  run: AutomationRun,
+  /** Post-fire state: a fired `once` automation is `completed`, otherwise unchanged. */
+  state: AutomationState,
+  /** Next scheduled firing, null when nothing remains. Manual runs never advance it. */
+  nextFireAt: Schema.NullOr(IsoDateTime),
+  updatedAt: IsoDateTime,
+});
+
 /**
  * Which client connection dispatched the command that produced an event.
  * Stamped by the orchestration engine on client-dispatched commands; absent on
@@ -1828,7 +2050,7 @@ const EventBaseFields = {
   sequence: NonNegativeInt,
   eventId: EventId,
   aggregateKind: OrchestrationAggregateKind,
-  aggregateId: Schema.Union([ProjectId, ThreadId]),
+  aggregateId: Schema.Union([ProjectId, ThreadId, AutomationId]),
   occurredAt: IsoDateTime,
   commandId: Schema.NullOr(CommandId),
   causationEventId: Schema.NullOr(EventId),
@@ -1996,6 +2218,36 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.activity-appended"),
     payload: ThreadActivityAppendedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("automation.created"),
+    payload: AutomationCreatedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("automation.updated"),
+    payload: AutomationUpdatedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("automation.paused"),
+    payload: AutomationPausedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("automation.resumed"),
+    payload: AutomationResumedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("automation.deleted"),
+    payload: AutomationDeletedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("automation.fired"),
+    payload: AutomationFiredPayload,
   }),
 ]);
 export type OrchestrationEvent = typeof OrchestrationEvent.Type;

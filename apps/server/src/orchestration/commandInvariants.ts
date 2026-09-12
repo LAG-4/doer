@@ -1,4 +1,5 @@
 import type {
+  AutomationId,
   OrchestrationCommand,
   OrchestrationProject,
   OrchestrationReadModel,
@@ -6,6 +7,7 @@ import type {
   ProjectId,
   ThreadId,
 } from "@t3tools/contracts";
+import type { Automation } from "@t3tools/contracts";
 import { normalizeProjectPathForComparison } from "@t3tools/shared/path";
 import * as Effect from "effect/Effect";
 
@@ -167,6 +169,69 @@ export function requireThreadAbsent(input: {
     invariantError(
       input.command.type,
       `Thread '${input.threadId}' already exists and cannot be created twice.`,
+    ),
+  );
+}
+
+function findAutomationById(
+  readModel: OrchestrationReadModel,
+  automationId: AutomationId,
+): Automation | undefined {
+  return readModel.automations?.find((automation) => automation.id === automationId);
+}
+
+export function requireAutomation(input: {
+  readonly readModel: OrchestrationReadModel;
+  readonly command: OrchestrationCommand;
+  readonly automationId: AutomationId;
+}): Effect.Effect<Automation, OrchestrationCommandInvariantError> {
+  const automation = findAutomationById(input.readModel, input.automationId);
+  if (automation) {
+    return Effect.succeed(automation);
+  }
+  return Effect.fail(
+    invariantError(
+      input.command.type,
+      `Automation '${input.automationId}' does not exist for command '${input.command.type}'.`,
+    ),
+  );
+}
+
+/** A live automation is one the user can still act on: created and not deleted. */
+export function requireLiveAutomation(input: {
+  readonly readModel: OrchestrationReadModel;
+  readonly command: OrchestrationCommand;
+  readonly automationId: AutomationId;
+}): Effect.Effect<Automation, OrchestrationCommandInvariantError> {
+  return requireAutomation(input).pipe(
+    Effect.flatMap((automation) =>
+      automation.deletedAt === null
+        ? Effect.succeed(automation)
+        : Effect.fail(
+            invariantError(
+              input.command.type,
+              `Automation '${input.automationId}' was deleted and cannot handle command '${input.command.type}'.`,
+            ),
+          ),
+    ),
+  );
+}
+
+export function requireAutomationAbsent(input: {
+  readonly readModel: OrchestrationReadModel;
+  readonly command: OrchestrationCommand;
+  readonly automationId: AutomationId;
+}): Effect.Effect<void, OrchestrationCommandInvariantError> {
+  // Automation deletion is a soft delete and the client mints the id, so
+  // only a live row blocks creation — recreating a deleted id resets it.
+  const existing = findAutomationById(input.readModel, input.automationId);
+  if (existing === undefined || existing.deletedAt !== null) {
+    return Effect.void;
+  }
+  return Effect.fail(
+    invariantError(
+      input.command.type,
+      `Automation '${input.automationId}' already exists and cannot be created twice.`,
     ),
   );
 }
