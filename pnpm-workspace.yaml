@@ -48,6 +48,7 @@ catalog:
   "@tailwindcss/vite": 4.3.3
   "@types/node": 24.12.4
   effect: 4.0.0-rc.112
+  fast-formula-parser: 1.0.19
   jose: 6.2.2
   lightningcss: 1.33.0
   tailwindcss: 4.3.3

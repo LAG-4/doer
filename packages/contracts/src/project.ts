@@ -14,6 +14,14 @@ const PROJECT_READ_FILE_PATH_MAX_LENGTH = 512;
 export const ProjectEntryKind = Schema.Literals(["file", "directory"]);
 export type ProjectEntryKind = typeof ProjectEntryKind.Type;
 
+/**
+ * Payload encoding for file reads and writes. "utf8" is the historical
+ * string behavior; "base64" carries raw bytes so binary formats (for example
+ * .xlsx workbooks) use this same file API instead of a second one.
+ */
+export const ProjectFileEncoding = Schema.Literals(["utf8", "base64"]);
+export type ProjectFileEncoding = typeof ProjectFileEncoding.Type;
+
 export const ProjectSearchEntriesInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   // An empty query is a bounded browse: the index returns frecency-ordered
@@ -196,14 +204,21 @@ export const ProjectReadFileInput = Schema.Struct({
   // Workspace-relative, or an absolute host path for a file outside the
   // workspace. Only workspace-relative paths can be written back.
   relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_READ_FILE_PATH_MAX_LENGTH)),
+  // Text reads decode UTF-8 and reject binary files. Binary reads return the
+  // raw bytes as base64 so binary formats (for example .xlsx workbooks) can
+  // travel over this same file API. Absent means "utf8".
+  encoding: Schema.optional(ProjectFileEncoding),
 });
 export type ProjectReadFileInput = typeof ProjectReadFileInput.Type;
 
 export const ProjectReadFileResult = Schema.Struct({
   relativePath: TrimmedNonEmptyString,
+  // UTF-8 text, or base64 bytes when the request asked for binary.
   contents: Schema.String,
   byteLength: NonNegativeInt,
   truncated: Schema.Boolean,
+  // Mirrors the request encoding. Absent means "utf8".
+  encoding: Schema.optional(ProjectFileEncoding),
 });
 export type ProjectReadFileResult = typeof ProjectReadFileResult.Type;
 
@@ -267,7 +282,9 @@ export class ProjectReadFileError extends Schema.TaggedError<ProjectReadFileErro
 export const ProjectWriteFileInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
+  // UTF-8 text, or base64 bytes when encoding is "base64". Absent means "utf8".
   contents: Schema.String,
+  encoding: Schema.optional(ProjectFileEncoding),
 });
 export type ProjectWriteFileInput = typeof ProjectWriteFileInput.Type;
 

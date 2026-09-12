@@ -108,8 +108,13 @@ export class WorkspaceFileSystem extends Context.Service<
   WorkspaceFileSystem,
   {
     /**
-     * Read a UTF-8 text file relative to the workspace root, or any host file by
+     * Read a file relative to the workspace root, or any host file by
      * absolute path.
+     *
+     * UTF-8 text is the default: contents decode as text and binary files are
+     * rejected. With `encoding: "base64"` the raw bytes return base64-encoded
+     * so binary formats (for example .xlsx workbooks) travel over this same
+     * file API.
      */
     readonly readFile: (
       input: ProjectReadFileInput,
@@ -121,7 +126,8 @@ export class WorkspaceFileSystem extends Context.Service<
      * Write a file relative to the workspace root.
      *
      * Creates parent directories as needed and rejects paths that escape the
-     * workspace root.
+     * workspace root. UTF-8 text is the default; with `encoding: "base64"`
+     * contents decode to raw bytes before writing.
      */
     readonly writeFile: (
       input: ProjectWriteFileInput,
@@ -131,6 +137,30 @@ export class WorkspaceFileSystem extends Context.Service<
     >;
   }
 >()("t3/workspace/WorkspaceFileSystem") {}
+
+/** Decode base64 write payloads, rejecting malformed input before touching disk. */
+const decodeBase64FileContents = (
+  input: ProjectWriteFileInput,
+  resolvedPath: string,
+): Effect.Effect<Uint8Array, WorkspaceFileSystemOperationError> =>
+  Effect.try({
+    try: () => {
+      const compact = input.contents.replace(/\s/g, "");
+      if (compact.length % 4 !== 0 || /[^A-Za-z0-9+/=]/.test(compact)) {
+        throw new Error("Invalid base64 file contents.");
+      }
+      return new Uint8Array(Buffer.from(compact, "base64"));
+    },
+    catch: (cause) =>
+      new WorkspaceFileSystemOperationError({
+        workspaceRoot: input.cwd,
+        relativePath: input.relativePath,
+        resolvedPath,
+        operationPath: resolvedPath,
+        operation: "write-file",
+        cause,
+      }),
+  });
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
@@ -271,6 +301,15 @@ export const make = Effect.gen(function* () {
               }),
           });
           const fileBytes = buffer.subarray(0, bytesRead);
+          if ((input.encoding ?? "utf8") === "base64") {
+            return {
+              relativePath: target.relativePath,
+              contents: Buffer.from(fileBytes).toString("base64"),
+              byteLength: stat.size,
+              truncated: stat.size > PROJECT_READ_FILE_MAX_BYTES,
+              encoding: "base64" as const,
+            };
+          }
           if (fileBytes.includes(0)) {
             return yield* new WorkspaceBinaryFileError({
               workspaceRoot: input.cwd,
@@ -323,19 +362,36 @@ export const make = Effect.gen(function* () {
           }),
       ),
     );
-    yield* fileSystem.writeFileString(target.absolutePath, input.contents).pipe(
-      Effect.mapError(
-        (cause) =>
-          new WorkspaceFileSystemOperationError({
-            workspaceRoot: input.cwd,
-            relativePath: input.relativePath,
-            resolvedPath: target.absolutePath,
-            operationPath: target.absolutePath,
-            operation: "write-file",
-            cause,
-          }),
-      ),
-    );
+    if ((input.encoding ?? "utf8") === "base64") {
+      const rawContents = yield* decodeBase64FileContents(input, target.absolutePath);
+      yield* fileSystem.writeFile(target.absolutePath, rawContents).pipe(
+        Effect.mapError(
+          (cause) =>
+            new WorkspaceFileSystemOperationError({
+              workspaceRoot: input.cwd,
+              relativePath: input.relativePath,
+              resolvedPath: target.absolutePath,
+              operationPath: target.absolutePath,
+              operation: "write-file",
+              cause,
+            }),
+        ),
+      );
+    } else {
+      yield* fileSystem.writeFileString(target.absolutePath, input.contents).pipe(
+        Effect.mapError(
+          (cause) =>
+            new WorkspaceFileSystemOperationError({
+              workspaceRoot: input.cwd,
+              relativePath: input.relativePath,
+              resolvedPath: target.absolutePath,
+              operationPath: target.absolutePath,
+              operation: "write-file",
+              cause,
+            }),
+        ),
+      );
+    }
     yield* workspaceEntries.refresh(input.cwd);
     return { relativePath: target.relativePath };
   });

@@ -7,6 +7,7 @@ import {
 } from "./fileCommentAnnotations";
 import {
   isMarkdownPreviewFile,
+  isSpreadsheetPreviewFile,
   setMarkdownTaskChecked,
   shouldShowFileExplorer,
 } from "./filePreviewMode";
@@ -70,6 +71,19 @@ describe("isMarkdownPreviewFile", () => {
   });
 });
 
+describe("isSpreadsheetPreviewFile", () => {
+  it("recognizes .xlsx files case-insensitively, ignoring query strings", () => {
+    expect(isSpreadsheetPreviewFile("budget.xlsx")).toBe(true);
+    expect(isSpreadsheetPreviewFile("docs/Tracker.XLSX")).toBe(true);
+    expect(isSpreadsheetPreviewFile("budget.xlsx?download=1")).toBe(true);
+  });
+
+  it("does not treat other workbooks or text files as sheets", () => {
+    expect(isSpreadsheetPreviewFile("docs/guide.txt")).toBe(false);
+    expect(isSpreadsheetPreviewFile("data.csv")).toBe(false);
+    expect(isSpreadsheetPreviewFile("slides.xlsx.zip")).toBe(false);
+  });
+});
 describe("shouldShowFileExplorer", () => {
   it("hides the workspace tree for host files and attachments", () => {
     expect(

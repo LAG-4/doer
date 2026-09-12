@@ -7,6 +7,7 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
@@ -59,6 +60,7 @@ import {
   ServerSelfUpdateError,
   type ServerSelfUpdateProgressEvent,
   type ServerLifecycleStreamEvent,
+  ShellOpenFileError,
   type FilesystemBrowseFailure,
   FilesystemBrowseError,
   AssetWorkspaceContextNotFoundError,
@@ -2401,6 +2403,64 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.shellOpenInEditor, externalLauncher.launchEditor(input), {
             "rpc.aggregate": "workspace",
           }),
+        [WS_METHODS.shellOpenFile]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.shellOpenFile,
+            Effect.gen(function* () {
+              const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
+              const fileSystem = yield* FileSystem.FileSystem;
+              const target = yield* workspacePaths
+                .resolveRelativePathWithinRoot({
+                  workspaceRoot: input.cwd,
+                  relativePath: input.relativePath,
+                })
+                .pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new ShellOpenFileError({
+                        cwd: input.cwd,
+                        relativePath: input.relativePath,
+                        failure: "path_outside_root",
+                        cause,
+                      }),
+                  ),
+                );
+              const stat = yield* fileSystem.stat(target.absolutePath).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new ShellOpenFileError({
+                      cwd: input.cwd,
+                      relativePath: input.relativePath,
+                      failure: "launch_failed",
+                      cause,
+                    }),
+                ),
+              );
+              if (stat.type !== "File") {
+                return yield* new ShellOpenFileError({
+                  cwd: input.cwd,
+                  relativePath: input.relativePath,
+                  failure: "path_not_file",
+                });
+              }
+              yield* externalLauncher.launchBrowser(target.absolutePath).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new ShellOpenFileError({
+                      cwd: input.cwd,
+                      relativePath: input.relativePath,
+                      failure: "launch_failed",
+                      cause,
+                    }),
+                ),
+              );
+              return {
+                relativePath: target.relativePath,
+                absolutePath: target.absolutePath,
+              };
+            }),
+            { "rpc.aggregate": "workspace" },
+          ),
         [WS_METHODS.filesystemBrowse]: (input) =>
           observeRpcEffect(
             WS_METHODS.filesystemBrowse,

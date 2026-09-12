@@ -5,6 +5,8 @@ export interface FileSaveCoordinatorOptions<A, E> {
   readonly persist: (contents: string) => Promise<AtomCommandResult<A, E>>;
   readonly onPendingChange: (pending: boolean) => void;
   readonly onConfirmed: (contents: string) => void;
+  /** Runs when a write round finishes failed with nothing newer queued. */
+  readonly onFailure?: () => void;
 }
 
 export class FileSaveCoordinator<A = unknown, E = unknown> {
@@ -25,6 +27,21 @@ export class FileSaveCoordinator<A = unknown, E = unknown> {
     this.lastChangeAt = Date.now();
     this.options.onPendingChange(true);
     this.schedule(this.options.debounceMs);
+  }
+
+  /**
+   * Explicit save (spreadsheet Save button): persist now instead of waiting
+   * out the debounce. Coalescing, pending, and confirmed semantics match
+   * debounced changes, so rapid Save clicks collapse into the in-flight write.
+   */
+  save(contents: string): void {
+    if (this.disposed) return;
+    this.latestContents = contents;
+    this.latestRevision += 1;
+    this.lastChangeAt = Date.now();
+    this.options.onPendingChange(true);
+    this.clearTimer();
+    void this.persistLatest();
   }
 
   dispose(): void {
@@ -63,6 +80,7 @@ export class FileSaveCoordinator<A = unknown, E = unknown> {
     this.saving = false;
     if (revision === this.latestRevision) {
       if (succeeded) this.options.onPendingChange(false);
+      else this.options.onFailure?.();
       return;
     }
 

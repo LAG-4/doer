@@ -12,7 +12,13 @@ import {
   ProviderSetupInput,
 } from "./providerSetup.ts";
 
-import { ExternalLauncherError, LaunchEditorInput } from "./editor.ts";
+import {
+  ExternalLauncherError,
+  LaunchEditorInput,
+  ShellOpenFileError,
+  ShellOpenFileInput,
+  ShellOpenFileResult,
+} from "./editor.ts";
 import {
   AuthAccessStreamError,
   AuthAccessStreamEvent,
@@ -265,6 +271,7 @@ export const WS_METHODS = {
 
   // Shell methods
   shellOpenInEditor: "shell.openInEditor",
+  shellOpenFile: "shell.openFile",
 
   // Filesystem methods
   filesystemBrowse: "filesystem.browse",
@@ -858,6 +865,12 @@ const WsShellOpenInEditorRpc = Rpc.make(WS_METHODS.shellOpenInEditor, {
   error: Schema.Union([ExternalLauncherError, EnvironmentAuthorizationError]),
 });
 
+const WsShellOpenFileRpc = Rpc.make(WS_METHODS.shellOpenFile, {
+  payload: ShellOpenFileInput,
+  success: ShellOpenFileResult,
+  error: Schema.Union([ShellOpenFileError, EnvironmentAuthorizationError]),
+});
+
 const WsFilesystemBrowseRpc = Rpc.make(WS_METHODS.filesystemBrowse, {
   payload: FilesystemBrowseInput,
   success: FilesystemBrowseResult,
@@ -1345,6 +1358,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsProjectsSearchEntriesRpc,
   WsProjectsWriteFileRpc,
   WsShellOpenInEditorRpc,
+  WsShellOpenFileRpc,
   WsFilesystemBrowseRpc,
   WsAgentSessionsScanRpc,
   WsAgentSessionsImportRpc,

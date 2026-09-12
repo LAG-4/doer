@@ -7409,6 +7409,90 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("routes websocket rpc shell.openFile to the default application", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspaceDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ws-open-file-" });
+      yield* fs.writeFileString(path.join(workspaceDir, "budget.xlsx"), "PK").pipe(Effect.orDie);
+      let launched: string | null = null;
+      yield* buildAppUnderTest({
+        layers: {
+          externalLauncher: {
+            launchBrowser: (target) =>
+              Effect.sync(() => {
+                launched = target;
+              }),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const response = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.shellOpenFile]({
+            cwd: workspaceDir,
+            relativePath: "budget.xlsx",
+          }),
+        ),
+      );
+
+      assert.equal(response.relativePath, "budget.xlsx");
+      assert.equal(response.absolutePath, path.join(workspaceDir, "budget.xlsx"));
+      assert.equal(launched, path.join(workspaceDir, "budget.xlsx"));
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("routes websocket rpc shell.openFile escape outside the root", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const workspaceDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ws-open-file-" });
+      yield* buildAppUnderTest();
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const result = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.shellOpenFile]({
+            cwd: workspaceDir,
+            relativePath: "../escape.xlsx",
+          }),
+        ).pipe(Effect.result),
+      );
+
+      assert.isTrue(result._tag === "Failure");
+      if (result._tag !== "Failure" || result.failure._tag !== "ShellOpenFileError") {
+        assert.fail("Expected a ShellOpenFileError");
+      }
+      assert.equal(result.failure.failure, "path_outside_root");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("routes websocket rpc shell.openFile directory rejection", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspaceDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ws-open-file-" });
+      yield* fs.makeDirectory(path.join(workspaceDir, "folder")).pipe(Effect.orDie);
+      yield* buildAppUnderTest();
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const result = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.shellOpenFile]({
+            cwd: workspaceDir,
+            relativePath: "folder",
+          }),
+        ).pipe(Effect.result),
+      );
+
+      assert.isTrue(result._tag === "Failure");
+      if (result._tag !== "Failure" || result.failure._tag !== "ShellOpenFileError") {
+        assert.fail("Expected a ShellOpenFileError");
+      }
+      assert.equal(result.failure.failure, "path_not_file");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("routes websocket rpc git methods", () =>
     Effect.gen(function* () {
       yield* buildAppUnderTest({
