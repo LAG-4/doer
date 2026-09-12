@@ -578,7 +578,7 @@ function ScheduledTaskEditorForm(props: {
           </p>
         ) : null}
       </div>
-      <DialogFooter>
+      <DialogFooter variant="bare">
         <Button variant="ghost" onClick={close} disabled={saving}>
           Cancel
         </Button>

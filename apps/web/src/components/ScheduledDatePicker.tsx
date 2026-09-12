@@ -1,5 +1,5 @@
 import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
@@ -71,56 +71,10 @@ function formatTrigger(parts: DateTimeParts): string {
 
 const pad2 = (value: number): string => String(value).padStart(2, "0");
 
-/** One scrollable numeric option column (hour / minute). Fully theme-styled. */
-function TimeColumn(props: {
-  readonly label: string;
-  readonly options: ReadonlyArray<number>;
-  readonly value: number;
-  readonly format: (value: number) => string;
-  readonly onChange: (value: number) => void;
-}) {
-  const scrollSelectedIntoView = useCallback((node: HTMLButtonElement | null) => {
-    node?.scrollIntoView({ block: "nearest" });
-  }, []);
-  return (
-    <div className="flex min-w-0 flex-1 flex-col gap-1">
-      <span className="text-center text-[11px] text-muted-foreground">{props.label}</span>
-      <div
-        role="radiogroup"
-        aria-label={props.label}
-        className="flex h-32 flex-col gap-px overflow-y-auto rounded-md border border-input p-1"
-      >
-        {props.options.map((option) => {
-          const selected = option === props.value;
-          return (
-            <button
-              key={option}
-              type="button"
-              role="radio"
-              aria-checked={selected}
-              ref={selected ? scrollSelectedIntoView : undefined}
-              onClick={() => props.onChange(option)}
-              className={cn(
-                "cursor-pointer rounded px-1 py-1 text-center text-sm",
-                selected
-                  ? "bg-accent font-medium text-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {props.format(option)}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 /**
  * Compact calendar + time picker for one-off scheduled tasks. The native
  * datetime-local popup renders an oversized, off-brand calendar, so the
- * editor uses this popover instead (daily/weekly times keep the plain
- * time field, which has no popup problem).
+ * date grid here is custom while the time stays a plain field.
  */
 export function ScheduledDatePicker(props: {
   readonly value: string;
@@ -172,9 +126,6 @@ export function ScheduledDatePicker(props: {
   const setTime = (hour24: number, minute: number) => {
     props.onChange(toIso({ ...parts, hour24, minute }));
   };
-
-  const hour12 = parts.hour24 % 12 === 0 ? 12 : parts.hour24 % 12;
-  const ampm = parts.hour24 < 12 ? "AM" : "PM";
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -246,55 +197,29 @@ export function ScheduledDatePicker(props: {
             );
           })}
         </div>
-        <div className="flex items-start gap-1.5 pt-3">
-          <TimeColumn
-            label="Hour"
-            value={hour12}
-            format={pad2}
-            onChange={(next12) => {
-              const next24 = ampm === "AM" ? next12 % 12 : (next12 % 12) + 12;
-              setTime(next24, parts.minute);
+        <div className="flex flex-col gap-1.5 pt-3">
+          <label htmlFor="scheduled-once-time" className="text-xs text-muted-foreground">
+            Time
+          </label>
+          <input
+            id="scheduled-once-time"
+            type="time"
+            value={`${pad2(parts.hour24)}:${pad2(parts.minute)}`}
+            onChange={(event) => {
+              const [hour, minute] = event.target.value.split(":").map(Number);
+              if (
+                Number.isInteger(hour) &&
+                Number.isInteger(minute) &&
+                (hour as number) >= 0 &&
+                (hour as number) <= 23 &&
+                (minute as number) >= 0 &&
+                (minute as number) <= 59
+              ) {
+                setTime(hour as number, minute as number);
+              }
             }}
-            options={Array.from({ length: 12 }, (_, index) => index + 1)}
+            className="h-9 cursor-pointer rounded-lg border border-input bg-background px-3 text-sm"
           />
-          <TimeColumn
-            label="Minute"
-            value={parts.minute}
-            format={pad2}
-            onChange={(minute) => setTime(parts.hour24, minute)}
-            options={Array.from({ length: 60 }, (_, minute) => minute)}
-          />
-          <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <span className="text-center text-[11px] text-muted-foreground">AM / PM</span>
-            <div
-              role="radiogroup"
-              aria-label="AM or PM"
-              className="flex h-32 flex-col justify-center gap-1 rounded-md border border-input p-1"
-            >
-              {(["AM", "PM"] as const).map((option) => {
-                const selected = option === ampm;
-                return (
-                  <button
-                    key={option}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    onClick={() =>
-                      setTime(option === "AM" ? hour12 % 12 : (hour12 % 12) + 12, parts.minute)
-                    }
-                    className={cn(
-                      "cursor-pointer rounded px-1 py-1 text-center text-sm",
-                      selected
-                        ? "bg-accent font-medium text-foreground"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {option}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
         </div>
       </PopoverPopup>
     </Popover>
