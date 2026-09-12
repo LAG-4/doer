@@ -26,7 +26,7 @@ const status = {
   supported: true,
   installed: true,
   current: true,
-  unitPath: "/home/me/.config/systemd/user/t3code.service",
+  unitPath: "/home/me/.config/systemd/user/doer.service",
   logPath: "/home/me/.t3/userdata/logs/boot-service.log",
 } as const;
 
@@ -35,8 +35,8 @@ it("reports the installed service version and host paths", () => {
     formatServiceStatus(status, "0.0.29"),
     [
       "Doer service",
-      "  Status: installed · t3@0.0.29",
-      "  Unit: /home/me/.config/systemd/user/t3code.service",
+      "  Status: installed · doer-cli@0.0.29",
+      "  Unit: /home/me/.config/systemd/user/doer.service",
       "  Logs: /home/me/.t3/userdata/logs/boot-service.log",
     ].join("\n"),
   );
@@ -65,7 +65,7 @@ it("explains an incomplete nightly installation and keeps repair on its installe
   expect(output).toContain('sudo loginctl enable-linger "$(id -un)"');
   expect(output).toContain("[service-stopped]");
   expect(output).toContain("npx doer-cli@0.0.32-nightly.1 service update");
-  expect(output).not.toContain("t3@latest");
+  expect(output).not.toContain("doer-cli@latest");
 });
 
 it("suggests the newer CLI version when the installed service needs an update", () => {
@@ -90,7 +90,7 @@ it("reports a newer installed service and gives an exact-version repair command"
     "0.0.31",
   );
 
-  assert.include(output, "t3@0.0.32-nightly.1 (newer than this t3@0.0.31 CLI)");
+  assert.include(output, "doer-cli@0.0.32-nightly.1 (newer than this doer-cli@0.0.31 CLI)");
   assert.include(output, "npx doer-cli@0.0.32-nightly.1 service update");
   assert.notInclude(output, "npx doer-cli@latest service update");
 });

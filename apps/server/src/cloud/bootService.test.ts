@@ -29,7 +29,7 @@ it("keeps systemd pinned to the stable launcher rather than a versioned server",
     launcherPath: "/home/theo/.t3/runtime/service-launcher.mjs",
     baseDir: "/home/theo/.t3",
     logPath: "/home/theo/.t3/userdata/logs/boot-service.log",
-    unitPath: "/home/theo/.config/systemd/user/t3code.service",
+    unitPath: "/home/theo/.config/systemd/user/doer.service",
   });
 
   expect(unit).toContain("ExecStart=/usr/bin/node /home/theo/.t3/runtime/service-launcher.mjs");
@@ -43,7 +43,7 @@ it("survives the kernel OOM-killing a greedy agent child", () => {
     launcherPath: "/home/theo/.t3/runtime/service-launcher.mjs",
     baseDir: "/home/theo/.t3",
     logPath: "/home/theo/.t3/userdata/logs/boot-service.log",
-    unitPath: "/home/theo/.config/systemd/user/t3code.service",
+    unitPath: "/home/theo/.config/systemd/user/doer.service",
   });
 
   expect(unit).toContain("OOMPolicy=continue");
@@ -149,11 +149,11 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
       const failed = command === control.failCommand;
       if (!failed && command === "loginctl enable-linger --no-ask-password 501")
         control.linger = "yes";
-      if (!failed && command === "systemctl --user enable t3code.service") control.enabled = true;
-      if (!failed && command === "systemctl --user restart t3code.service") control.active = true;
+      if (!failed && command === "systemctl --user enable doer.service") control.enabled = true;
+      if (!failed && command === "systemctl --user restart doer.service") control.active = true;
       if (
         control.stateAfterStop !== undefined &&
-        (command === "systemctl --user stop t3code.service" ||
+        (command === "systemctl --user stop doer.service" ||
           command.startsWith("launchctl bootout --wait "))
       ) {
         yield* fs.writeFileString(statePath, control.stateAfterStop).pipe(Effect.orDie);
@@ -264,7 +264,7 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
         );
         expect(yield* fs.readFileString(statePath)).toBe(before);
         expect(yield* fs.readFileString(plan.unitPath)).toBe(unit);
-        expect(commands).not.toContain("systemctl --user stop t3code.service");
+        expect(commands).not.toContain("systemctl --user stop doer.service");
       }),
   );
 
@@ -337,7 +337,7 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
       expect(commands.some((command) => command.startsWith("npm "))).toBe(false);
       // The stop can block up to systemd's 90s TimeoutStopSec; the runner's
       // 60s default would cancel it mid-shutdown.
-      expect(timeouts.get("systemctl --user disable --now t3code.service")).toEqual(
+      expect(timeouts.get("systemctl --user disable --now doer.service")).toEqual(
         Duration.seconds(120),
       );
     }),
@@ -411,7 +411,7 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
           ),
         ).toEqual(
           platform === "linux"
-            ? ["systemctl --user stop t3code.service", "systemctl --user restart t3code.service"]
+            ? ["systemctl --user stop doer.service", "systemctl --user restart doer.service"]
             : [
                 "launchctl bootout --wait gui/501/click.lagaryan.doer.service",
                 `launchctl bootstrap gui/501 ${plan.unitPath}`,
@@ -476,9 +476,9 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
           (command) => command.startsWith("systemctl ") && !command.includes("show-environment"),
         ),
       ).toEqual([
-        "systemctl --user stop t3code.service",
+        "systemctl --user stop doer.service",
         "systemctl --user daemon-reload",
-        "systemctl --user restart t3code.service",
+        "systemctl --user restart doer.service",
       ]);
     }),
   );
@@ -510,10 +510,7 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
           commands.filter(
             (command) => command.startsWith("systemctl ") && !command.includes("show-environment"),
           ),
-        ).toEqual([
-          "systemctl --user stop t3code.service",
-          "systemctl --user restart t3code.service",
-        ]);
+        ).toEqual(["systemctl --user stop doer.service", "systemctl --user restart doer.service"]);
       }
     }),
   );

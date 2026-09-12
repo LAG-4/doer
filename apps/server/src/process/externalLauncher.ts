@@ -512,7 +512,7 @@ export class ExternalLauncher extends Context.Service<
      */
     readonly launchEditor: (input: LaunchEditorInput) => Effect.Effect<void, ExternalLauncherError>;
   }
->()("t3/process/externalLauncher") {}
+>()("doer-cli/process/externalLauncher") {}
 
 // ==============================
 // Implementations

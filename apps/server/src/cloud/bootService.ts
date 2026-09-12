@@ -429,7 +429,7 @@ export function formatBootServiceProblem(problem: BootServiceProblem): string {
     case "service-disabled":
       return "The service is not enabled to start automatically. Run `doer service update` to repair it.";
     case "service-stopped":
-      return "The service is not running. Check the service log and `systemctl --user status t3code.service`, then run `doer service update`.";
+      return "The service is not running. Check the service log and `systemctl --user status doer.service`, then run `doer service update`.";
   }
 }
 
@@ -490,7 +490,7 @@ export class BootService extends Context.Service<
     readonly uninstall: Effect.Effect<boolean, BootServiceError>;
     readonly status: Effect.Effect<BootServiceStatus, BootServiceError>;
   }
->()("t3/cloud/bootService") {}
+>()("doer-cli/cloud/bootService") {}
 
 export interface BootServiceHost {
   readonly execPath: string;

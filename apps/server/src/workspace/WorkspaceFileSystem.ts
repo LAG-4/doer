@@ -136,7 +136,7 @@ export class WorkspaceFileSystem extends Context.Service<
       WorkspaceFileSystemError | WorkspacePaths.WorkspacePathOutsideRootError
     >;
   }
->()("t3/workspace/WorkspaceFileSystem") {}
+>()("doer-cli/workspace/WorkspaceFileSystem") {}
 
 /** Decode base64 write payloads, rejecting malformed input before touching disk. */
 const decodeBase64FileContents = (

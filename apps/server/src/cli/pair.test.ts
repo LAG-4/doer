@@ -143,7 +143,7 @@ const withDescriptorServer = <A, E, R>(run: (origin: string) => Effect.Effect<A,
     (server) => Effect.sync(() => server.close()),
   );
 
-describe("t3 pair", () => {
+describe("doer pair", () => {
   it.effect("mints a token and prints a QR pairing URL for a live server", () =>
     withDescriptorServer((origin) =>
       Effect.gen(function* () {
@@ -176,7 +176,7 @@ describe("t3 pair", () => {
         // @effect-diagnostics-next-line preferSchemaOverJson:off - CLI JSON output is decoded as a presentation DTO.
         const credentials = JSON.parse(listed) as ReadonlyArray<{ readonly label?: string }>;
         assert.equal(credentials.length, 1);
-        assert.equal(credentials[0]?.label, "t3 pair");
+        assert.equal(credentials[0]?.label, "doer pair");
       }),
     ).pipe(
       Effect.provide(NodeServices.layer),

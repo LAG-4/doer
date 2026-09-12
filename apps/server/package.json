@@ -8,7 +8,8 @@
     "directory": "apps/server"
   },
   "bin": {
-    "doer": "./dist/bin.mjs"
+    "doer": "./dist/bin.mjs",
+    "doer-cli": "./dist/bin.mjs"
   },
   "files": [
     "dist"

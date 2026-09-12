@@ -244,3 +244,52 @@ main` workflow fast-forwards it; any direct commit breaks the sync.
   spike CPU/RAM and file watchers in running apps rebuild off your writes.
   Default to read-only (`rg`, `git diff`, `Read`); ask before anything that
   consumes significant resources.
+
+## Distribution (Doer fork — `lite` only, never upstream this section)
+
+Doer ships free-tier only: unsigned desktop apps via GitHub Releases (in-app
+auto-update included), the `doer-cli` npm package, and the marketing site at
+https://doer.lagaryan.click. No store builds, no signing certs, no Clerk/relay,
+no Discord, no AUR. Operator checklist: `docs/operations/doer-distribution.md`.
+
+- **Release workflow** (`.github/workflows/release.yml`): free GitHub-hosted
+  runners; jobs are `resolve_commit → preflight → quality → build (+wsl
+prebuild) → publish_cli → release`. Upstream-only jobs (AUR, Vercel deploys,
+  Discord, `finalize`) stay in the file but are gated to
+  `github.repository == 'pingdotgg/t3code'` — never remove the gates, and
+  never let `finalize` run on the fork (it would push to fork `main`, which
+  must stay a pure upstream mirror).
+  Nightlies run **daily 02:08 UTC** and only publish when new commits exist
+  (see `.github/scripts/check-nightly-release.cjs`). Stable ships by pushing a
+  `vX.Y.Z` tag above `apps/desktop/package.json`, or `workflow_dispatch
+channel=stable`, which builds the latest nightly commit.
+- **npm CLI**: package `doer-cli`, binaries `doer` + `doer-cli` — both bin
+  entries must exist or `npx doer-cli` breaks. First publish auto-creates the
+  package; auth is the `NPM_TOKEN` repo secret (granular token, publish
+  scope). `publish_cli` must stay before `release` in `needs` — servers
+  self-update to the exact client version, so the npm package must exist
+  before desktop artifacts ship.
+- **Identity rules**: desktop app ID `click.lagaryan.doer`, URL schemes
+  `doer://` / `doer-dev://`, artifacts `Doer-<version>-<arch>.*`. The site
+  (`apps/marketing/src/lib/releases.ts`, `/download`) resolves assets by
+  filename suffix (`-arm64.dmg`, `-x64.dmg`, `-x64.exe`, `-x86_64.AppImage`):
+  never change the electron-builder `artifactName` arch suffixes without
+  updating the site matchers; never point the site back at `pingdotgg/t3code`.
+  Effect service IDs follow the package name (`doer-cli/...` in
+  `apps/server`) — the `deterministicKeys` lint enforces it and the release
+  gate runs typecheck, so a rename without updating IDs blocks all releases.
+- **Triage pair**: `apps/server/src/cli/triagePrompt.ts` (`TRIAGE_PLAYBOOK`)
+  and `.github/triage/PLAYBOOK.md` must stay byte-identical (a test enforces
+  it); both point at `LAG-4/t3code` on branch `lite`. Edit both together.
+- **SSH remote path**: remote hosts install `doer-cli@<spec>` and exec the
+  `doer` binary (`packages/ssh/src/tunnel.ts`, `command.ts`); the desktop
+  resolves the spec from its release channel. The pinned-runtime and
+  service-launcher entry paths are `node_modules/doer-cli/dist/bin.mjs`.
+- **Signing later**: adding `CSC_*`/`APPLE_*` or `AZURE_*` secrets re-enables
+  signed macOS/Windows builds with no code change (the workflow already
+  branches on their presence).
+- **Merging upstream**: if upstream touches `release.yml`, the build script,
+  or CLI packaging, keep the fork gates/identity and re-verify with server
+  typecheck, `vp test run scripts/build-desktop-artifact.test.ts`
+  `packages/ssh/src/runnerProcess.test.ts`, marketing `typecheck` + `build`,
+  and `node scripts/release-smoke.ts`.

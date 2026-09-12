@@ -21,7 +21,7 @@ export class AutomationSchedulerReactor extends Context.Service<
     readonly start: () => Effect.Effect<void, never, Scope.Scope>;
     readonly drain: Effect.Effect<void>;
   }
->()("t3/orchestration/AutomationSchedulerReactor") {}
+>()("doer-cli/orchestration/AutomationSchedulerReactor") {}
 
 const DUE_SWEEP_LIMIT = 50;
 /**
