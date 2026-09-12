@@ -59,7 +59,7 @@ export function sanitizeGitHubCliStderr(stderr: string): string | undefined {
       "$1[redacted]$2",
     );
   // Strip control characters that would break single-line transport.
-  // eslint-disable-next-line no-control-regex
+  // (Unicode escapes, so no-control-regex stays quiet.)
   excerpt = excerpt
     .replace(/[\u0000-\u001F\u007F]+/g, " ")
     .replace(/\s+/g, " ")
