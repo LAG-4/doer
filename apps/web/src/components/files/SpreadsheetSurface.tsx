@@ -19,6 +19,12 @@ import { SpreadsheetGridEditor } from "./SpreadsheetGridEditor";
 import { installFileEditorDismissal } from "./fileEditorDismissal";
 import { useProjectBinaryFileQuery } from "./projectFilesQueryState";
 import {
+  collectSpreadsheetFormulas,
+  evaluateSpreadsheetFormulas,
+  loadSpreadsheetFormulaEngine,
+  type SpreadsheetFormulaEngine,
+} from "./spreadsheetFormulas";
+import {
   addSpreadsheetColumn,
   addSpreadsheetRow,
   applySpreadsheetSave,
@@ -50,7 +56,9 @@ export function SpreadsheetSurface({
   const [document, setDocument] = useState<SpreadsheetDocument | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveInFlight, setSaveInFlight] = useState(false);
+  const [formulaEngine, setFormulaEngine] = useState<SpreadsheetFormulaEngine | null>(null);
   const documentRef = useRef<SpreadsheetDocument | null>(null);
+  const displaysRef = useRef<string[][] | null>(null);
   const parseRequestRef = useRef(0);
   const pendingSaveRef = useRef<{
     base64: string;
@@ -61,6 +69,43 @@ export function SpreadsheetSurface({
   const dirty = document ? isSpreadsheetDirty(document) : false;
   const dirtyRef = useRef(false);
   const saveInFlightRef = useRef(false);
+  const formulas = useMemo(() => collectSpreadsheetFormulas(document?.rows ?? []), [document]);
+
+  // The formula engine loads lazily, only for sheets that contain formulas.
+  useEffect(() => {
+    if (formulas.length === 0 || formulaEngine) return;
+    let cancelled = false;
+    void loadSpreadsheetFormulaEngine().then(
+      (engine) => {
+        if (!cancelled) setFormulaEngine(engine);
+      },
+      () => undefined,
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [formulas, formulaEngine]);
+
+  // Display grid: formula cells show live computed values, everything else
+  // passes through. Without an engine the raw text shows, as before.
+  const displays = useMemo(() => {
+    if (!document) return null;
+    if (formulas.length === 0 || !formulaEngine) return document.rows;
+    try {
+      return evaluateSpreadsheetFormulas(
+        document.rows,
+        formulas,
+        document.sheetName,
+        formulaEngine,
+      );
+    } catch {
+      return document.rows;
+    }
+  }, [document, formulas, formulaEngine]);
+
+  useEffect(() => {
+    displaysRef.current = displays;
+  }, [displays]);
 
   useEffect(() => {
     documentRef.current = document;
@@ -149,7 +194,8 @@ export function SpreadsheetSurface({
     setSaveInFlight(true);
     onPendingChange(relativePath, true);
     try {
-      const bytes = await serializeSpreadsheet(current.sourceBytes, current.rows);
+      const displayGrid = displaysRef.current ?? current.rows;
+      const bytes = await serializeSpreadsheet(current.sourceBytes, current.rows, displayGrid);
       const base64 = bytesToBase64(bytes);
       pendingSaveRef.current = { base64, rows: current.rows, bytes };
       saveCoordinatorRef.current?.save(base64);
@@ -300,7 +346,8 @@ export function SpreadsheetSurface({
         </div>
       ) : (
         <SpreadsheetGridEditor
-          grid={document.rows}
+          grid={displays ?? document.rows}
+          rawGrid={document.rows}
           onCellChange={(rowIndex, colIndex, value) =>
             applyEdit((current) => setSpreadsheetCell(current, rowIndex, colIndex, value))
           }

@@ -410,6 +410,9 @@ function parseCellValue(
   const valuePattern = new RegExp(
     `<${tagPattern("v")}\\b[^>]*>([\\s\\S]*?)<\\/${tagPattern("v")}>`,
   );
+  const formulaPattern = new RegExp(
+    `<${tagPattern("f")}\\b[^>]*>([\\s\\S]*?)<\\/${tagPattern("f")}>`,
+  );
   if (type === "inlineStr") {
     const isPattern = new RegExp(
       `<${tagPattern("is")}\\b[^>]*>([\\s\\S]*?)<\\/${tagPattern("is")}>`,
@@ -417,6 +420,11 @@ function parseCellValue(
     const isMatch = isPattern.exec(cellInner ?? "");
     return isMatch ? collectTextRuns(isMatch[1] ?? "") : "";
   }
+  // Formula cells keep their body text (`=SUM(A1:A2)`), never the cached
+  // result: the grid owns formulas as text and the UI computes display
+  // values live, so formulas survive unlimited save round-trips.
+  const formulaMatch = formulaPattern.exec(cellInner ?? "");
+  if (formulaMatch) return `=${unescapeSpreadsheetXml(formulaMatch[1] ?? "")}`;
   if (type === "s") {
     const valueMatch = valuePattern.exec(cellInner ?? "");
     if (!valueMatch) return "";
@@ -431,21 +439,14 @@ function parseCellValue(
   const valueMatch = valuePattern.exec(cellInner ?? "");
   if (valueMatch) {
     const raw = unescapeSpreadsheetXml(valueMatch[1] ?? "");
-    // Date-formatted serials read as ISO dates; everything else (numbers,
-    // cached formula results, errors) travels as plain text.
+    // Date-formatted serials read as ISO dates; plain numbers read
+    // General-formatted; cached formula results and errors travel as text.
     if ((type === "" || type === "n") && isDateNumberFormat(numberFormat)) {
       return excelSerialToIso(Number(raw), date1904) ?? raw;
     }
+    if (type === "" || type === "n") return formatSpreadsheetNumber(raw);
     return raw;
   }
-  // Uncached formulas (writers like openpyxl emit `<v/>`) surface as text so
-  // the grid never shows a mysterious blank. There is no formula engine: the
-  // text round-trips as a plain string on save.
-  const formulaPattern = new RegExp(
-    `<${tagPattern("f")}\\b[^>]*>([\\s\\S]*?)<\\/${tagPattern("f")}>`,
-  );
-  const formulaMatch = formulaPattern.exec(cellInner ?? "");
-  if (formulaMatch) return `=${unescapeSpreadsheetXml(formulaMatch[1] ?? "")}`;
   return "";
 }
 
@@ -972,6 +973,24 @@ const SHEET_GRID_MAX_CELLS = 250_000;
 
 const CANONICAL_NUMBER = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
 
+/**
+ * Excel General-style display for a canonical number: flight-artifact
+ * decimals like 70.900000000000006 read as 70.9. By default only applies
+ * when the formatted text parses back to the identical double, so saving a
+ * parsed value never mutates it. Computed formula results pass
+ * `{ coerce: true }`: display precision wins because the formula stays the
+ * source of truth and Excel recalculates cached values on open anyway.
+ */
+export function formatSpreadsheetNumber(text: string, options: { coerce?: boolean } = {}): string {
+  if (!CANONICAL_NUMBER.test(text)) return text;
+  const value = Number(text);
+  if (!Number.isFinite(value)) return text;
+  if (Number.isInteger(value)) return String(value);
+  const rounded = String(Number(value.toPrecision(15)));
+  if (options.coerce) return rounded;
+  return Number(rounded) === value ? rounded : text;
+}
+
 export type SpreadsheetCellInput =
   | { kind: "empty" }
   | { kind: "number"; value: number }
@@ -997,12 +1016,54 @@ export function spreadsheetCellInputFromText(text: string): SpreadsheetCellInput
   return { kind: "text", value: text };
 }
 
-function buildSheetXml(grid: readonly (readonly string[])[]): string {
+/**
+ * Excel error literals: cached formula errors round-trip with an error type
+ * instead of degrading to text.
+ */
+const SPREADSHEET_ERROR_LITERALS = new Set([
+  "#DIV/0!",
+  "#N/A",
+  "#NAME?",
+  "#NULL!",
+  "#NUM!",
+  "#REF!",
+  "#VALUE!",
+  "#ERROR!",
+  "#CYCLE!",
+  "#BLOCKED!",
+]);
+
+function buildSheetXml(
+  grid: readonly (readonly string[])[],
+  computed?: readonly (readonly string[] | undefined)[] | undefined,
+): string {
   const rows = grid
     .map((row, rowIndex) => {
       const cells = row
         .map((cell, colIndex) => {
           const ref = `${columnIndexToLetters(colIndex)}${rowIndex + 1}`;
+          // Grid text starting with "=" is a formula body. It is written as
+          // <f> with the live computed display as the cached <v> so Excel and
+          // Sheets keep calculating it. Without computed values (fixtures),
+          // cells stay plain text.
+          if (computed !== undefined && cell.startsWith("=") && cell.trim().length > 1) {
+            const body = cell.slice(1);
+            const cached = computed[rowIndex]?.[colIndex];
+            if (cached === undefined || cached === "") {
+              return `<c r="${ref}"><f>${escapeSpreadsheetXml(body)}</f></c>`;
+            }
+            if (SPREADSHEET_ERROR_LITERALS.has(cached)) {
+              return `<c r="${ref}" t="e"><f>${escapeSpreadsheetXml(body)}</f><v>${cached}</v></c>`;
+            }
+            const cachedInput = spreadsheetCellInputFromText(cached);
+            if (cachedInput.kind === "number") {
+              return `<c r="${ref}"><f>${escapeSpreadsheetXml(body)}</f><v>${cachedInput.value}</v></c>`;
+            }
+            if (cachedInput.kind === "boolean") {
+              return `<c r="${ref}" t="b"><f>${escapeSpreadsheetXml(body)}</f><v>${cachedInput.value ? 1 : 0}</v></c>`;
+            }
+            return `<c r="${ref}" t="str"><f>${escapeSpreadsheetXml(body)}</f><v>${escapeSpreadsheetXml(cached)}</v></c>`;
+          }
           const input = spreadsheetCellInputFromText(cell);
           if (input.kind === "empty") return `<c r="${ref}"/>`;
           if (input.kind === "number") return `<c r="${ref}"><v>${input.value}</v></c>`;
@@ -1154,11 +1215,14 @@ export async function createSpreadsheetWorkbook(
 
 /**
  * Replace the first sheet's grid, preserving every other package entry's
- * payload bytes verbatim so non-first sheets round-trip untouched.
+ * payload bytes verbatim so non-first sheets round-trip untouched. The
+ * optional computed grid carries live formula results, which are written as
+ * cached values next to each formula body.
  */
 export async function serializeSpreadsheet(
   originalBytes: Uint8Array,
   rows: readonly (readonly string[])[],
+  computed?: readonly (readonly string[] | undefined)[] | undefined,
 ): Promise<Uint8Array> {
   const entries = await readZipEntries(originalBytes);
   const workbookXmlText = entryText(entries, "xl/workbook.xml");
@@ -1175,7 +1239,7 @@ export async function serializeSpreadsheet(
   if (!first) throw new Error("Not a spreadsheet file (no worksheets).");
   const target = entries.find((entry) => entry.name === first.entry);
   if (!target) throw new Error("Not a spreadsheet file (worksheet missing).");
-  target.data = textEncoder().encode(buildSheetXml(normalizeSpreadsheetGrid(rows)));
+  target.data = textEncoder().encode(buildSheetXml(normalizeSpreadsheetGrid(rows), computed));
   target.passthrough = null;
   target.crc = 0;
   target.method = 8;

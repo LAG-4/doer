@@ -82,13 +82,14 @@ describe("sheet cell parsing", () => {
     ]);
   });
 
-  it("reads booleans as TRUE/FALSE and cached formula results as values", () => {
+  it("reads booleans as TRUE/FALSE and keeps formula bodies", () => {
     const xml =
       `<worksheet><sheetData><row r="1">` +
       `<c r="A1" t="b"><v>1</v></c><c r="B1" t="b"><v>0</v></c>` +
       `<c r="C1"><f>SUM(A1:B1)</f><v>1</v></c>` +
       `</row></sheetData></worksheet>`;
-    expect(parseSheetGrid(xml)).toEqual([["TRUE", "FALSE", "1"]]);
+    // Cached results never replace the body: the UI computes live values.
+    expect(parseSheetGrid(xml)).toEqual([["TRUE", "FALSE", "=SUM(A1:B1)"]]);
   });
 
   it("renders date-formatted serials as ISO dates", () => {
@@ -254,6 +255,19 @@ describe("spreadsheet round-trip", () => {
     expect((await parseSpreadsheet(bytes)).rows).toEqual([]);
     const resaved = await serializeSpreadsheet(bytes, []);
     expect((await parseSpreadsheet(resaved)).rows).toEqual([]);
+  });
+
+  it("keeps formula bodies with computed caches across saves", async () => {
+    const rows = [["Amount"], ["10"], ["20"], ["=SUM(A2:A3)"]];
+    const bytes = await createSpreadsheet(rows, "Totals");
+    // Fixtures without computed values stay plain text.
+    expect((await parseSpreadsheet(bytes)).rows).toEqual(rows);
+    const saved = await serializeSpreadsheet(bytes, rows, [["Amount"], ["10"], ["20"], ["30"]]);
+    // The body survives the round-trip; the display computes live.
+    expect((await parseSpreadsheet(saved)).rows).toEqual(rows);
+    // Saving again without computed values keeps the body as text.
+    const resaved = await serializeSpreadsheet(saved, rows);
+    expect((await parseSpreadsheet(resaved)).rows).toEqual(rows);
   });
 
   it("rejects files that are not workbooks", async () => {
