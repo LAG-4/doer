@@ -9,6 +9,8 @@
 import type {
   AgentSessionImportSource,
   ApprovalRequestId,
+  Automation,
+  AutomationId,
   CheckpointRef,
   MessageId,
   OrchestrationCheckpointSummary,
@@ -227,6 +229,23 @@ export interface ProjectionSnapshotQueryShape {
     }>,
     ProjectionRepositoryError
   >;
+
+  /** Read a single automation row by id. */
+  readonly getAutomationById: (
+    automationId: AutomationId,
+  ) => Effect.Effect<Option.Option<Automation>, ProjectionRepositoryError>;
+
+  /** Read live automation rows for the shell snapshot. */
+  readonly listVisibleAutomations: () => Effect.Effect<
+    ReadonlyArray<Automation>,
+    ProjectionRepositoryError
+  >;
+
+  /** Read due automation rows for the scheduler sweep, oldest slot first. */
+  readonly listDueAutomations: (input: {
+    readonly nowIso: string;
+    readonly limit?: number;
+  }) => Effect.Effect<ReadonlyArray<Automation>, ProjectionRepositoryError>;
 
   /**
    * Read a single active thread detail snapshot by id.

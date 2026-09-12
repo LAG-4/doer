@@ -65,6 +65,7 @@ import {
   AssetWorkspaceContextResolutionError,
   RpcClientId,
   EnvironmentAuthorizationError,
+  AutomationId,
   ThreadId,
   type TerminalAttachStreamEvent,
   type TerminalError,
@@ -796,6 +797,20 @@ const makeWsRpcLayer = (
             );
           case "thread.unarchived":
             return threadUpsertOrRemove(ThreadId.make(event.aggregateId), event.sequence);
+          case "automation.created":
+          case "automation.updated":
+          case "automation.paused":
+          case "automation.resumed":
+          case "automation.fired":
+            return automationUpsertOrRemove(AutomationId.make(event.aggregateId), event.sequence);
+          case "automation.deleted":
+            return Effect.succeed(
+              Option.some({
+                kind: "automation-removed" as const,
+                sequence: event.sequence,
+                automationId: AutomationId.make(event.aggregateId),
+              }),
+            );
           default:
             if (event.aggregateKind !== "thread") {
               return Effect.succeed(Option.none());
@@ -810,7 +825,7 @@ const makeWsRpcLayer = (
       // If both attempts fail, log and drop the stream item; treating an error as
       // a missing row would incorrectly remove a still-active aggregate.
       const retryShellProjectionRead = <A, E>(
-        aggregateKind: "project" | "thread",
+        aggregateKind: "project" | "thread" | "automation",
         aggregateId: string,
         read: Effect.Effect<A, E>,
       ): Effect.Effect<Option.Option<A>, never, never> =>
@@ -890,6 +905,44 @@ const makeWsRpcLayer = (
                     sequence,
                     thread: nextThread,
                   }),
+              }),
+            ),
+          ),
+        );
+
+      // Same refetch contract as threads: an upsert while the row is visible,
+      // a removal when the projection no longer has it (deleted). A removal
+      // the client does not have is a harmless no-op.
+      const automationUpsertOrRemove = (
+        automationId: AutomationId,
+        sequence: number,
+      ): Effect.Effect<Option.Option<OrchestrationShellStreamEvent>, never, never> =>
+        retryShellProjectionRead(
+          "automation",
+          automationId,
+          projectionSnapshotQuery.getAutomationById(automationId),
+        ).pipe(
+          Effect.map(
+            Option.flatMap((automation) =>
+              Option.match(automation, {
+                onNone: () =>
+                  Option.some<OrchestrationShellStreamEvent>({
+                    kind: "automation-removed" as const,
+                    sequence,
+                    automationId,
+                  }),
+                onSome: (nextAutomation) =>
+                  nextAutomation.deletedAt !== null
+                    ? Option.some<OrchestrationShellStreamEvent>({
+                        kind: "automation-removed" as const,
+                        sequence,
+                        automationId,
+                      })
+                    : Option.some<OrchestrationShellStreamEvent>({
+                        kind: "automation-upserted" as const,
+                        sequence,
+                        automation: nextAutomation,
+                      }),
               }),
             ),
           ),

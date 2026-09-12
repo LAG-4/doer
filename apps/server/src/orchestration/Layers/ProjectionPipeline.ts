@@ -37,6 +37,7 @@ import {
   ProjectionThreadProposedPlanRepository,
 } from "../../persistence/Services/ProjectionThreadProposedPlans.ts";
 import * as ProjectionThreadPullRequests from "../../persistence/ProjectionThreadPullRequests.ts";
+import * as ProjectionAutomations from "../../persistence/ProjectionAutomations.ts";
 import { ProjectionThreadSessionRepository } from "../../persistence/Services/ProjectionThreadSessions.ts";
 import {
   type ProjectionTurn,
@@ -74,6 +75,7 @@ export const ORCHESTRATION_PROJECTOR_NAMES = {
   threadTurns: "projection.thread-turns",
   checkpoints: "projection.checkpoints",
   pendingApprovals: "projection.pending-approvals",
+  automations: "projection.automations",
 } as const;
 
 type ProjectorName =
@@ -491,6 +493,8 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     const projectionThreadSessionRepository = yield* ProjectionThreadSessionRepository;
     const projectionTurnRepository = yield* ProjectionTurnRepository;
     const projectionPendingApprovalRepository = yield* ProjectionPendingApprovalRepository;
+    const projectionAutomationRepository =
+      yield* ProjectionAutomations.ProjectionAutomationRepository;
 
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -1907,6 +1911,127 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       }
     });
 
+    const applyAutomationsProjection: ProjectorDefinition["apply"] = Effect.fn(
+      "applyAutomationsProjection",
+    )(function* (event, _attachmentSideEffects) {
+      switch (event.type) {
+        case "automation.created":
+          yield* projectionAutomationRepository.upsert({
+            automationId: event.payload.automationId,
+            projectId: event.payload.projectId,
+            threadId: event.payload.threadId,
+            title: event.payload.title,
+            prompt: event.payload.prompt,
+            schedule: event.payload.schedule,
+            state: "active",
+            nextFireAt: event.payload.nextFireAt,
+            lastFiredAt: null,
+            runs: [],
+            createdAt: event.payload.createdAt,
+            updatedAt: event.payload.updatedAt,
+            deletedAt: null,
+          });
+          return;
+
+        case "automation.updated": {
+          const existingRow = yield* projectionAutomationRepository.getById({
+            automationId: event.payload.automationId,
+          });
+          if (Option.isNone(existingRow)) {
+            return;
+          }
+          yield* projectionAutomationRepository.upsert({
+            ...existingRow.value,
+            ...(event.payload.title !== undefined ? { title: event.payload.title } : {}),
+            ...(event.payload.prompt !== undefined ? { prompt: event.payload.prompt } : {}),
+            ...(event.payload.schedule !== undefined ? { schedule: event.payload.schedule } : {}),
+            ...(event.payload.nextFireAt !== undefined
+              ? { nextFireAt: event.payload.nextFireAt }
+              : {}),
+            updatedAt: event.payload.updatedAt,
+          });
+          return;
+        }
+
+        case "automation.paused": {
+          const existingRow = yield* projectionAutomationRepository.getById({
+            automationId: event.payload.automationId,
+          });
+          if (Option.isNone(existingRow)) {
+            return;
+          }
+          yield* projectionAutomationRepository.upsert({
+            ...existingRow.value,
+            state: "paused",
+            // A paused row is never due.
+            nextFireAt: null,
+            updatedAt: event.payload.updatedAt,
+          });
+          return;
+        }
+
+        case "automation.resumed": {
+          const existingRow = yield* projectionAutomationRepository.getById({
+            automationId: event.payload.automationId,
+          });
+          if (Option.isNone(existingRow)) {
+            return;
+          }
+          yield* projectionAutomationRepository.upsert({
+            ...existingRow.value,
+            state: "active",
+            nextFireAt: event.payload.nextFireAt,
+            updatedAt: event.payload.updatedAt,
+          });
+          return;
+        }
+
+        case "automation.deleted": {
+          const existingRow = yield* projectionAutomationRepository.getById({
+            automationId: event.payload.automationId,
+          });
+          if (Option.isNone(existingRow)) {
+            return;
+          }
+          yield* projectionAutomationRepository.upsert({
+            ...existingRow.value,
+            nextFireAt: null,
+            deletedAt: event.payload.deletedAt,
+            updatedAt: event.payload.updatedAt,
+          });
+          return;
+        }
+
+        case "automation.fired": {
+          const existingRow = yield* projectionAutomationRepository.getById({
+            automationId: event.payload.automationId,
+          });
+          if (Option.isNone(existingRow)) {
+            return;
+          }
+          yield* projectionAutomationRepository.upsert({
+            ...existingRow.value,
+            state: event.payload.state,
+            nextFireAt: event.payload.nextFireAt,
+            lastFiredAt: event.payload.run.firedAt,
+            runs: [...existingRow.value.runs, event.payload.run].slice(-50),
+            updatedAt: event.payload.updatedAt,
+          });
+          yield* projectionAutomationRepository.recordRun({
+            automationId: event.payload.automationId,
+            occurrenceKey: event.payload.run.occurrenceKey,
+            threadId: event.payload.run.threadId,
+            firedAt: event.payload.run.firedAt,
+            outcome: event.payload.run.outcome,
+          });
+          return;
+        }
+
+        default:
+          return;
+      }
+    });
+
     const projectors: ReadonlyArray<ProjectorDefinition> = [
       {
         name: ORCHESTRATION_PROJECTOR_NAMES.projects,
@@ -1943,6 +2068,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       {
         name: ORCHESTRATION_PROJECTOR_NAMES.threads,
         apply: applyThreadsProjection,
+      },
+      {
+        name: ORCHESTRATION_PROJECTOR_NAMES.automations,
+        apply: applyAutomationsProjection,
       },
     ];
 
@@ -2177,4 +2306,5 @@ export const OrchestrationProjectionPipelineLive = Layer.effect(
   Layer.provideMerge(ProjectionTurnRepositoryLive),
   Layer.provideMerge(ProjectionPendingApprovalRepositoryLive),
   Layer.provideMerge(ProjectionStateRepositoryLive),
+  Layer.provideMerge(ProjectionAutomations.layer),
 );

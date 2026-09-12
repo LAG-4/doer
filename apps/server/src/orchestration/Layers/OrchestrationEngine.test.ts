@@ -456,6 +456,9 @@ describe("OrchestrationEngine", () => {
           getThreadDetailById: () => Effect.succeed(Option.none()),
           getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
           searchThreads: () => Effect.succeed({ matches: [] }),
+          getAutomationById: () => Effect.die("unused"),
+          listVisibleAutomations: () => Effect.die("unused"),
+          listDueAutomations: () => Effect.die("unused"),
         }),
       ),
       Layer.provide(
