@@ -22,15 +22,26 @@ This starts the server and opens the local web app. Run
 
 ## Desktop app
 
-Download a release from [GitHub Releases](https://github.com/pingdotgg/t3code/releases),
-or use a package manager:
+Download a release from [GitHub Releases](https://github.com/LAG-4/t3code/releases)
+or from the [download page](https://doer.lagaryan.click/download):
 
-| Platform           | Install                         |
-| ------------------ | ------------------------------- |
-| Windows            | `winget install T3Tools.T3Code` |
-| macOS              | `brew install --cask t3-code`   |
-| Arch Linux         | `yay -S t3code-bin`             |
-| Arch Linux nightly | `yay -S t3code-nightly-bin`     |
+| Platform | Install                                                                     |
+| -------- | --------------------------------------------------------------------------- |
+| Windows  | `Doer-<version>-x64.exe` installer                                          |
+| macOS    | `Doer-<version>-arm64.dmg` (Apple Silicon) or `-x64.dmg` (Intel)            |
+| Linux    | `Doer-<version>-x86_64.AppImage` (make it executable first with `chmod +x`) |
+
+Alpha releases are unsigned, so the first launch needs one extra step:
+
+- **macOS:** right-click (Control-click) the app and choose **Open**, then
+  confirm. If macOS reports the app is damaged, open **System Settings →
+  Privacy & Security**, scroll to the Security section, and choose
+  **Open Anyway**.
+- **Windows:** SmartScreen may warn about an unknown publisher. Choose
+  **More info → Run anyway**.
+
+The app updates itself from GitHub Releases: when a new version is published,
+Doer offers it in-app and installs it on restart.
 
 ### Windows Subsystem for Linux
 
