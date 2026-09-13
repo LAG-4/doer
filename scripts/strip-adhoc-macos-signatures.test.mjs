@@ -63,6 +63,17 @@ describe("strip-adhoc-macos-signatures", () => {
 
   it("ignores non-mac packaging contexts", async () => {
     await hook.default({ packager: { platform: { name: "win32" } }, appOutDir: "/nonexistent" });
-    await hook.default(undefined);
+    for (const badContext of [
+      undefined,
+      { packager: { platform: { name: "mac" } }, appOutDir: "/nonexistent" },
+    ]) {
+      let threw = false;
+      try {
+        await hook.default(badContext);
+      } catch {
+        threw = true;
+      }
+      assert.equal(threw, true);
+    }
   });
 });

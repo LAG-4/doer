@@ -108,9 +108,19 @@ module.exports = {
   assertBundleUnsigned,
   findAppBundles,
   default: async function stripAdhocSignaturesAfterPack(context) {
-    if (context?.packager?.platform?.name !== "mac" || !context?.appOutDir) return;
+    // Fail closed on a miswired hook: silently shipping the half-sealed
+    // state is exactly the bug this exists to prevent.
+    if (!context || typeof context.appOutDir !== "string") {
+      throw new Error("strip-adhoc-signatures afterPack hook received no appOutDir.");
+    }
+    const platformName = context.packager?.platform?.name;
+    if (platformName !== undefined && platformName !== "mac") return;
     stripAdhocSignatures(context.appOutDir);
-    for (const app of findAppBundles(context.appOutDir)) {
+    const apps = findAppBundles(context.appOutDir);
+    if (apps.length === 0) {
+      throw new Error(`strip-adhoc-signatures found no .app bundle under ${context.appOutDir}.`);
+    }
+    for (const app of apps) {
       assertBundleUnsigned(app);
     }
   },
