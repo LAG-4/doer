@@ -178,8 +178,11 @@ export function openCodeManagedPackageJson(): string {
 
 /**
  * Release target triple, mirroring the supported combos of the official
- * install script (`os-arch`; Windows ships x64 only). `null` means the
- * script has no asset for this host — surface the manual install instead.
+ * install script (`os-arch`), with one deliberate exception: upstream ships
+ * no Windows ARM64 asset, so Windows on ARM falls back to the x64 asset,
+ * which Windows 11 runs under x64 emulation. `null` means neither the
+ * script nor the fallback has an asset for this host — surface the manual
+ * install instead.
  */
 export type OpenCodeInstallTarget =
   | "darwin-arm64"
@@ -200,7 +203,7 @@ export function openCodeInstallTargetForHost(input: {
   if (input.platform === "linux" && (normalizedArch === "arm64" || normalizedArch === "x64")) {
     return `linux-${normalizedArch}`;
   }
-  if (input.platform === "win32" && normalizedArch === "x64") {
+  if (input.platform === "win32" && (normalizedArch === "x64" || normalizedArch === "arm64")) {
     return "windows-x64";
   }
   return null;

@@ -59,6 +59,11 @@ import * as SynchronizedRef from "effect/SynchronizedRef";
 
 import * as ServerConfig from "../config.ts";
 import { mergeProviderInstanceEnvironment } from "../provider/ProviderInstanceEnvironment.ts";
+import {
+  openCodeManagedBinDir,
+  openCodeManagedDir,
+  openCodeManagedScriptBinDir,
+} from "../provider/opencodeInstall.ts";
 import { resolveCodexHomeLayout } from "../provider/Drivers/CodexHomeLayout.ts";
 import { makeClaudeEnvironment } from "../provider/Drivers/ClaudeHome.ts";
 import { deriveProviderInstanceConfigMap } from "../provider/Layers/ProviderInstanceRegistryHydration.ts";
@@ -1281,7 +1286,9 @@ function stripAppImageRuntimeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 
 function createTerminalSpawnEnv(
   baseEnv: NodeJS.ProcessEnv,
-  runtimeEnv?: Record<string, string> | null,
+  runtimeEnv: Record<string, string> | null | undefined,
+  extraPathEntries: ReadonlyArray<string>,
+  platform: NodeJS.Platform,
 ): NodeJS.ProcessEnv {
   const spawnEnv: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(baseEnv)) {
@@ -1295,11 +1302,57 @@ function createTerminalSpawnEnv(
         key === "CODEX_HOME" || key === "CLAUDE_CONFIG_DIR" ? expandHomePath(value) : value;
     }
   }
+  prependExtraPathEntries(spawnEnv, extraPathEntries, platform);
   // Both PTY backends feed truecolor-capable terminal clients.
   if (spawnEnv.COLORTERM === undefined || spawnEnv.COLORTERM === "") {
     spawnEnv.COLORTERM = "truecolor";
   }
   return stripAppImageRuntimeEnv(spawnEnv);
+}
+
+/**
+ * Prepend directories to the spawn PATH (deduped, order-preserving) so
+ * tools the server manages itself — notably the auto-installed OpenCode CLI
+ * in `<baseDir>/tools/opencode` — resolve in the integrated terminal even
+ * though they live outside the user's PATH.
+ */
+function prependExtraPathEntries(
+  spawnEnv: NodeJS.ProcessEnv,
+  entries: ReadonlyArray<string>,
+  platform: NodeJS.Platform,
+): void {
+  if (entries.length === 0) return;
+  const delimiter = platform === "win32" ? ";" : ":";
+  const pathKey =
+    platform === "win32"
+      ? (["PATH", "Path", "path"].find((key) => spawnEnv[key] !== undefined) ?? "PATH")
+      : "PATH";
+  const current = (spawnEnv[pathKey] ?? "")
+    .split(delimiter)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  const seen = new Set(
+    current.map((entry) => (platform === "win32" ? entry.toLowerCase() : entry)),
+  );
+  const additions: string[] = [];
+  for (const entry of entries) {
+    const key = platform === "win32" ? entry.toLowerCase() : entry;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    additions.push(entry);
+  }
+  if (additions.length === 0) return;
+  spawnEnv[pathKey] = [...additions, ...current].join(delimiter);
+}
+
+/**
+ * Directories holding the T3-managed OpenCode CLI (npm tree plus the
+ * curl-downloaded binary). Prepended to every PTY spawn PATH so `opencode`
+ * works in the integrated terminal on fresh machines with no global install.
+ */
+function resolveManagedToolPathEntries(baseDir: string): ReadonlyArray<string> {
+  const managedDir = openCodeManagedDir(baseDir);
+  return [openCodeManagedBinDir(managedDir), openCodeManagedScriptBinDir(managedDir)];
 }
 
 function normalizedRuntimeEnv(
@@ -1318,6 +1371,8 @@ interface TerminalManagerOptions {
   ptyAdapter: PtyAdapter.PtyAdapter["Service"];
   shellResolver?: () => string;
   env?: NodeJS.ProcessEnv;
+  /** Extra directories prepended to PATH in every PTY spawn (deduped). */
+  extraPathEntries?: ReadonlyArray<string>;
   subprocessInspector?: TerminalSubprocessInspector;
   processTable?: Effect.Effect<
     ReadonlyArray<ResourceMonitorProcessTableEntry>,
@@ -1387,7 +1442,7 @@ export const resolveProviderInstanceTerminalEnvironment = Effect.fn(
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.fn("TerminalManager.make")(function* () {
-  const { terminalLogsDir } = yield* ServerConfig.ServerConfig;
+  const { terminalLogsDir, baseDir } = yield* ServerConfig.ServerConfig;
   const ptyAdapter = yield* PtyAdapter.PtyAdapter;
   const portDiscovery = yield* PortScanner.PortDiscovery;
   const nativeTelemetry = yield* NativeTelemetryClient.NativeTelemetryClient;
@@ -1405,6 +1460,7 @@ export const make = Effect.fn("TerminalManager.make")(function* () {
   );
   return yield* makeWithOptions({
     logsDir: terminalLogsDir,
+    extraPathEntries: resolveManagedToolPathEntries(baseDir),
     ptyAdapter,
     processTable: nativeTelemetry.processTable.pipe(
       Effect.mapError(
@@ -1434,6 +1490,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   // things like PSModulePath, DISPLAY, proxies, and toolchain variables.
   // `options.env` is the test seam.
   const baseEnv = options.env ?? process.env;
+  const extraPathEntries = options.extraPathEntries ?? [];
   const shellResolver = options.shellResolver ?? (() => defaultShellResolver(platform, baseEnv));
   const processRunner = yield* ProcessRunner.ProcessRunner;
   const resolveLaunchInputEnvironment = Effect.fn("terminal.resolveLaunchInputEnvironment")(
@@ -2222,7 +2279,12 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         Effect.andThen(
           Effect.gen(function* () {
             const shellCandidates = resolveShellCandidates(shellResolver, platform, baseEnv);
-            const terminalEnv = createTerminalSpawnEnv(baseEnv, session.runtimeEnv);
+            const terminalEnv = createTerminalSpawnEnv(
+              baseEnv,
+              session.runtimeEnv,
+              extraPathEntries,
+              platform,
+            );
             const spawnResult = yield* trySpawn(shellCandidates, terminalEnv, session);
             ptyProcess = spawnResult.process;
             startedShell = spawnResult.shellLabel;

@@ -216,6 +216,7 @@ const multiTerminalHistoryLogPath = (
 interface CreateManagerOptions {
   shellResolver?: () => string;
   env?: NodeJS.ProcessEnv;
+  extraPathEntries?: ReadonlyArray<string>;
   subprocessInspector?: (terminalPid: number) => Effect.Effect<{
     readonly hasRunningSubprocess: boolean;
     readonly childCommand: string | null;
@@ -267,6 +268,9 @@ const createManager = (
           : {}),
         ...(options.shellResolver !== undefined ? { shellResolver: options.shellResolver } : {}),
         ...(options.env !== undefined ? { env: options.env } : {}),
+        ...(options.extraPathEntries !== undefined
+          ? { extraPathEntries: options.extraPathEntries }
+          : {}),
         ...(options.subprocessInspector !== undefined
           ? { subprocessInspector: options.subprocessInspector }
           : {}),
@@ -1929,6 +1933,58 @@ it.layer(
       expect(spawnInput.env.PATH).toBe("/usr/local/bin:/usr/bin:/bin");
       expect(spawnInput.env.LD_LIBRARY_PATH).toBe("/home/user/.local/lib");
       expect(spawnInput.env.OWD).toBe("/home/user/keep-this");
+    }),
+  );
+
+  it.effect("prepends managed tool entries to the terminal PATH without duplicating", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        env: {
+          PATH: "/managed/tools/opencode/bin:/usr/local/bin:/usr/bin:/bin",
+        },
+        extraPathEntries: [
+          "/managed/tools/opencode/node_modules/.bin",
+          "/managed/tools/opencode/bin",
+        ],
+      });
+      yield* manager.open(openInput());
+      const spawnInput = ptyAdapter.spawnInputs[0];
+      expect(spawnInput).toBeDefined();
+      if (!spawnInput) return;
+
+      // The managed OpenCode CLI resolves in the integrated terminal even
+      // though it lives outside the user's PATH; existing entries keep
+      // their order and are never duplicated.
+      expect(spawnInput.env.PATH).toBe(
+        "/managed/tools/opencode/node_modules/.bin:/managed/tools/opencode/bin:/usr/local/bin:/usr/bin:/bin",
+      );
+    }),
+  );
+
+  it.effect("prepends managed tool entries with Windows PATH semantics", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        env: {
+          ComSpec: "C:\\Windows\\System32\\cmd.exe",
+          SystemRoot: "C:\\Windows",
+          Path: "C:\\Managed\\tools\\opencode\\bin;C:\\Windows\\System32",
+        },
+        extraPathEntries: [
+          "C:\\Managed\\tools\\opencode\\node_modules\\.bin",
+          "C:\\Managed\\tools\\opencode\\bin",
+        ],
+      }).pipe(Effect.provide(withHostPlatform("win32")));
+      yield* manager.open(openInput());
+      const spawnInput = ptyAdapter.spawnInputs[0];
+      expect(spawnInput).toBeDefined();
+      if (!spawnInput) return;
+
+      // Semicolon-delimited, case-insensitive dedupe, honoring the existing
+      // `Path` key spelling so `opencode` resolves in Windows terminals too.
+      expect(spawnInput.env.Path).toBe(
+        "C:\\Managed\\tools\\opencode\\node_modules\\.bin;C:\\Managed\\tools\\opencode\\bin;C:\\Windows\\System32",
+      );
+      expect(spawnInput.env.PATH).toBeUndefined();
     }),
   );
 

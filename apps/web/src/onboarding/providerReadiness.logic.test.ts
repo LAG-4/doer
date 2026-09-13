@@ -8,6 +8,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   getOnboardingProviderState,
+  isOnboardingAutoInstallDriver,
   resolveOnboardingProviderInstallCommand,
   resolveOnboardingProviderLoginCommand,
   selectOnboardingProvidersByDriver,
@@ -317,7 +318,27 @@ describe("resolveOnboardingProviderLoginCommand", () => {
   });
 });
 
+describe("isOnboardingAutoInstallDriver", () => {
+  it("treats opencode as background-installed so onboarding never shows a manual install step", () => {
+    expect(isOnboardingAutoInstallDriver("opencode")).toBe(true);
+  });
+
+  it("requires a manual install step for opt-in drivers", () => {
+    expect(isOnboardingAutoInstallDriver("codex")).toBe(false);
+    expect(isOnboardingAutoInstallDriver("claudeAgent")).toBe(false);
+  });
+});
+
 describe("resolveOnboardingProviderInstallCommand", () => {
+  it("uses the stock-Windows installer for opencode, never scoop", () => {
+    expect(resolveOnboardingProviderInstallCommand("opencode", "windows")).toBe(
+      "winget install -e --id SST.opencode",
+    );
+    expect(resolveOnboardingProviderInstallCommand("opencode", "darwin")).toBe(
+      "curl -fsSL https://opencode.ai/install | bash",
+    );
+  });
+
   it("uses the PowerShell installer on Windows environments", () => {
     expect(resolveOnboardingProviderInstallCommand("codex", "windows")).toBe(
       "irm https://chatgpt.com/codex/install.ps1 | iex",

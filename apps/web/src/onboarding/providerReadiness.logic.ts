@@ -74,13 +74,28 @@ export function selectOnboardingProvidersByDriver(
 }
 
 /**
+ * Drivers the server installs by itself into its managed tools directory on
+ * first probe — onboarding never shows a manual install terminal for these.
+ * The card shows a "Setting up…" state and keeps re-probing until the
+ * provider reports installed, so a fresh machine needs no package manager
+ * (scoop/choco/npm) and no copy-pasted commands.
+ */
+const ONBOARDING_AUTO_INSTALL_DRIVERS: ReadonlySet<string> = new Set(["opencode"]);
+
+export function isOnboardingAutoInstallDriver(driver: string): boolean {
+  return ONBOARDING_AUTO_INSTALL_DRIVERS.has(driver);
+}
+
+/**
  * Official standalone installers. Neither needs Node or npm, and both land in
  * the paths the server's provider maintenance recognizes as native, so the
- * one-click updater in Settings keeps working after install.
+ * one-click updater in Settings keeps working after install. winget ships
+ * with stock Windows 10/11; scoop does not, so it must never be the
+ * suggested installer on a fresh machine.
  */
 const NATIVE_INSTALL_COMMANDS = {
   opencode: {
-    windows: "scoop install opencode",
+    windows: "winget install -e --id SST.opencode",
     posix: "curl -fsSL https://opencode.ai/install | bash",
   },
   claudeAgent: {
