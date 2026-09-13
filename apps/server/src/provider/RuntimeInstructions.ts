@@ -13,13 +13,66 @@ export function buildRuntimeInstructions(runtime: {
   readonly harness: string;
   readonly model?: string | undefined;
   readonly reasoningEffort?: string | undefined;
+  /**
+   * Which t3-code tool families this turn actually has. Each block is omitted
+   * entirely when its tools aren't attached, so the prompt never steers the
+   * model toward tools that aren't in its tool list. Omit the field and the
+   * output is exactly the historical runtime block.
+   */
+  readonly t3Tools?: T3ToolAvailability | undefined;
 }): string {
   const harness = toSingleLine(runtime.harness);
   const model = toSingleLine(runtime.model ?? "");
   const effort = toSingleLine(runtime.reasoningEffort ?? "");
   const modelInfo = model && model !== "auto" && model !== "default" ? `, as ${model}` : "";
   const effortInfo = effort ? ` with ${effort} reasoning effort` : "";
-  return `<runtime_info>In case you're asked: you are running in Doer through the ${harness} harness${modelInfo}${effortInfo}. No need to mention this otherwise. You can embed images and videos in your response using Markdown with absolute file paths.</runtime_info>\n\n${PULL_REQUEST_LINKING_INSTRUCTIONS}\n\n${SCHEDULED_TASKS_INSTRUCTIONS}`;
+  const tools = buildT3ToolInstructions(
+    runtime.t3Tools ?? { browser: false, device: false, computer: false },
+  );
+  return `<runtime_info>In case you're asked: you are running in Doer through the ${harness} harness${modelInfo}${effortInfo}. No need to mention this otherwise. You can embed images and videos in your response using Markdown with absolute file paths.</runtime_info>\n\n${PULL_REQUEST_LINKING_INSTRUCTIONS}\n\n${SCHEDULED_TASKS_INSTRUCTIONS}${tools === "" ? "" : `\n\n${tools}`}`;
+}
+
+/** Which t3-code tool families are attached to this turn. */
+export interface T3ToolAvailability {
+  readonly browser: boolean;
+  readonly device: boolean;
+  readonly computer: boolean;
+}
+
+/**
+ * Availability from an MCP session's capability set (`preview` grants the
+ * browser). An absent set means no t3-code server is attached, so nothing is
+ * advertised.
+ */
+export function t3ToolAvailabilityFromCapabilities(
+  capabilities: ReadonlySet<string> | undefined,
+): T3ToolAvailability {
+  if (capabilities === undefined) return { browser: false, device: false, computer: false };
+  return {
+    browser: capabilities.has("preview"),
+    device: capabilities.has("device"),
+    computer: capabilities.has("computer"),
+  };
+}
+
+const T3_BROWSER_TOOL_INSTRUCTIONS = `Collaborative browser: when the server exposes \`preview_*\` tools, prefer them for navigation, inspection, interaction, screenshots, and recordings. Start with \`preview_status\`; call \`preview_open\` when nothing automation-capable is attached. Prefer snapshot locators over coordinates.`;
+
+const T3_DEVICE_TOOL_INSTRUCTIONS = `Devices: when the server exposes \`device_*\` tools, use \`device_list\` then \`device_open\` for iOS Simulators and Android Emulators, and drive them with the \`agent-device\` CLI on PATH, preferring snapshot refs. Never call simctl, adb, xcrun, or serve-sim directly while these tools are present.`;
+
+const T3_COMPUTER_TOOL_INSTRUCTIONS = `Computer use: when the server exposes \`computer_*\` tools, you can see the desktop and operate real GUI apps. Call \`computer_status\`, then \`computer_start\` with the target app, and drive it with the \`computer-use\` CLI on PATH: \`get_app_state\` once per turn before acting, element indexes over coordinates, \`computer_observe\` to see the screen. Never operate an app the user did not approve — ask in chat, then \`computer_allow\`. Offer computer use proactively when the task involves a desktop app or anything on screen, and announce briefly before driving so the user can hand over the desktop.`;
+
+const T3_BROWSER_COMPUTER_ROUTING = `Choosing between the browser and computer use: the shared preview browser comes first for local web apps being built. Reach for computer use for real desktop apps, system settings, cross-app flows, GUI-only bugs, and anything the preview cannot show — escalate after a retry or two. Say which route you take and why.`;
+
+/** Provider-neutral briefing for the attached t3-code tool families, or "". */
+export function buildT3ToolInstructions(availability: T3ToolAvailability): string {
+  const blocks = [
+    ...(availability.browser ? [T3_BROWSER_TOOL_INSTRUCTIONS] : []),
+    ...(availability.device ? [T3_DEVICE_TOOL_INSTRUCTIONS] : []),
+    ...(availability.computer ? [T3_COMPUTER_TOOL_INSTRUCTIONS] : []),
+    ...(availability.browser && availability.computer ? [T3_BROWSER_COMPUTER_ROUTING] : []),
+  ];
+  if (blocks.length === 0) return "";
+  return `## Doer tools\n\nThe \`t3-code\` MCP server is the product-native way to reach the user's browser, devices, and desktop.\n\n${blocks.join("\n\n")}`;
 }
 
 function toSingleLine(value: string): string {
