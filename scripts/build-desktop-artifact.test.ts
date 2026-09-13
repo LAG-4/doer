@@ -1833,7 +1833,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 
-  it.effect("strips ad-hoc seals only from unsigned macOS builds", () =>
+  it.effect("ad-hoc seals only unsigned macOS builds", () =>
     Effect.gen(function* () {
       const unsignedMac = yield* createBuildConfig(
         "mac",
@@ -1844,10 +1844,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         undefined,
         undefined,
       );
-      assert.match(
-        String(unsignedMac.afterPack),
-        /[\\/]scripts[\\/]strip-adhoc-macos-signatures\.cjs$/,
-      );
+      assert.match(String(unsignedMac.afterPack), /[\\/]scripts[\\/]adhoc-sign-macos-bundle\.cjs$/);
 
       const signedMac = yield* createBuildConfig("mac", "dmg", "1.2.3", true, false, undefined, {
         entitlementsPath: "/tmp/entitlements.mac.plist",
