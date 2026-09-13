@@ -61,7 +61,8 @@ vi.mock("electron", async () => {
   }
   return {
     app: {
-      getPath: () => "/Applications/T3 Code (Nightly).app/Contents/MacOS/T3 Code",
+      getName: () => "Doer (Nightly)",
+      getPath: () => "/Applications/Doer (Nightly).app/Contents/MacOS/Doer (Nightly)",
     },
     nativeImage: { createFromPath: mocks.createFromPath },
     BrowserWindow: class extends MockWindow {},
@@ -124,11 +125,11 @@ function send(action: string, trusted = true) {
 
 describe("macAppBundlePath", () => {
   it("resolves bundles with spaces and refuses non-bundle executables", () => {
-    expect(macAppBundlePath("/Applications/T3 Code.app/Contents/MacOS/T3 Code")).toBe(
-      "/Applications/T3 Code.app",
+    expect(macAppBundlePath("/Applications/Doer.app/Contents/MacOS/Doer")).toBe(
+      "/Applications/Doer.app",
     );
     expect(macAppBundlePath("/usr/local/bin/electron")).toBeUndefined();
-    expect(macAppBundlePath("/Applications/T3 Code.app/other/MacOS/T3 Code")).toBeUndefined();
+    expect(macAppBundlePath("/Applications/Doer.app/other/MacOS/Doer")).toBeUndefined();
   });
 });
 it("drags the running app bundle only for the helper's own renderer", async () => {
@@ -138,11 +139,19 @@ it("drags the running app bundle only for the helper's own renderer", async () =
   send("drag");
   expect(mocks.createFromPath).toHaveBeenCalledWith("/bundle/prod-resources/icon.png");
   expect(mocks.startDrag).toHaveBeenCalledWith({
-    file: "/Applications/T3 Code (Nightly).app",
+    file: "/Applications/Doer (Nightly).app",
     icon: mocks.createFromPath.mock.results[0]!.value.resize(),
   });
   send("finder");
-  expect(mocks.showItemInFolder).toHaveBeenCalledWith("/Applications/T3 Code (Nightly).app");
+  expect(mocks.showItemInFolder).toHaveBeenCalledWith("/Applications/Doer (Nightly).app");
+});
+it("labels the helper with the running app's name", async () => {
+  await open();
+  const loadedUrl = String(mocks.loadURL.mock.calls[0]?.[0] ?? "");
+  const html = decodeURIComponent(loadedUrl.split(",", 2)[1] ?? "");
+  expect(html).toContain("Drag Doer (Nightly) into the list above");
+  expect(html).toContain("Drag Doer (Nightly) to System Settings");
+  expect(html).not.toContain("T3 Code");
 });
 it("rechecks permissions and releases resources when granted", async () => {
   await open();
@@ -168,7 +177,7 @@ it("does not open for a permission already granted", async () => {
 });
 it("does not show a helper with a missing packaged icon", async () => {
   mocks.createFromPath.mockReturnValueOnce({ isEmpty: () => true });
-  await expect(open()).rejects.toThrow("packaged T3 Code icon is missing");
+  await expect(open()).rejects.toThrow("packaged Doer icon is missing");
   expect(windows).toHaveLength(0);
 });
 it("cleans up when the helper page fails to load", async () => {
@@ -184,7 +193,7 @@ it("offers the Finder fallback when native dragging fails", async () => {
     throw new Error("drag failed");
   });
   send("drag");
-  expect(mocks.showItemInFolder).toHaveBeenCalledWith("/Applications/T3 Code (Nightly).app");
+  expect(mocks.showItemInFolder).toHaveBeenCalledWith("/Applications/Doer (Nightly).app");
   expect(windows[0]!.destroyed).toBe(false);
 });
 

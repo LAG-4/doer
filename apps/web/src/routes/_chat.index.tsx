@@ -135,8 +135,8 @@ function HostedStaticOnboardingState() {
                 Connect to a computer running Doer
               </EmptyTitle>
               <EmptyDescription className="mt-2 text-sm leading-relaxed text-muted-foreground/78">
-                This browser connects to Doer running on your computer or a server. Start the T3
-                Code desktop app or command-line server on that machine and keep it running.
+                This browser connects to Doer running on your computer or a server. Start the Doer
+                desktop app or command-line server on that machine and keep it running.
               </EmptyDescription>
               <EmptyDescription className="mt-2 text-sm leading-relaxed text-muted-foreground/78">
                 {cloudEnabled
