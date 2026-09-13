@@ -62,6 +62,21 @@ function sameId(left: string | null | undefined, right: string | null | undefine
   return left === right;
 }
 
+/**
+ * Checkpointing is best-effort when version control itself is unavailable:
+ * no git binary, or no repository under the workspace. Those failures must
+ * stay out of the thread — a non-developer without git should never see a
+ * "checkpoint capture failed" activity after every reply. Real capture
+ * failures (a present-but-broken git) still surface.
+ */
+function isVcsUnavailableError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null || !("_tag" in error)) {
+    return false;
+  }
+  const tag = (error as { readonly _tag: unknown })._tag;
+  return tag === "VcsProcessSpawnError" || tag === "VcsUnsupportedOperationError";
+}
+
 function checkpointStatusFromRuntime(status: string | undefined): "ready" | "missing" | "error" {
   switch (status) {
     case "failed":
@@ -892,16 +907,23 @@ const make = Effect.gen(function* () {
         return;
       }
       yield* captureCheckpointFromTurnCompletion(event).pipe(
-        Effect.catch((error) =>
-          Effect.flatMap(nowIso, (createdAt) =>
+        Effect.catch((error) => {
+          if (isVcsUnavailableError(error)) {
+            return Effect.logDebug("skipping checkpoint capture: version control unavailable", {
+              threadId: event.threadId,
+              turnId: event.turnId ?? null,
+              detail: error instanceof Error ? error.message : String(error),
+            });
+          }
+          return Effect.flatMap(nowIso, (createdAt) =>
             appendCaptureFailureActivity({
               threadId: event.threadId,
               turnId,
               detail: error.message,
               createdAt,
             }).pipe(Effect.catch(() => Effect.void)),
-          ),
-        ),
+          );
+        }),
       );
       return;
     }

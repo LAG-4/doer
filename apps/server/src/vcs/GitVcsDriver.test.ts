@@ -7,7 +7,7 @@ import * as PlatformError from "effect/PlatformError";
 import { ChildProcessSpawner } from "effect/unstable/process";
 import { assert, it } from "@effect/vitest";
 
-import { CheckpointRef, GitCommandError } from "@t3tools/contracts";
+import { CheckpointRef, GitCommandError, VcsProcessSpawnError } from "@t3tools/contracts";
 import * as ServerConfig from "../config.ts";
 import * as GitVcsDriver from "./GitVcsDriver.ts";
 import * as VcsProcess from "./VcsProcess.ts";
@@ -176,3 +176,32 @@ it.effect("GitVcsDriver forwards execute env to the VCS process", () => {
     ),
   );
 });
+
+it.effect("GitVcsDriver treats a missing git binary as not inside a worktree", () =>
+  Effect.gen(function* () {
+    const driver = yield* GitVcsDriver.makeVcsDriverShape();
+
+    // Machines without git (the usual non-developer machine) must read as
+    // "no repository" so checkpoint flows skip silently instead of
+    // surfacing a spawn failure after every turn.
+    assert.isFalse(yield* driver.isInsideWorkTree("/workspace-without-git"));
+    assert.isNull(yield* driver.detectRepository("/workspace-without-git"));
+  }).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        NodeServices.layer,
+        Layer.mock(VcsProcess.VcsProcess)({
+          run: (input) =>
+            Effect.fail(
+              new VcsProcessSpawnError({
+                operation: input.operation,
+                command: input.command,
+                cwd: input.cwd,
+                cause: new Error("spawn git ENOENT"),
+              }),
+            ),
+        }),
+      ),
+    ),
+  ),
+);

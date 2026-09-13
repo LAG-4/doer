@@ -136,8 +136,9 @@ describe("opencodeInstall", () => {
       "linux-arm64",
     );
     expect(openCodeInstallTargetForHost({ platform: "win32", arch: "x64" })).toBe("windows-x64");
-    // The script ships no Windows ARM64 asset.
-    expect(openCodeInstallTargetForHost({ platform: "win32", arch: "arm64" })).toBeNull();
+    // Upstream ships no Windows ARM64 asset; Windows 11 on ARM runs the x64
+    // asset under emulation, so it is the automatic target there too.
+    expect(openCodeInstallTargetForHost({ platform: "win32", arch: "arm64" })).toBe("windows-x64");
     expect(openCodeInstallTargetForHost({ platform: "darwin", arch: "ia32" })).toBeNull();
   });
 

@@ -42,6 +42,7 @@ import {
 } from "../../onboarding/projectImport.logic";
 import {
   getOnboardingProviderState,
+  isOnboardingAutoInstallDriver,
   resolveOnboardingProviderInstallCommand,
   resolveOnboardingProviderLoginCommand,
   selectOnboardingProvidersByDriver,
@@ -617,12 +618,12 @@ interface AgentTerminalSession {
 }
 
 /**
- * The agent card uses live probe status. Install opens the built-in
- * terminal inline with the vendor's standalone installer pre-typed. The update
- * RPC can't install a binary that isn't there yet (it infers the installer from
- * the installed binary's path), and the terminal also handles the interactive
- * login that follows. Only OpenCode is shown: it is installed automatically by
- * the server when missing and is the default for new threads. Other providers
+ * The agent card uses live probe status. OpenCode installs itself in the
+ * background (the server drops the CLI into its managed tools directory on
+ * first probe), so its card never opens a manual install terminal — it shows
+ * a "Setting up…" state while polling until the probe reports installed.
+ * Sign-in still opens the inline terminal for the interactive login flow.
+ * Only OpenCode is shown: it is the default for new threads. Other providers
  * (Codex, Claude, …) stay opt-in under Settings → Providers.
  */
 function AgentsStep({
@@ -684,6 +685,44 @@ function ConnectedAgentsStep({
 
   const byDriver = useMemo(() => selectOnboardingProvidersByDriver(providers), [providers]);
 
+  const opencodeState = getOnboardingProviderState(byDriver.get("opencode"));
+  const [autoInstallRound, setAutoInstallRound] = useState(0);
+  const [autoInstallExhausted, setAutoInstallExhausted] = useState(false);
+
+  // The server installs OpenCode into its managed directory during the
+  // provider probe, which can take a minute on a fresh machine (download +
+  // unpack). Keep re-probing while it reports missing so the card flips to
+  // Ready with no package manager and no terminal commands. After ~2 minutes
+  // stop polling and offer a retry instead of spinning forever.
+  useEffect(() => {
+    if (opencodeState !== "install") return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let attempts = 0;
+    const poll = async (): Promise<void> => {
+      if (cancelled) return;
+      if (attempts >= 30) {
+        setAutoInstallExhausted(true);
+        return;
+      }
+      attempts += 1;
+      try {
+        await refreshProviders({ environmentId, input: {} });
+      } catch {
+        // Probe failures surface on the card itself; keep polling.
+      }
+      if (!cancelled) {
+        timer = setTimeout(() => void poll(), 4000);
+      }
+    };
+    setAutoInstallExhausted(false);
+    timer = setTimeout(() => void poll(), 4000);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [environmentId, opencodeState, autoInstallRound, refreshProviders]);
+
   const primaryAgents = PRIMARY_AGENT_DRIVERS.map((driver) => ({
     driver,
     provider: byDriver.get(driver),
@@ -699,6 +738,8 @@ function ConnectedAgentsStep({
             provider={provider}
             terminalOpen={terminalSession?.driver === driver}
             terminalAvailable={serverConfig !== null}
+            setupExhausted={autoInstallExhausted}
+            onRetrySetup={() => setAutoInstallRound((round) => round + 1)}
             onOpenTerminal={() => {
               if (provider === undefined || serverConfig === null) return;
               setTerminalSession({
@@ -741,12 +782,16 @@ function AgentCard({
   provider,
   terminalOpen,
   terminalAvailable,
+  setupExhausted,
+  onRetrySetup,
   onOpenTerminal,
 }: {
   readonly driver: OnboardingAgentDriver;
   readonly provider: ServerProvider | undefined;
   readonly terminalOpen: boolean;
   readonly terminalAvailable: boolean;
+  readonly setupExhausted: boolean;
+  readonly onRetrySetup: () => void;
   readonly onOpenTerminal: () => void;
 }) {
   const meta = getDriverOption(ProviderDriverKind.make(driver));
@@ -756,6 +801,9 @@ function AgentCard({
   const displayName = meta?.label ?? driver;
   const summary = getProviderSummary(provider);
   const providerState = getOnboardingProviderState(provider);
+  // Auto-install drivers (OpenCode) set themselves up in the background, so
+  // a missing binary is "still setting up", never a manual install step.
+  const showAutoSetup = providerState === "install" && isOnboardingAutoInstallDriver(driver);
 
   return (
     <div className="flex items-center gap-3 rounded-lg border border-border bg-background px-3 py-2.5">
@@ -779,6 +827,17 @@ function AgentCard({
           <span className="text-xs text-muted-foreground">Disabled</span>
         ) : providerState === "attention" ? (
           <span className="text-xs text-muted-foreground">{summary.headline}</span>
+        ) : showAutoSetup ? (
+          setupExhausted ? (
+            <Button size="xs" variant="ghost" onClick={onRetrySetup}>
+              Retry
+            </Button>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Spinner className="size-3.5" />
+              Setting up…
+            </span>
+          )
         ) : (
           <Button
             size="xs"
