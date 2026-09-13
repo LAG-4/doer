@@ -6,10 +6,10 @@ import * as NodePath from "node:path";
 import { assert, describe, it } from "vite-plus/test";
 
 import hook, {
-  assertBundleUnsigned,
+  assertBundleAdhocSealed,
+  collectMachOFiles,
   findAppBundles,
-  stripAdhocSignatures,
-} from "./strip-adhoc-macos-signatures.cjs";
+} from "./adhoc-sign-macos-bundle.cjs";
 
 const hasCodesign = (() => {
   try {
@@ -27,34 +27,41 @@ const hasCodesign = (() => {
 
 const skipWithoutCodesign = !hasCodesign;
 
-function makeSignedCopy() {
-  const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "doer-strip-test-"));
+function makeUnsignedBundle() {
+  const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "doer-adhoc-test-"));
   const appDir = NodePath.join(root, "Foo.app", "Contents", "MacOS");
   NodeFS.mkdirSync(appDir, { recursive: true });
   const binary = NodePath.join(appDir, "Foo");
   NodeFS.copyFileSync(process.execPath, binary);
-  NodeChildProcess.execFileSync("codesign", ["--force", "--sign", "-", binary], {
-    stdio: "pipe",
-  });
+  // Start from the state unsigned release builds are in: Electron's prebuilt
+  // binaries carry linker signatures but the staged bundle has no seal.
+  try {
+    NodeChildProcess.execFileSync("codesign", ["--remove-signature", binary], {
+      stdio: "pipe",
+    });
+  } catch {
+    // Already unsigned (e.g. a Linux-built test binary): nothing to strip.
+  }
   return { root, app: NodePath.join(root, "Foo.app"), binary };
 }
 
-describe("strip-adhoc-macos-signatures", () => {
+describe("adhoc-sign-macos-bundle", () => {
   it.skipIf(skipWithoutCodesign)(
-    "strips ad-hoc seals so unsigned builds ship fully unsigned",
-    () => {
-      const { root, app, binary } = makeSignedCopy();
+    "ad-hoc seals unsigned builds so Gatekeeper offers Open Anyway",
+    async () => {
+      const { root, app, binary } = makeUnsignedBundle();
       const signatureOf = (target) =>
         NodeChildProcess.spawnSync("codesign", ["-dv", target], { encoding: "utf8" }).stderr;
       try {
-        assert.match(signatureOf(binary), /Signature=adhoc/);
-        assert.throws(() => assertBundleUnsigned(app));
+        assert.match(signatureOf(binary), /not signed at all/);
+        assert.throws(() => assertBundleAdhocSealed(app));
 
-        const stripped = stripAdhocSignatures(root);
-        assert.deepEqual(stripped, [binary]);
-        assertBundleUnsigned(app);
+        await hook.default({ packager: { platform: { name: "mac" } }, appOutDir: root });
+
+        assert.deepEqual(collectMachOFiles(root), [NodeFS.realpathSync(binary)]);
         assert.deepEqual(findAppBundles(root), [app]);
-        assert.match(signatureOf(binary), /code object is not signed at all/);
+        assert.match(signatureOf(binary), /Signature=adhoc/);
+        assertBundleAdhocSealed(app);
       } finally {
         NodeFS.rmSync(root, { recursive: true, force: true });
       }
