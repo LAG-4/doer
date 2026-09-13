@@ -1,6 +1,6 @@
-import { existsSync, readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import * as NodeFS from "node:fs";
+import * as NodeURL from "node:url";
+import * as NodePath from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 
 // FORK (Doer): pins the fork's marketing identity. Upstream's marketing pages
@@ -9,10 +9,14 @@ import { describe, expect, it } from "vite-plus/test";
 // Every upstream catch-up merge touches apps/marketing, so this test fails
 // loudly when a conflict resolution accidentally keeps the upstream side.
 
-const marketingDir = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const marketingDir = NodePath.join(
+  NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+);
 
 function readSource(relativePath: string): string {
-  return readFileSync(join(marketingDir, relativePath), "utf8");
+  return NodeFS.readFileSync(NodePath.join(marketingDir, relativePath), "utf8");
 }
 
 describe("doer marketing identity", () => {
@@ -54,7 +58,7 @@ describe("doer marketing identity", () => {
 
     // Deleted on purpose: upstream's endorsement marquee has no place on the
     // Doer site. A bad merge re-adds it alongside the T3 hero.
-    expect(existsSync(join(marketingDir, "src/lib/tweets.ts"))).toBe(false);
+    expect(NodeFS.existsSync(NodePath.join(marketingDir, "src/lib/tweets.ts"))).toBe(false);
   });
 
   it("keeps the download page fork-specific, without store listings", () => {
