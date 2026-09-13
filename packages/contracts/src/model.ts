@@ -184,7 +184,9 @@ export function resolvePreferredOpenCodeModel(slugs: ReadonlyArray<string>): str
       return preferred;
     }
   }
-  const free = slugs.filter((slug) => isOpenCodeFreeModelSlug(slug)).toSorted();
+  // `.filter` already returns a fresh array, so in-place `.sort()` is safe here.
+  // (Hermes, used by the mobile app, does not implement `.toSorted()`.)
+  const free = slugs.filter((slug) => isOpenCodeFreeModelSlug(slug)).sort();
   return free[0];
 }
 
