@@ -229,6 +229,9 @@ main` workflow fast-forwards it; any direct commit breaks the sync.
     or `git checkout origin/main -- <path>`.
   - If upstream re-adds something `lite` deliberately removed, keep it removed
     (resolve that hunk in favor of `lite`) and say so in the merge commit.
+    This includes `apps/marketing`: upstream T3 copy must never come back —
+    `doer-branding.test.ts` fails CI when it does, so resolve marketing
+    conflicts in favor of `lite` until that test is green.
   - When merging `origin/main` into `lite`, keep this Fork rules section: if
     upstream edited AGENTS.md, resolve by taking their body and re-adding this
     section at the end.

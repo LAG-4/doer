@@ -27,6 +27,26 @@ How Doer ships to users, for free. Agent-oriented rules live in
 3. Nothing else. No Apple, Azure, Clerk, Cloudflare Workers, Expo, or Discord
    accounts are needed. Runners are free GitHub-hosted ones.
 
+## Keeping the website Doer (not T3)
+
+The repo source on `lite` is Doer, but the live domain is owned by Vercel
+dashboard settings, so it can show the upstream T3 site without any repo
+change: if the production branch is `main` (a pure upstream mirror, synced
+daily) or the domain sits on the upstream `t3code-marketing` project, every
+upstream deploy overwrites Doer with T3. This happened on 2026-09-13, when
+the live domain served a fresh upstream build (canonical `t3.codes`,
+`pingdotgg/t3code` links) while `lite` still held the Doer pages.
+
+- Vercel project `doer-marketing`: Settings → Git → Production Branch must
+  be `lite`. Domains: `doer.lagaryan.click` only here, never on
+  `t3code-marketing`.
+- Upstream catch-up merges must resolve `apps/marketing` conflicts in favor
+  of `lite`. `apps/marketing/src/lib/doer-branding.test.ts` fails CI when
+  T3 copy, links, or metadata leak back in — keep it green, don't weaken it.
+- `Doer site check` workflow fetches the live homepage daily and fails when
+  it serves T3 content. When it fires, fix the dashboard (above) and
+  redeploy the latest `lite` commit; no repo change is needed.
+
 ## Shipping
 
 - **Nightly**: automatic, daily ~02:08 UTC, only when new commits exist. Manual:

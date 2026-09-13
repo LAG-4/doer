@@ -1,0 +1,71 @@
+name: Doer site check
+
+# FORK (Doer): alerts when doer.lagaryan.click stops serving the Doer site.
+# The marketing source lives on `lite`, but the live domain is owned by Vercel
+# dashboard settings (production branch + domain assignment), so an upstream
+# deploy or a dashboard change can overwrite the Doer site with the T3 site
+# without touching this repo. This check catches that within a day. It needs
+# no secrets: it only fetches the public homepage.
+
+on:
+  schedule:
+    - cron: "30 6 * * *" # daily, after the upstream sync
+  workflow_dispatch: {}
+  push:
+    branches:
+      - lite
+    paths:
+      - "apps/marketing/**"
+
+jobs:
+  check-live-site:
+    name: Check live Doer site
+    # Never run on upstream: the workflow file only exists on the fork, and
+    # upstream has no doer.lagaryan.click to check.
+    if: github.repository == 'LAG-4/t3code'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Fetch live homepage
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 60 \
+            https://doer.lagaryan.click -o live.html
+          echo "Fetched $(wc -c < live.html) bytes."
+
+      - name: Assert Doer content is live
+        shell: bash
+        run: |
+          set -euo pipefail
+          fail=0
+          check_absent() {
+            if grep -qF "$1" live.html; then
+              echo "LIVE SITE REGRESSION: found upstream marker: $1" >&2
+              fail=1
+            fi
+          }
+          check_present() {
+            if ! grep -qF "$1" live.html; then
+              echo "LIVE SITE REGRESSION: missing Doer marker: $1" >&2
+              fail=1
+            fi
+          }
+          # Upstream T3 markers must never appear on the Doer domain.
+          check_absent "control plane"
+          check_absent "pingdotgg/t3code"
+          check_absent "https://t3.codes/"
+          # Doer markers must be present.
+          check_present "boring work"
+          check_present "doer"
+          if [ "$fail" -ne 0 ]; then
+            echo "" >&2
+            echo "doer.lagaryan.click is not serving the Doer site." >&2
+            echo "Fix in the Vercel dashboard (doer-marketing project):" >&2
+            echo "  1. Settings -> Git -> Production Branch must be 'lite'." >&2
+            echo "  2. Domains: doer.lagaryan.click must be on doer-marketing only," >&2
+            echo "     not on t3code-marketing." >&2
+            echo "  3. Redeploy the latest 'lite' commit to production." >&2
+            exit 1
+          fi
+          echo "Live site serves the Doer homepage."
