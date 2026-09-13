@@ -543,10 +543,15 @@ export function makeCursorAdapter(
           const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
           const acp = yield* makeCursorAcpRuntime({
             cursorSettings: effectiveCursorSettings,
-            ...(options?.environment || mcpSession?.agentDeviceEnvironment
+            ...(options?.environment ||
+            mcpSession?.agentDeviceEnvironment ||
+            mcpSession?.agentComputerEnvironment
               ? {
-                  environment: McpProviderSession.withAgentDeviceEnvironment(
-                    options?.environment ?? process.env,
+                  environment: McpProviderSession.withAgentComputerEnvironment(
+                    McpProviderSession.withAgentDeviceEnvironment(
+                      options?.environment ?? process.env,
+                      mcpSession,
+                    ),
                     mcpSession,
                   ),
                 }

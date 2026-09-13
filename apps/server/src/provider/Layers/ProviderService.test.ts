@@ -4942,14 +4942,20 @@ describe("agent browser access", () => {
   const projectId = ProjectId.make("project-browser-access");
 
   const startSessionWith = (
-    access: boolean | { readonly browser: boolean; readonly device: boolean },
+    access:
+      | boolean
+      | { readonly browser: boolean; readonly device: boolean; readonly computer?: boolean },
     threadId: ThreadId,
-    projectOverride?: boolean | { readonly browser?: boolean; readonly device?: boolean },
+    projectOverride?:
+      | boolean
+      | { readonly browser?: boolean; readonly device?: boolean; readonly computer?: boolean },
     options?: { readonly withoutOrchestration?: boolean },
   ) =>
     Effect.gen(function* () {
       const enableAgentBrowserAccess = typeof access === "boolean" ? access : access.browser;
       const enableAgentDeviceAccess = typeof access === "boolean" ? access : access.device;
+      const enableAgentComputerAccess =
+        typeof access === "boolean" ? access : (access.computer ?? false);
       const issued: Array<{ threadId: ThreadId; capabilities: ReadonlyArray<string> }> = [];
       const codex = makeFakeCodexAdapter();
       const providerAdapterLayer = Layer.succeed(
@@ -5028,6 +5034,7 @@ describe("agent browser access", () => {
           ServerSettings.ServerSettingsService.layerTest({
             enableAgentBrowserAccess,
             enableAgentDeviceAccess,
+            enableAgentComputerAccess,
             projectSettingsOverrides:
               projectOverride === undefined
                 ? {}
@@ -5040,6 +5047,9 @@ describe("agent browser access", () => {
                           : {}),
                         ...(projectOverride.device !== undefined
                           ? { enableAgentDeviceAccess: projectOverride.device }
+                          : {}),
+                        ...(projectOverride.computer !== undefined
+                          ? { enableAgentComputerAccess: projectOverride.computer }
                           : {}),
                       },
                     },
@@ -5088,7 +5098,10 @@ describe("agent browser access", () => {
       const issued = yield* startSessionWith(true, threadId);
 
       assert.deepEqual(issued, [
-        { threadId, capabilities: ["automations", "device", "preview", "pull-requests"] },
+        {
+          threadId,
+          capabilities: ["automations", "computer", "device", "preview", "pull-requests"],
+        },
       ]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
@@ -5118,7 +5131,7 @@ describe("agent browser access", () => {
       const threadId = asThreadId("thread-project-browser-off-device-on");
       const issued = yield* startSessionWith(true, threadId, false);
       assert.deepEqual(issued, [
-        { threadId, capabilities: ["automations", "device", "pull-requests"] },
+        { threadId, capabilities: ["automations", "computer", "device", "pull-requests"] },
       ]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
@@ -5143,6 +5156,33 @@ describe("agent browser access", () => {
         { threadId, capabilities: ["automations", "device", "pull-requests"] },
       ]);
     }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("issues the computer capability when agent computer access is on", () =>
+    Effect.gen(function* () {
+      const threadId = asThreadId("thread-computer-on");
+      const issued = yield* startSessionWith(
+        { browser: false, device: false, computer: true },
+        threadId,
+      );
+      assert.deepEqual(issued, [
+        { threadId, capabilities: ["automations", "computer", "pull-requests"] },
+      ]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect(
+    "a project computer override grants computer access when the environment denies it",
+    () =>
+      Effect.gen(function* () {
+        const threadId = asThreadId("thread-project-computer-on");
+        const issued = yield* startSessionWith({ browser: false, device: false }, threadId, {
+          computer: true,
+        });
+        assert.deepEqual(issued, [
+          { threadId, capabilities: ["automations", "computer", "pull-requests"] },
+        ]);
+      }).pipe(Effect.provide(NodeServices.layer)),
   );
 
   // Without orchestration the project cannot be resolved, so an overridden

@@ -16,6 +16,7 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstab
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as ServerConfig from "../config.ts";
+import * as ComputerService from "../computer/ComputerService.ts";
 import * as DeviceService from "../device/DeviceService.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
@@ -37,6 +38,15 @@ import {
   DeviceScreenshotToolkitHandlersLive,
   DeviceStandardToolkitHandlersLive,
 } from "./toolkits/device/handlers.ts";
+import {
+  ComputerObserveToolkitHandlersLive,
+  ComputerStandardToolkitHandlersLive,
+} from "./toolkits/computer/handlers.ts";
+import {
+  ComputerObserveTool,
+  ComputerObserveToolkit,
+  ComputerStandardToolkit,
+} from "./toolkits/computer/tools.ts";
 import {
   DeviceScreenshotTool,
   DeviceScreenshotToolkit,
@@ -627,6 +637,34 @@ export const DeviceToolkitRegistrationLive = Layer.mergeAll(
   DeviceScreenshotRegistrationLive,
 );
 
+const registerComputerObserve = Effect.fn("McpHttpServer.registerComputerObserve")(function* () {
+  const computers = yield* ComputerService.ComputerService;
+  const built = yield* ComputerObserveToolkit;
+  yield* registerImageTool(
+    ComputerObserveTool,
+    (payload) =>
+      built
+        .handle("computer_observe", payload)
+        .pipe(Stream.unwrap, Stream.run(Sink.last()), Effect.flatMap(Effect.fromOption)),
+    (effect) => effect.pipe(Effect.provideService(ComputerService.ComputerService, computers)),
+    "observe",
+    "Computer observe failed.",
+  );
+});
+
+const ComputerStandardToolkitRegistrationLive = McpServer.toolkit(ComputerStandardToolkit).pipe(
+  Layer.provide(ComputerStandardToolkitHandlersLive),
+);
+
+const ComputerObserveRegistrationLive = Layer.effectDiscard(registerComputerObserve()).pipe(
+  Layer.provide(ComputerObserveToolkitHandlersLive),
+);
+
+export const ComputerToolkitRegistrationLive = Layer.mergeAll(
+  ComputerStandardToolkitRegistrationLive,
+  ComputerObserveRegistrationLive,
+);
+
 const McpTransportLive = McpServer.layerHttp({
   name: "Doer",
   version: packageJson.version,
@@ -639,4 +677,5 @@ export const layer = Layer.mergeAll(
   PullRequestsToolkitRegistrationLive,
   ScheduledTasksToolkitRegistrationLive,
   DeviceToolkitRegistrationLive,
+  ComputerToolkitRegistrationLive,
 ).pipe(Layer.provideMerge(McpTransportLive));

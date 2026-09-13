@@ -19,19 +19,30 @@ const T3_CODE_DEVICE_TOOL_INSTRUCTIONS = `
 The \`t3-code\` MCP server also exposes \`device_*\` tools for iOS Simulators and Android Emulators on this environment. For mobile verification, call \`device_list\`, then \`device_open\` so the user can watch the device in their Device panel; its result explains how to drive the device. Driving happens through the \`agent-device\` CLI, which is on PATH. Keep the host config and session flags returned by \`device_open\` on every command so concurrent devices stay independent: prefer \`agent-device snapshot -i\` refs over coordinates, and use \`device_screenshot\` when you need to see the screen. Do not call simctl, adb, xcrun, or serve-sim directly while these tools are present. If \`device_list\` reports a platform as unavailable, say so instead of trying another route.
 `;
 
+const T3_CODE_COMPUTER_TOOL_INSTRUCTIONS = `
+
+## Doer computer use
+
+The \`t3-code\` MCP server also exposes \`computer_*\` tools: you can see the user's desktop and operate real GUI apps (testing a desktop app you built, driving a browser, reproducing a GUI-only bug, changing app settings). First call \`computer_status\`, then \`computer_start\` with the app you want to operate; its result explains how to drive the desktop. Driving happens through the \`computer-use\` CLI, which is on PATH: call \`get_app_state\` once per turn before acting, prefer element indexes over coordinates, and use \`computer_observe\` when you need to see the screen. Never operate an app the user did not approve: \`computer_start\` refuses unapproved apps — ask the user in chat, and when they agree call \`computer_allow\` before touching the app. Treat the desktop as the user's real session and ask before sending, deleting, purchasing, approving, or uploading anything. On Windows computer use takes over the foreground while it runs.
+Offer computer use proactively when the task involves a desktop app, a browser flow, or anything on screen that files and commands cannot show: name the app, say what you would do with it, and ask for approval. When you start driving, announce it briefly so the user knows to hand over the desktop.
+`;
+
 export interface T3CodeToolAvailability {
   readonly browser: boolean;
   readonly device: boolean;
+  readonly computer: boolean;
 }
 
 const normalizeAvailability = (
   availability: boolean | T3CodeToolAvailability,
 ): T3CodeToolAvailability =>
-  typeof availability === "boolean" ? { browser: availability, device: false } : availability;
+  typeof availability === "boolean"
+    ? { browser: availability, device: false, computer: false }
+    : availability;
 
 /**
  * Each block is omitted entirely when its tools aren't attached. Describing
- * `preview_*` or `device_*` tools that aren't in the turn's tool list would be
+ * `preview_*`, `device_*`, or `computer_*` tools that aren't in the turn's tool list would be
  * worse than saying nothing: the instructions actively steer the model away
  * from Playwright, agent-browser, and raw simctl/adb, so leaving them in would
  * talk it out of the only automation it still has.
@@ -40,7 +51,7 @@ const browserToolInstructions = (availability: boolean | T3CodeToolAvailability)
   const tools = normalizeAvailability(availability);
   return `${tools.browser ? T3_CODE_BROWSER_TOOL_INSTRUCTIONS : ""}${
     tools.device ? T3_CODE_DEVICE_TOOL_INSTRUCTIONS : ""
-  }`;
+  }${tools.computer ? T3_CODE_COMPUTER_TOOL_INSTRUCTIONS : ""}`;
 };
 
 const codexPlanModeDeveloperInstructions = (

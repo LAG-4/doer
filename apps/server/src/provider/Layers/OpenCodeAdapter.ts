@@ -2836,8 +2836,11 @@ export function makeOpenCodeAdapter(
                 serverUrl,
                 ...(serverPassword ? { serverPassword } : {}),
                 ...(options?.managedDir !== undefined ? { managedDir: options.managedDir } : {}),
-                environment: McpProviderSession.withAgentDeviceEnvironment(
-                  options?.environment ?? process.env,
+                environment: McpProviderSession.withAgentComputerEnvironment(
+                  McpProviderSession.withAgentDeviceEnvironment(
+                    options?.environment ?? process.env,
+                    mcpSession,
+                  ),
                   mcpSession,
                 ),
               });

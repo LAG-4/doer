@@ -796,6 +796,9 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
                 ...(mcp?.agentDeviceEnvironment
                   ? { agentDeviceEnvironment: mcp.agentDeviceEnvironment }
                   : {}),
+                ...(mcp?.agentComputerEnvironment
+                  ? { agentComputerEnvironment: mcp.agentComputerEnvironment }
+                  : {}),
                 additionalDirectories: [serverConfig.attachmentsDir],
                 ...(Option.isSome(cursor) ? { resumeSessionId: cursor.value.sessionId } : {}),
                 mcpServers: mcp

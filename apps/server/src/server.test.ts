@@ -99,6 +99,7 @@ const encodeTestJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unk
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as ServerConfig from "./config.ts";
 import * as DeviceService from "./device/DeviceService.ts";
+import * as ComputerService from "./computer/ComputerService.ts";
 import { HTTP_ROUTER_CONFIG, makeRoutesLayer } from "./server.ts";
 import {
   isThreadDetailEvent,
@@ -811,6 +812,16 @@ const buildAppUnderTest = (options?: {
             state: Effect.succeed(EMPTY_DEVICE_STATE),
             currentReadiness: () => Effect.succeed(null),
             sessionsForThread: () => Effect.succeed([]),
+          }),
+          Layer.mock(ComputerService.ComputerService)({
+            status: Effect.succeed(EMPTY_COMPUTER_STATUS),
+            cliEntry: Effect.die("Computer CLI is not stubbed in this test"),
+            start: () => Effect.die("Computer start is not stubbed in this test"),
+            allow: () => Effect.die("Computer allow is not stubbed in this test"),
+            forget: () => Effect.die("Computer forget is not stubbed in this test"),
+            allowedApps: Effect.succeed([]),
+            isAllowed: () => Effect.succeed(false),
+            observe: () => Effect.die("Computer observe is not stubbed in this test"),
           }),
         ),
       ),
@@ -1677,6 +1688,16 @@ const EMPTY_DEVICE_STATE: DeviceServiceState = {
   agentAccessEnabled: false,
   hubBasePath: DeviceService.DEVICE_HUB_ROUTE_PREFIX,
   revision: 0,
+};
+
+const EMPTY_COMPUTER_STATUS: ComputerService.ComputerStatus = {
+  supported: false,
+  platform: "test",
+  cliInstalled: false,
+  cliVersion: undefined,
+  permissions: undefined,
+  onboardingNeeded: true,
+  allowedApps: [],
 };
 
 it.layer(NodeServices.layer)("server router seam", (it) => {

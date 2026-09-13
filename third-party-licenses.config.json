@@ -95,6 +95,20 @@
       ]
     },
     {
+      "bundles": ["device-tools"],
+      "includeInBundles": ["mobile", "web"],
+      "license": "MIT",
+      "name": "open-computer-use",
+      "sourceUrl": "https://github.com/iFurySt/open-codex-computer-use",
+      "version": "0.3.5",
+      "generatedNotices": [
+        {
+          "licenseId": "MIT",
+          "copyrights": ["Copyright (c) 2026 Leo"]
+        }
+      ]
+    },
+    {
       "bundles": ["android", "assets", "mobile", "web"],
       "license": "MIT",
       "name": "libghostty-vt",

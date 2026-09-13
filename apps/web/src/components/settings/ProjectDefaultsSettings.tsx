@@ -72,6 +72,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
   const PermissionIcon = runtimeModeConfig[settings.defaultRuntimeMode].icon;
   const mixedWorkspace = useScopedSettingsMixed(["defaultThreadEnvMode"]);
   const mixedBrowser = useScopedSettingsMixed(["enableAgentBrowserAccess"]);
+  const mixedComputer = useScopedSettingsMixed(["enableAgentComputerAccess"]);
   const mixedAutoPull = useScopedSettingsMixed(["defaultAutoPull"]);
   const mixedMergeMethod = useScopedSettingsMixed(["pullRequestMergeMethod"]);
   const modelSource = useScopedSettingSource(["defaultModelSelection"]);
@@ -449,6 +450,41 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
                 mixed={mixedBrowser}
                 checked={mixedBrowser ? false : settings.enableAgentBrowserAccess}
                 onCheckedChange={(enabled) => updateSettings({ enableAgentBrowserAccess: enabled })}
+              />
+            }
+          />
+          <SettingsRow
+            serverScoped
+            settingKeys={["enableAgentComputerAccess"]}
+            mixed={mixedComputer}
+            id={searchableSetting("agent-computer-access").id}
+            title="Agent computer access"
+            description={
+              isProjectScope
+                ? "Allow agents in this project to see the desktop and operate apps. Applies when the agent session next starts."
+                : "Allow agents to see the desktop and operate apps. Agents still ask before touching each app."
+            }
+            resetAction={
+              settings.enableAgentComputerAccess !==
+              DEFAULT_SERVER_SETTINGS.enableAgentComputerAccess ? (
+                <SettingResetButton
+                  label="default computer access"
+                  onClick={() =>
+                    updateSettings({
+                      enableAgentComputerAccess: DEFAULT_SERVER_SETTINGS.enableAgentComputerAccess,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                aria-label="Agent computer access"
+                mixed={mixedComputer}
+                checked={mixedComputer ? false : settings.enableAgentComputerAccess}
+                onCheckedChange={(enabled) =>
+                  updateSettings({ enableAgentComputerAccess: enabled })
+                }
               />
             }
           />
