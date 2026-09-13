@@ -147,6 +147,15 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     environments.some(
       (environment) => environment.serverConfig?.environment.capabilities.pullRequests === true,
     );
+  // The usage page only tracks Codex and Claude Code, so hide the entry
+  // when neither is connected (e.g. free OpenCode-only setups).
+  const usageSupported = environments.some((environment) =>
+    environment.serverConfig?.providers.some(
+      (provider) =>
+        (provider.driver === "codex" || provider.driver === "claudeAgent") &&
+        provider.auth.status === "authenticated",
+    ),
+  );
   const closeMobileSidebar = useCallback(() => {
     if (isMobile) {
       setOpenMobile(false);
@@ -203,11 +212,13 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
               onClick={handlePullRequestsClick}
             />
           ) : null}
-          <SidebarUtilityItem
-            icon={<ChartNoAxesColumnIcon />}
-            label="Usage"
-            onClick={handleUsageClick}
-          />
+          {usageSupported ? (
+            <SidebarUtilityItem
+              icon={<ChartNoAxesColumnIcon />}
+              label="Usage"
+              onClick={handleUsageClick}
+            />
+          ) : null}
         </>
       )}
       <SidebarUpdatePill />
