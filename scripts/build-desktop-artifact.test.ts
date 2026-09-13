@@ -1833,6 +1833,52 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 
+  it.effect("strips ad-hoc seals only from unsigned macOS builds", () =>
+    Effect.gen(function* () {
+      const unsignedMac = yield* createBuildConfig(
+        "mac",
+        "dmg",
+        "1.2.3",
+        false,
+        false,
+        undefined,
+        undefined,
+      );
+      assert.match(
+        String(unsignedMac.afterPack),
+        /[\\/]scripts[\\/]strip-adhoc-macos-signatures\.cjs$/,
+      );
+
+      const signedMac = yield* createBuildConfig("mac", "dmg", "1.2.3", true, false, undefined, {
+        entitlementsPath: "/tmp/entitlements.mac.plist",
+        provisioningProfilePath: "/tmp/doer.provisionprofile",
+      });
+      assert.notProperty(signedMac, "afterPack");
+
+      const linux = yield* createBuildConfig(
+        "linux",
+        "AppImage",
+        "1.2.3",
+        false,
+        false,
+        undefined,
+        undefined,
+      );
+      assert.notProperty(linux, "afterPack");
+
+      const win = yield* createBuildConfig(
+        "win",
+        "nsis",
+        "1.2.3",
+        false,
+        false,
+        undefined,
+        undefined,
+      );
+      assert.notProperty(win, "afterPack");
+    }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
+  );
+
   it.effect("keeps executable resource editing enabled for unsigned Windows builds", () =>
     Effect.gen(function* () {
       const config = yield* createBuildConfig(
