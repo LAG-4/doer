@@ -43,7 +43,10 @@ import {
   ProviderAdapterSessionNotFoundError,
   ProviderAdapterValidationError,
 } from "../Errors.ts";
-import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
+import {
+  buildRuntimeInstructions,
+  t3ToolAvailabilityFromCapabilities,
+} from "../RuntimeInstructions.ts";
 import { type OpenCodeAdapterShape } from "../Services/OpenCodeAdapter.ts";
 import {
   buildOpenCodePermissionRules,
@@ -2836,8 +2839,11 @@ export function makeOpenCodeAdapter(
                 serverUrl,
                 ...(serverPassword ? { serverPassword } : {}),
                 ...(options?.managedDir !== undefined ? { managedDir: options.managedDir } : {}),
-                environment: McpProviderSession.withAgentDeviceEnvironment(
-                  options?.environment ?? process.env,
+                environment: McpProviderSession.withAgentComputerEnvironment(
+                  McpProviderSession.withAgentDeviceEnvironment(
+                    options?.environment ?? process.env,
+                    mcpSession,
+                  ),
                   mcpSession,
                 ),
               });
@@ -3226,6 +3232,9 @@ export function makeOpenCodeAdapter(
                 system: buildRuntimeInstructions({
                   harness: "OpenCode",
                   model: `${parsedModel.providerID}/${parsedModel.modelID}`,
+                  t3Tools: t3ToolAvailabilityFromCapabilities(
+                    McpProviderSession.readMcpProviderSession(input.threadId)?.capabilities,
+                  ),
                 }),
                 parts: [...(text ? [{ type: "text" as const, text }] : []), ...fileParts],
               },

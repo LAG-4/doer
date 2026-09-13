@@ -36,7 +36,10 @@ import * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/schema";
 
 import { ServerConfig } from "../../config.ts";
-import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
+import {
+  buildRuntimeInstructions,
+  t3ToolAvailabilityFromCapabilities,
+} from "../RuntimeInstructions.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import type { AntigravityAuth } from "../AntigravityAuth.ts";
 import {
@@ -796,6 +799,9 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
                 ...(mcp?.agentDeviceEnvironment
                   ? { agentDeviceEnvironment: mcp.agentDeviceEnvironment }
                   : {}),
+                ...(mcp?.agentComputerEnvironment
+                  ? { agentComputerEnvironment: mcp.agentComputerEnvironment }
+                  : {}),
                 additionalDirectories: [serverConfig.attachmentsDir],
                 ...(Option.isSome(cursor) ? { resumeSessionId: cursor.value.sessionId } : {}),
                 mcpServers: mcp
@@ -1085,7 +1091,13 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
                   ...prompt,
                   {
                     type: "text",
-                    text: buildRuntimeInstructions({ harness: "Antigravity", model }),
+                    text: buildRuntimeInstructions({
+                      harness: "Antigravity",
+                      model,
+                      t3Tools: t3ToolAvailabilityFromCapabilities(
+                        McpProviderSession.readMcpProviderSession(input.threadId)?.capabilities,
+                      ),
+                    }),
                   },
                 ],
               },

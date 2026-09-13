@@ -40,7 +40,10 @@ import type * as EffectAcpSchema from "effect-acp/schema";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
-import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
+import {
+  buildRuntimeInstructions,
+  t3ToolAvailabilityFromCapabilities,
+} from "../RuntimeInstructions.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import {
   ProviderAdapterProcessError,
@@ -995,10 +998,15 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
           const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
           const acp = yield* makeGrokAcpRuntime({
             grokSettings,
-            ...(options?.environment || mcpSession?.agentDeviceEnvironment
+            ...(options?.environment ||
+            mcpSession?.agentDeviceEnvironment ||
+            mcpSession?.agentComputerEnvironment
               ? {
-                  environment: McpProviderSession.withAgentDeviceEnvironment(
-                    options?.environment ?? process.env,
+                  environment: McpProviderSession.withAgentComputerEnvironment(
+                    McpProviderSession.withAgentDeviceEnvironment(
+                      options?.environment ?? process.env,
+                      mcpSession,
+                    ),
                     mcpSession,
                   ),
                 }
@@ -1620,6 +1628,9 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                 harness: "Grok",
                 model: displayModel,
                 reasoningEffort: normalizeGrokReasoningEffort(requestedTurnReasoningEffort),
+                t3Tools: t3ToolAvailabilityFromCapabilities(
+                  McpProviderSession.readMcpProviderSession(input.threadId)?.capabilities,
+                ),
               });
               for (let yieldAttempt = 0; yieldAttempt < 8; yieldAttempt += 1) {
                 yield* Effect.yieldNow;

@@ -42,7 +42,10 @@ import type * as EffectAcpSchema from "effect-acp/schema";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
-import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
+import {
+  buildRuntimeInstructions,
+  t3ToolAvailabilityFromCapabilities,
+} from "../RuntimeInstructions.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import {
   ProviderAdapterProcessError,
@@ -543,10 +546,15 @@ export function makeCursorAdapter(
           const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
           const acp = yield* makeCursorAcpRuntime({
             cursorSettings: effectiveCursorSettings,
-            ...(options?.environment || mcpSession?.agentDeviceEnvironment
+            ...(options?.environment ||
+            mcpSession?.agentDeviceEnvironment ||
+            mcpSession?.agentComputerEnvironment
               ? {
-                  environment: McpProviderSession.withAgentDeviceEnvironment(
-                    options?.environment ?? process.env,
+                  environment: McpProviderSession.withAgentComputerEnvironment(
+                    McpProviderSession.withAgentDeviceEnvironment(
+                      options?.environment ?? process.env,
+                      mcpSession,
+                    ),
                     mcpSession,
                   ),
                 }
@@ -1064,7 +1072,13 @@ export function makeCursorAdapter(
                 ...promptParts,
                 {
                   type: "text",
-                  text: buildRuntimeInstructions({ harness: "Cursor", model: resolvedModel }),
+                  text: buildRuntimeInstructions({
+                    harness: "Cursor",
+                    model: resolvedModel,
+                    t3Tools: t3ToolAvailabilityFromCapabilities(
+                      McpProviderSession.readMcpProviderSession(input.threadId)?.capabilities,
+                    ),
+                  }),
                 },
               ],
             })

@@ -56,6 +56,8 @@ import * as Stream from "effect/Stream";
 import { appendUserInputAttachmentPaths } from "../userInputAttachments.ts";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import * as ServerConfig from "../../config.ts";
+import * as ComputerService from "../../computer/ComputerService.ts";
+import { ensureComputerShim } from "../../computer/ComputerShim.ts";
 import * as DeviceService from "../../device/DeviceService.ts";
 import { ensureAgentDeviceShim } from "../../device/AgentDeviceShim.ts";
 import type * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
@@ -874,17 +876,22 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         (entry) => entry.enableAgentBrowserAccess !== undefined,
       );
       const deviceOverridden = entries.some((entry) => entry.enableAgentDeviceAccess !== undefined);
+      const computerOverridden = entries.some(
+        (entry) => entry.enableAgentComputerAccess !== undefined,
+      );
       const environment = {
         browser: settings.enableAgentBrowserAccess,
         device: settings.enableAgentDeviceAccess,
+        computer: settings.enableAgentComputerAccess,
       };
-      if (!browserOverridden && !deviceOverridden) return environment;
+      if (!browserOverridden && !deviceOverridden && !computerOverridden) return environment;
       // Provider-only runtimes may omit orchestration. An unresolved project
       // must not bypass an explicit project override, but a capability no
       // project overrides keeps its environment value.
       const denied = {
         browser: browserOverridden ? false : environment.browser,
         device: deviceOverridden ? false : environment.device,
+        computer: computerOverridden ? false : environment.computer,
       };
       if (Option.isNone(projectionQuery)) return denied;
       const thread = yield* projectionQuery.value.getThreadShellById(threadId);
@@ -893,13 +900,14 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       return {
         browser: resolved.enableAgentBrowserAccess,
         device: resolved.enableAgentDeviceAccess,
+        computer: resolved.enableAgentComputerAccess,
       };
     },
     Effect.catch((cause) =>
       Effect.logWarning(
-        "Could not read server settings; withholding agent browser and device access for this session.",
+        "Could not read server settings; withholding agent browser, device, and computer access for this session.",
         { cause },
-      ).pipe(Effect.as({ browser: false, device: false })),
+      ).pipe(Effect.as({ browser: false, device: false, computer: false })),
     ),
   );
 
@@ -913,6 +921,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     const access = yield* agentAccessSettings(threadId);
     if (access.browser) capabilities.add("preview");
     if (access.device) capabilities.add("device");
+    if (access.computer) capabilities.add("computer");
     return capabilities;
   });
 
@@ -943,6 +952,36 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     } satisfies Record<string, string>;
   });
 
+  /**
+   * Install the pinned computer-use CLI and put its `computer-use` launcher
+   * on the provider PATH. Unlike devices there is no per-host config: the
+   * launcher enforces the user's per-app allow list itself.
+   */
+  const agentComputerEnvironment = Effect.gen(function* () {
+    const computers = yield* Effect.serviceOption(ComputerService.ComputerService);
+    if (Option.isNone(computers)) return undefined;
+    const entryPath = yield* computers.value.cliEntry.pipe(
+      Effect.catch((cause) =>
+        Effect.logWarning("Agent computer CLI unavailable", { cause }).pipe(Effect.as(null)),
+      ),
+    );
+    if (!entryPath) return undefined;
+    const shimDir = yield* ensureComputerShim({
+      entryPath,
+      stateDir: serverConfig.stateDir,
+      allowlistPath: pathService.join(serverConfig.stateDir, "computer", "allowed-apps.json"),
+    }).pipe(
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, pathService),
+      Effect.orElseSucceed(() => undefined),
+    );
+    if (!shimDir) return undefined;
+    return {
+      PATH: shimDir,
+      PATH_SEPARATOR: hostPlatform === "win32" ? ";" : ":",
+    } satisfies Record<string, string>;
+  });
+
   const prepareMcpSession = (threadId: ThreadId, providerInstanceId: ProviderInstanceId) =>
     Effect.gen(function* () {
       const capabilities = yield* agentAccessCapabilities(threadId);
@@ -951,10 +990,14 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         const deviceEnvironment = capabilities.has("device")
           ? yield* agentDeviceEnvironment
           : undefined;
+        const computerEnvironment = capabilities.has("computer")
+          ? yield* agentComputerEnvironment
+          : undefined;
         yield* Effect.sync(() =>
           McpProviderSession.setMcpProviderSession({
             ...credential.config,
             ...(deviceEnvironment ? { agentDeviceEnvironment: deviceEnvironment } : {}),
+            ...(computerEnvironment ? { agentComputerEnvironment: computerEnvironment } : {}),
           }),
         );
       }

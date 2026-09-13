@@ -89,7 +89,10 @@ import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
 import { claudeSignedOutMessage, makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
 import { planClaudeSkillDispatch } from "../Drivers/ClaudeSkillDispatch.ts";
 import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
-import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
+import {
+  buildRuntimeInstructions,
+  t3ToolAvailabilityFromCapabilities,
+} from "../RuntimeInstructions.ts";
 import {
   BUNDLED_CLAUDE_MODEL_CATALOG,
   type ClaudeModelCatalog,
@@ -4722,7 +4725,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           type: "preset",
           preset: "claude_code",
           // Model and effort can change after this session-level prompt is set.
-          append: buildRuntimeInstructions({ harness: "Claude Code" }),
+          append: buildRuntimeInstructions({
+            harness: "Claude Code",
+            t3Tools: t3ToolAvailabilityFromCapabilities(mcpSession?.capabilities),
+          }),
         },
         settingSources: [...CLAUDE_SETTING_SOURCES],
         // `ultracode` is a Claude Code setting, not an API effort level. It is
@@ -4743,7 +4749,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         canUseTool,
         onUserDialog,
         supportedDialogKinds: ["resume_return"],
-        env: McpProviderSession.withAgentDeviceEnvironment(claudeEnvironment, mcpSession),
+        env: McpProviderSession.withAgentComputerEnvironment(
+          McpProviderSession.withAgentDeviceEnvironment(claudeEnvironment, mcpSession),
+          mcpSession,
+        ),
         additionalDirectories,
         ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
         ...(mcpSession
