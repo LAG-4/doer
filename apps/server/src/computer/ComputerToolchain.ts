@@ -26,7 +26,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as ProcessRunner from "../processRunner.ts";
 
 const COMPUTER_USE_PACKAGE = "open-computer-use";
-export const COMPUTER_USE_VERSION = "0.3.5";
+const COMPUTER_USE_VERSION = "0.3.5";
 
 const INSTALL_TIMEOUT = Duration.minutes(10);
 const installLock = Semaphore.makeUnsafe(1);
@@ -171,11 +171,6 @@ export const ensureComputerUse = Effect.fn("ComputerToolchain.ensure")(function*
   const path = yield* Path.Path;
   const paths = toolPaths(path, baseDir);
   return yield* installLock.withPermit(installTool(paths));
-});
-
-export const computerUsePaths = Effect.fn("ComputerToolchain.paths")(function* (baseDir: string) {
-  const path = yield* Path.Path;
-  return toolPaths(path, baseDir);
 });
 
 export const isComputerUseInstalled = Effect.fn("ComputerToolchain.isInstalled")(function* (

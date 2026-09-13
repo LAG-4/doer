@@ -32,7 +32,7 @@ import {
   isComputerUseInstalled,
 } from "./ComputerToolchain.ts";
 
-export const COMPUTER_ALLOWLIST_VERSION = 1;
+const COMPUTER_ALLOWLIST_VERSION = 1;
 
 const AllowlistFile = Schema.Struct({
   version: Schema.Literal(1),
@@ -235,43 +235,37 @@ export const make = Effect.gen(function* () {
   ): Effect.Effect<ReadonlyArray<string>, ComputerUseError> =>
     Effect.gen(function* () {
       const next = dedupeApps(apps);
-      yield* fs
-        .makeDirectory(path.dirname(allowlistPath), { recursive: true })
-        .pipe(
-          Effect.mapError(
-            (cause) =>
-              new ComputerUseError({
-                operation: "recording approval",
-                reason: "unavailable",
-                cause,
-              }),
-          ),
-        );
+      yield* fs.makeDirectory(path.dirname(allowlistPath), { recursive: true }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new ComputerUseError({
+              operation: "recording approval",
+              reason: "unavailable",
+              cause,
+            }),
+        ),
+      );
       const staging = `${allowlistPath}.tmp`;
-      yield* fs
-        .writeFileString(staging, encodeAllowlistFile(next))
-        .pipe(
-          Effect.mapError(
-            (cause) =>
-              new ComputerUseError({
-                operation: "recording approval",
-                reason: "unavailable",
-                cause,
-              }),
-          ),
-        );
-      yield* fs
-        .rename(staging, allowlistPath)
-        .pipe(
-          Effect.mapError(
-            (cause) =>
-              new ComputerUseError({
-                operation: "recording approval",
-                reason: "unavailable",
-                cause,
-              }),
-          ),
-        );
+      yield* fs.writeFileString(staging, encodeAllowlistFile(next)).pipe(
+        Effect.mapError(
+          (cause) =>
+            new ComputerUseError({
+              operation: "recording approval",
+              reason: "unavailable",
+              cause,
+            }),
+        ),
+      );
+      yield* fs.rename(staging, allowlistPath).pipe(
+        Effect.mapError(
+          (cause) =>
+            new ComputerUseError({
+              operation: "recording approval",
+              reason: "unavailable",
+              cause,
+            }),
+        ),
+      );
       return next;
     });
 

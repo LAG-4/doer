@@ -25,7 +25,7 @@ import * as Path from "effect/Path";
 
 const SHIM_DIR = "computer/bin";
 
-export const COMPUTER_USE_COMMAND = "computer-use";
+const COMPUTER_USE_COMMAND = "computer-use";
 
 export const ensureComputerShim = Effect.fn("ComputerShim.ensure")(function* (input: {
   readonly entryPath: string;
