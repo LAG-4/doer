@@ -9,6 +9,7 @@ import hook, {
   assertBundleAdhocSealed,
   collectMachOFiles,
   findAppBundles,
+  sortMachOFilesDeepestFirst,
 } from "./adhoc-sign-macos-bundle.cjs";
 
 const hasCodesign = (() => {
@@ -67,6 +68,25 @@ describe("adhoc-sign-macos-bundle", () => {
       }
     },
   );
+
+  it("orders Mach-O files deepest-first for inside-out signing", () => {
+    // Regression test: the macOS x64 build failed with "code object is not
+    // signed at all / In subcomponent: .../Helpers/chrome_crashpad_handler"
+    // because the enclosing Electron Framework binary was signed before its
+    // nested helper. Nested components must come first.
+    const frameworkDir =
+      "/stage/Doer.app/Contents/Frameworks/Electron Framework.framework/Versions/A";
+    const frameworkBinary = `${frameworkDir}/Electron Framework`;
+    const helper = `${frameworkDir}/Helpers/chrome_crashpad_handler`;
+    const dylib = `${frameworkDir}/Libraries/libffmpeg.dylib`;
+    const mainBinary = "/stage/Doer.app/Contents/MacOS/Doer";
+    assert.deepEqual(sortMachOFilesDeepestFirst([frameworkBinary, mainBinary, dylib, helper]), [
+      helper,
+      dylib,
+      frameworkBinary,
+      mainBinary,
+    ]);
+  });
 
   it("ignores non-mac packaging contexts", async () => {
     await hook.default({ packager: { platform: { name: "win32" } }, appOutDir: "/nonexistent" });
