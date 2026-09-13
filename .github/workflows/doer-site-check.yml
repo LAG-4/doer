@@ -52,8 +52,9 @@ jobs:
             fi
           }
           # Upstream T3 markers must never appear on the Doer domain.
+          # Note: no pingdotgg check — the Doer footer deliberately credits
+          # upstream with one "Built on top of T3 Code" link.
           check_absent "control plane"
-          check_absent "pingdotgg/t3code"
           check_absent "https://t3.codes/"
           # Doer markers must be present.
           check_present "boring work"
