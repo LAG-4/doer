@@ -2709,6 +2709,16 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   if (platform === "mac") {
     const path = yield* Path.Path;
     const repoRoot = yield* RepoRoot;
+    if (!signed) {
+      // Unsigned mac builds ship fully unsigned (see
+      // scripts/strip-adhoc-macos-signatures.cjs): Electron's prebuilt
+      // binaries carry a linker ad-hoc signature, but with no bundle seal
+      // Apple Silicon reads that half-sealed state as tampering ("damaged",
+      // no Open Anyway recourse). Stripping it yields the standard
+      // unidentified-developer warning with an Open Anyway path instead.
+      // afterPack runs before the dmg/zip targets are created.
+      buildConfig.afterPack = path.join(repoRoot, "scripts/strip-adhoc-macos-signatures.cjs");
+    }
     buildConfig.mac = {
       target: target === "dmg" ? [target, "zip"] : [target],
       icon: "icon.icns",
