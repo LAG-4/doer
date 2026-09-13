@@ -144,8 +144,23 @@ describe("DesktopEnvironment", () => {
       );
       const production = yield* makeEnvironment();
 
-      assert.equal(development.stateDir, "/Users/alice/.t3/dev");
-      assert.equal(production.stateDir, "/Users/alice/.t3/userdata");
+      assert.equal(development.stateDir, "/Users/alice/.doer/dev");
+      assert.equal(production.stateDir, "/Users/alice/.doer/userdata");
+    }),
+  );
+
+  it.effect("prefers DOER_HOME over T3CODE_HOME", () =>
+    Effect.gen(function* () {
+      const environment = yield* makeEnvironment(
+        {},
+        {
+          DOER_HOME: "/tmp/doer",
+          T3CODE_HOME: "/tmp/t3",
+        },
+      );
+
+      assert.equal(environment.baseDir, "/tmp/doer");
+      assert.equal(environment.stateDir, "/tmp/doer/userdata");
     }),
   );
 

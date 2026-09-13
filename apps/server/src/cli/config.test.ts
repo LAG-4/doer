@@ -630,4 +630,48 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
       });
     }),
   );
+
+  it.effect("prefers DOER_HOME over T3CODE_HOME", () =>
+    Effect.gen(function* () {
+      const { join } = yield* Path.Path;
+      const doerDir = join(NodeOS.tmpdir(), "t3-cli-config-doer-home");
+      const t3Dir = join(NodeOS.tmpdir(), "t3-cli-config-t3-home");
+      const derivedPaths = yield* deriveExplicitServerPaths(doerDir, undefined);
+
+      const resolved = yield* resolveServerConfig(
+        {
+          mode: Option.some("web"),
+          port: Option.some(3773),
+          host: Option.none(),
+          baseDir: Option.none(),
+          cwd: Option.none(),
+          devUrl: Option.none(),
+          noBrowser: Option.none(),
+          bootstrapFd: Option.none(),
+          autoBootstrapProjectFromCwd: Option.none(),
+          logWebSocketEvents: Option.none(),
+          tailscaleServeEnabled: Option.none(),
+          tailscaleServePort: Option.none(),
+        },
+        Option.none(),
+      ).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            ConfigProvider.layer(
+              ConfigProvider.fromEnv({
+                env: {
+                  DOER_HOME: doerDir,
+                  T3CODE_HOME: t3Dir,
+                },
+              }),
+            ),
+            NetService.layer,
+          ),
+        ),
+      );
+
+      assert.equal(resolved.baseDir, doerDir);
+      assert.equal(resolved.stateDir, derivedPaths.stateDir);
+    }),
+  );
 });

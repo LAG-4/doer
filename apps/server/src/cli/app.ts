@@ -178,6 +178,7 @@ function sendDesktopAppActivationRequest(input: {
 }
 
 const appEnvironment = Config.all({
+  doerHome: Config.string("DOER_HOME").pipe(Config.option, Config.map(Option.getOrUndefined)),
   t3Home: Config.string("T3CODE_HOME").pipe(Config.option, Config.map(Option.getOrUndefined)),
   sshConnection: Config.string("SSH_CONNECTION").pipe(Config.option),
   sshTty: Config.string("SSH_TTY").pipe(Config.option),
@@ -197,9 +198,11 @@ const runAppCommand = Effect.fn("cli.app")(function* (flags: {
   }
 
   const path = yield* Path.Path;
-  const configuredBaseDir = Option.getOrUndefined(flags.baseDir) ?? environment.t3Home;
+  const configuredBaseDir =
+    Option.getOrUndefined(flags.baseDir) ?? environment.doerHome ?? environment.t3Home;
   const baseDir = yield* resolveBaseDir(configuredBaseDir);
-  const allowDevFallback = Option.isNone(flags.baseDir) && !environment.t3Home?.trim();
+  const allowDevFallback =
+    Option.isNone(flags.baseDir) && !environment.doerHome?.trim() && !environment.t3Home?.trim();
   const rawWorkspaceRoot =
     Option.getOrUndefined(flags.workspaceRoot) ?? (yield* HostProcessWorkingDirectory);
   const workspaceRoot = path.resolve(yield* expandHomePath(rawWorkspaceRoot));

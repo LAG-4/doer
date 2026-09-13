@@ -35,6 +35,8 @@ it("keeps systemd pinned to the stable launcher rather than a versioned server",
   expect(unit).toContain("ExecStart=/usr/bin/node /home/theo/.t3/runtime/service-launcher.mjs");
   expect(unit).toContain("KillMode=mixed");
   expect(unit).not.toContain("versions/1.2.3");
+  expect(unit).toContain("Environment=DOER_HOME=/home/theo/.t3");
+  expect(unit).toContain("Environment=T3CODE_HOME=/home/theo/.t3");
 });
 
 it("survives the kernel OOM-killing a greedy agent child", () => {
@@ -66,6 +68,8 @@ it("keeps launchd pinned to the stable launcher rather than a versioned server",
   expect(plist).toContain("<string>/opt/homebrew/bin/node</string>");
   expect(plist).toContain("<string>/Users/theo/.t3/runtime/service-launcher.mjs</string>");
   expect(plist).not.toContain("versions/1.2.3");
+  expect(plist).toContain("<key>DOER_HOME</key>");
+  expect(plist).toContain("<key>T3CODE_HOME</key>");
 });
 
 it("preserves the installer's provider search path in the launch agent", () => {

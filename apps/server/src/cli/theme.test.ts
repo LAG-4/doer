@@ -355,6 +355,22 @@ describe("doer theme", () => {
     }),
   );
 
+  it.effect("prefers DOER_HOME over T3CODE_HOME", () =>
+    Effect.gen(function* () {
+      const doerDir = makeBaseDir();
+      const t3Dir = makeBaseDir();
+      yield* runCli(["theme", "set", "ocean"]).pipe(
+        Effect.provide(
+          ConfigProvider.layer(
+            ConfigProvider.fromEnv({ env: { DOER_HOME: doerDir, T3CODE_HOME: t3Dir } }),
+          ),
+        ),
+      );
+      assert.equal(readSettings(doerDir).defaultTheme, "ocean");
+      assert.equal(NodeFS.existsSync(settingsPathFor(t3Dir)), false);
+    }),
+  );
+
   // An unreadable settings file must never read as "no settings": writing a
   // fresh sparse file over it would discard every key the user had.
   it.effect.skipIf(windowsHost)("refuses to write when the settings file cannot be read", () =>

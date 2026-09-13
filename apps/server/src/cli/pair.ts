@@ -251,7 +251,9 @@ const discoverPairTarget = Effect.fn("pair.discoverPairTarget")(function* (
     if (worktreeHome !== undefined) {
       bases.push(worktreeHome);
     }
-    const envHome = yield* Config.string("T3CODE_HOME").pipe(Config.option);
+    const doerHome = yield* Config.string("DOER_HOME").pipe(Config.option);
+    const t3Home = yield* Config.string("T3CODE_HOME").pipe(Config.option);
+    const envHome = Option.orElse(doerHome, () => t3Home);
     bases.push(yield* resolveBaseDir(Option.getOrUndefined(envHome)));
   }
 

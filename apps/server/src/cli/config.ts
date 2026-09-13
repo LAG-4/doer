@@ -32,7 +32,7 @@ const hostFlag = Flag.string("host").pipe(
 );
 export const baseDirFlag = Flag.string("base-dir").pipe(
   Flag.withDescription(
-    "Explicit Doer data directory; runtime state is stored under userdata (equivalent to T3CODE_HOME).",
+    "Explicit Doer data directory; runtime state is stored under userdata (equivalent to DOER_HOME, with T3CODE_HOME honored as a fallback).",
   ),
   Flag.optional,
 );
@@ -104,6 +104,7 @@ const EnvServerConfig = Config.all({
   ),
   port: Config.port("T3CODE_PORT").pipe(Config.option, Config.map(Option.getOrUndefined)),
   host: Config.string("T3CODE_HOST").pipe(Config.option, Config.map(Option.getOrUndefined)),
+  doerHome: Config.string("DOER_HOME").pipe(Config.option, Config.map(Option.getOrUndefined)),
   t3Home: Config.string("T3CODE_HOME").pipe(Config.option, Config.map(Option.getOrUndefined)),
   devUrl: Config.url("VITE_DEV_SERVER_URL").pipe(Config.option, Config.map(Option.getOrUndefined)),
   devAllowedOrigins: Config.string("T3CODE_DEV_ALLOWED_ORIGINS").pipe(
@@ -270,6 +271,7 @@ export const resolveServerConfig = (
     );
     const explicitBaseDir = resolveOptionPrecedence(
       normalizedFlags.baseDir,
+      Option.fromUndefinedOr(env.doerHome),
       Option.fromUndefinedOr(env.t3Home),
     ).pipe(Option.filter((value) => value.trim().length > 0));
     const baseDir = yield* resolveBaseDir(
