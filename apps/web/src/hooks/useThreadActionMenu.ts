@@ -16,6 +16,10 @@ import {
   type ThreadActionMenuId,
 } from "../components/threadActionMenu.logic";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
+import {
+  requestThreadDeleteConfirmation,
+  threadDeleteConfirmationMessage,
+} from "../lib/threadDeleteConfirm";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import {
@@ -300,15 +304,12 @@ export function useThreadActionMenu(input: {
           case "delete": {
             if (confirmThreadDelete) {
               const confirmed = await settlePromise(() =>
-                api.dialogs.confirm(
-                  [
-                    `Delete thread "${thread.title}"?`,
-                    "This permanently clears conversation history for this thread.",
-                  ].join("\n"),
-                  { variant: "destructive" },
-                ),
+                requestThreadDeleteConfirmation({
+                  dialogs: api.dialogs,
+                  message: threadDeleteConfirmationMessage(thread.title),
+                }),
               );
-              if (confirmed._tag === "Failure" || !confirmed.value) return;
+              if (confirmed._tag === "Failure" || !confirmed.value.confirmed) return;
             }
             const deleted = await deleteThread(threadRef);
             if (

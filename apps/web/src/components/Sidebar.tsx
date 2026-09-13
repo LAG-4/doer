@@ -100,6 +100,11 @@ import { useOpenPrLink } from "../lib/openPullRequestLink";
 import { releaseComposerDraftUploads } from "../lib/composerDraftUploads";
 import { readLocalApi } from "../localApi";
 import {
+  requestThreadDeleteConfirmation,
+  threadBulkDeleteConfirmationMessage,
+  threadDeleteConfirmationMessage,
+} from "../lib/threadDeleteConfirm";
+import {
   isSameSidebarThreadRef,
   useSidebarPendingFileDropStore,
 } from "../sidebarPendingFileDropStore";
@@ -3905,15 +3910,12 @@ export default function Sidebar() {
       if (clicked.value !== "delete") return;
       if (confirmThreadDelete) {
         const confirmed = await settlePromise(() =>
-          api.dialogs.confirm(
-            [
-              `Delete ${count} thread${count === 1 ? "" : "s"}?`,
-              "This permanently clears conversation history for these threads.",
-            ].join("\n"),
-            { variant: "destructive" },
-          ),
+          requestThreadDeleteConfirmation({
+            dialogs: api.dialogs,
+            message: threadBulkDeleteConfirmationMessage(count),
+          }),
         );
-        if (confirmed._tag === "Failure" || !confirmed.value) return;
+        if (confirmed._tag === "Failure" || !confirmed.value.confirmed) return;
       }
       const { deletedThreadKeys, firstFailure } = await deleteSelectedThreadEntries({
         entries: threadKeys.map((threadKey) => ({ threadKey })),
@@ -4151,15 +4153,12 @@ export default function Sidebar() {
           case "delete": {
             if (confirmThreadDelete) {
               const confirmed = await settlePromise(() =>
-                api.dialogs.confirm(
-                  [
-                    `Delete thread "${thread.title}"?`,
-                    "This permanently clears conversation history for this thread.",
-                  ].join("\n"),
-                  { variant: "destructive" },
-                ),
+                requestThreadDeleteConfirmation({
+                  dialogs: api.dialogs,
+                  message: threadDeleteConfirmationMessage(thread.title),
+                }),
               );
-              if (confirmed._tag === "Failure" || !confirmed.value) return;
+              if (confirmed._tag === "Failure" || !confirmed.value.confirmed) return;
             }
             const result = await deleteThread(threadRef);
             if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {

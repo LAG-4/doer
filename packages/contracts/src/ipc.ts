@@ -1432,8 +1432,24 @@ export interface DesktopPreviewBridge {
 
 export type ConfirmDialogVariant = "default" | "destructive";
 
+export interface ConfirmDialogDontAskAgainOptions {
+  /** Checkbox label. Defaults to "Don't ask again" when omitted. */
+  readonly label?: string;
+}
+
 export interface ConfirmDialogOptions {
   readonly variant?: ConfirmDialogVariant;
+  /**
+   * Shows a "don't ask again" checkbox in the dialog. Plain `confirm` still
+   * shows it but only resolves the boolean decision; `confirmWithDontAskAgain`
+   * also resolves the checkbox state.
+   */
+  readonly dontAskAgain?: ConfirmDialogDontAskAgainOptions;
+}
+
+export interface ConfirmDialogResult {
+  readonly confirmed: boolean;
+  readonly dontAskAgain: boolean;
 }
 
 /**
@@ -1450,6 +1466,10 @@ export interface LocalApi {
   dialogs: {
     pickFolder: (options?: PickFolderOptions) => Promise<string | null>;
     confirm: (message: string, options?: ConfirmDialogOptions) => Promise<boolean>;
+    confirmWithDontAskAgain: (
+      message: string,
+      options?: ConfirmDialogOptions,
+    ) => Promise<ConfirmDialogResult>;
   };
   shell: {
     openExternal: (url: string) => Promise<void>;

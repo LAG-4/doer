@@ -1,6 +1,11 @@
-import type { ConfirmDialogOptions, ContextMenuItem, LocalApi } from "@t3tools/contracts";
+import type {
+  ConfirmDialogOptions,
+  ConfirmDialogResult,
+  ContextMenuItem,
+  LocalApi,
+} from "@t3tools/contracts";
 
-import { requestConfirmDialog } from "./confirmDialog";
+import { requestConfirmDialog, requestConfirmDialogWithDontAskAgain } from "./confirmDialog";
 import { dismissContextMenu, showContextMenuFallback } from "./contextMenuFallback";
 import { readBrowserClientSettings, writeBrowserClientSettings } from "./clientPersistenceStorage";
 
@@ -15,6 +20,17 @@ function createBrowserLocalApi(): LocalApi {
       },
       confirm: async (message, options?: ConfirmDialogOptions) => {
         return requestConfirmDialog(message, options) ?? false;
+      },
+      confirmWithDontAskAgain: async (
+        message,
+        options?: ConfirmDialogOptions,
+      ): Promise<ConfirmDialogResult> => {
+        return (
+          requestConfirmDialogWithDontAskAgain(message, options) ?? {
+            confirmed: false,
+            dontAskAgain: false,
+          }
+        );
       },
     },
     shell: {
