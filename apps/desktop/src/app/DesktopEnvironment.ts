@@ -157,10 +157,14 @@ const make = Effect.fn("desktop.environment.make")(function* (
       : input.platform === "darwin"
         ? path.join(homeDirectory, "Library", "Application Support")
         : Option.getOrElse(config.xdgConfigHome, () => path.join(homeDirectory, ".config"));
+  // DOER_HOME wins; T3CODE_HOME is honored as a fallback so an explicit
+  // `T3CODE_HOME=~/.t3` (or --base-dir ~/.t3) can still point Doer at a
+  // T3 Code install for one-off imports. The default is ~/.doer.
+  const configuredHome = Option.orElse(config.doerHome, () => config.t3Home);
   const baseDir = resolveDesktopBaseDir({
     homeDirectory,
     joinPath: path.join,
-    t3Home: config.t3Home,
+    t3Home: configuredHome,
   });
   const rootDir = path.resolve(input.dirname, "../../..");
   const appRoot = input.isPackaged ? input.appPath : rootDir;
@@ -177,7 +181,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
     baseDir,
     isDevelopment,
     joinPath: path.join,
-    t3Home: config.t3Home,
+    t3Home: configuredHome,
   });
   const userDataDirName = isDevelopment ? "doer-dev" : "doer";
   // Point at the original T3 Code directories so Doer picks up existing

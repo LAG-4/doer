@@ -191,6 +191,8 @@ describe("ssh tunnel scripts", () => {
     assert.include(buildRemoteLaunchScript(), "wait_ready");
     assert.include(buildRemoteLaunchScript(), '"$RUNNER_FILE" serve --host 127.0.0.1');
     assert.include(buildRemoteLaunchScript(), '--base-dir "$DEFAULT_SERVER_HOME"');
+    assert.include(buildRemoteLaunchScript(), 'DEFAULT_SERVER_HOME="$HOME/.doer"');
+    assert.include(buildRemoteLaunchScript(), 'STATE_DIR="$HOME/.doer/ssh-launch/$STATE_KEY"');
     assert.notInclude(buildRemoteLaunchScript(), "server-home");
     assert.include(buildRemoteLaunchScript(), "Remote Doer server did not become ready");
     assert.include(buildRemoteLaunchScript(), 'wait_ready "60000"');

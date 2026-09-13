@@ -178,14 +178,19 @@ export class ThemeTargetMissingError extends Schema.TaggedError<ThemeTargetMissi
   }
 }
 
+const envDoerHome = Config.string("DOER_HOME").pipe(Config.option);
 const envT3Home = Config.string("T3CODE_HOME").pipe(Config.option);
 
 const resolveThemePaths = Effect.fn(function* (explicitBaseDir: Option.Option<string>) {
-  // Same precedence as the rest of the CLI: --base-dir, then T3CODE_HOME,
-  // then the default home. A provisioning script exporting T3CODE_HOME must
-  // not have this one command silently target the default install.
-  const envHome = Option.filter(yield* envT3Home, (value) => value.trim().length > 0);
-  const configuredBaseDir = Option.orElse(explicitBaseDir, () => envHome);
+  // Same precedence as the rest of the CLI: --base-dir, then DOER_HOME,
+  // then T3CODE_HOME, then the default home. A provisioning script exporting
+  // either var must not have this one command silently target the default install.
+  const doerHome = Option.filter(yield* envDoerHome, (value) => value.trim().length > 0);
+  const t3Home = Option.filter(yield* envT3Home, (value) => value.trim().length > 0);
+  const configuredBaseDir = Option.orElse(
+    Option.orElse(explicitBaseDir, () => doerHome),
+    () => t3Home,
+  );
   const baseDir = yield* resolveBaseDir(Option.getOrUndefined(configuredBaseDir));
   const derivedPaths = yield* ServerConfig.deriveServerPaths(baseDir, undefined, {
     baseDirIsExplicit: Option.isSome(configuredBaseDir),

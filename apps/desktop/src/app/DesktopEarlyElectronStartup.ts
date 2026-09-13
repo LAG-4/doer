@@ -54,7 +54,10 @@ function resolveEarlyDesktopSettingsPath(input: {
   readonly homeDirectory: string;
   readonly joinPath: JoinPath;
 }): string {
-  const t3Home = Option.fromUndefinedOr(input.env.T3CODE_HOME);
+  // DOER_HOME wins; T3CODE_HOME is a fallback for pointing at a T3 install.
+  const t3Home = Option.fromUndefinedOr(
+    input.env.DOER_HOME?.trim() || input.env.T3CODE_HOME?.trim() || undefined,
+  );
   const baseDir = resolveDesktopBaseDir({
     homeDirectory: input.homeDirectory,
     joinPath: input.joinPath,

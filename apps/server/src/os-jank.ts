@@ -105,7 +105,10 @@ export const expandHomePath = Effect.fn(function* (input: string) {
 export const resolveBaseDir = Effect.fn(function* (raw: string | undefined) {
   const { join, resolve } = yield* Path.Path;
   if (!raw || raw.trim().length === 0) {
-    return join(NodeOS.homedir(), ".t3");
+    // Doer is independent from T3 Code: fresh installs start at ~/.doer.
+    // Point at ~/.t3 explicitly (--base-dir ~/.t3 or T3CODE_HOME=~/.t3)
+    // only to see or import an existing T3 Code install.
+    return join(NodeOS.homedir(), ".doer");
   }
   return resolve(yield* expandHomePath(raw.trim()));
 });
