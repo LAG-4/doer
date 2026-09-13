@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 import {
   completeConfirmDialogClose,
@@ -17,6 +17,7 @@ import {
   AlertDialogTitle,
 } from "./ui/alert-dialog";
 import { Button } from "./ui/button";
+import { Checkbox } from "./ui/checkbox";
 
 type ConfirmationCopy = {
   readonly title: string;
@@ -60,10 +61,20 @@ export function ConfirmDialogHost() {
 
   useEffect(() => registerConfirmDialogHost(), []);
 
-  const copy = resolveConfirmDialogCopy(state.status === "idle" ? "" : state.message);
+  const activeMessage = state.status === "idle" ? "" : state.message;
+  const copy = resolveConfirmDialogCopy(activeMessage);
   const confirmVariant = state.status === "idle" ? "default" : state.variant;
+  const dontAskAgainLabel = state.status === "idle" ? null : state.dontAskAgainLabel;
+
+  const [dontAskAgainChecked, setDontAskAgainChecked] = useState(false);
+  useEffect(() => {
+    if (state.status === "confirming") {
+      setDontAskAgainChecked(false);
+    }
+  }, [state.status, activeMessage]);
+
   const onCancel = () => respondToConfirmDialog(false);
-  const onConfirm = () => respondToConfirmDialog(true);
+  const onConfirm = () => respondToConfirmDialog(true, dontAskAgainChecked);
 
   return (
     <AlertDialog
@@ -82,6 +93,16 @@ export function ConfirmDialogHost() {
             <AlertDialogDescription className="whitespace-pre-line">
               {copy.description}
             </AlertDialogDescription>
+          ) : null}
+          {dontAskAgainLabel ? (
+            <label className="mt-1 flex cursor-pointer items-center gap-2 text-sm text-muted-foreground select-none">
+              <Checkbox
+                checked={dontAskAgainChecked}
+                onCheckedChange={(checked) => setDontAskAgainChecked(checked === true)}
+                aria-label={dontAskAgainLabel}
+              />
+              {dontAskAgainLabel}
+            </label>
           ) : null}
         </AlertDialogHeader>
         <AlertDialogFooter>

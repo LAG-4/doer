@@ -38,6 +38,10 @@ import { useUiStateStore } from "../uiStateStore";
 import { buildThreadRouteParams, resolveThreadRouteRef } from "../threadRoutes";
 import { formatWorktreePathForDisplay, getOrphanedWorktreePathForThread } from "../worktreeCleanup";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
+import {
+  requestThreadDeleteConfirmation,
+  threadDeleteConfirmationMessage,
+} from "../lib/threadDeleteConfirm";
 import { useClientSettings } from "./useSettings";
 import { useAtomCommand } from "../state/use-atom-command";
 
@@ -730,18 +734,15 @@ export function useThreadActions() {
       if (confirmThreadDelete && localApi) {
         const title = resolved?.thread.title ?? "this thread";
         const confirmationResult = await settlePromise(() =>
-          localApi.dialogs.confirm(
-            [
-              `Delete thread "${title}"?`,
-              "This permanently clears conversation history for this thread.",
-            ].join("\n"),
-            { variant: "destructive" },
-          ),
+          requestThreadDeleteConfirmation({
+            dialogs: localApi.dialogs,
+            message: threadDeleteConfirmationMessage(title),
+          }),
         );
         if (confirmationResult._tag === "Failure") {
           return confirmationResult;
         }
-        if (!confirmationResult.value) {
+        if (!confirmationResult.value.confirmed) {
           return AsyncResult.success(undefined);
         }
       }

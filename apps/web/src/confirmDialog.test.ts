@@ -5,11 +5,19 @@ import {
   readConfirmDialogState,
   registerConfirmDialogHost,
   requestConfirmDialog,
+  requestConfirmDialogWithDontAskAgain,
   resetConfirmDialogForTests,
   respondToConfirmDialog,
 } from "./confirmDialog";
 
 function requireConfirmation(confirmation: Promise<boolean> | undefined): Promise<boolean> {
+  if (!confirmation) {
+    throw new Error("Expected a registered confirmation host.");
+  }
+  return confirmation;
+}
+
+function requireRichConfirmation<T>(confirmation: Promise<T> | undefined): Promise<T> {
   if (!confirmation) {
     throw new Error("Expected a registered confirmation host.");
   }
@@ -23,6 +31,7 @@ describe("confirm dialog coordinator", () => {
 
   it("returns undefined until a themed host is mounted", () => {
     expect(requestConfirmDialog("Confirm this action?")).toBeUndefined();
+    expect(requestConfirmDialogWithDontAskAgain("Confirm this action?")).toBeUndefined();
     expect(readConfirmDialogState()).toEqual({ status: "idle" });
   });
 
@@ -36,6 +45,7 @@ describe("confirm dialog coordinator", () => {
       status: "confirming",
       message: "Delete this thread?",
       variant: "destructive",
+      dontAskAgainLabel: null,
     });
 
     respondToConfirmDialog(true);
@@ -44,10 +54,68 @@ describe("confirm dialog coordinator", () => {
       status: "closing",
       message: "Delete this thread?",
       variant: "destructive",
+      dontAskAgainLabel: null,
     });
 
     completeConfirmDialogClose();
     expect(readConfirmDialogState()).toEqual({ status: "idle" });
+    unregister();
+  });
+
+  it("exposes the don't-ask-again label and returns the checkbox state", async () => {
+    const unregister = registerConfirmDialogHost();
+    const confirmation = requireRichConfirmation(
+      requestConfirmDialogWithDontAskAgain("Delete this thread?", {
+        variant: "destructive",
+        dontAskAgain: {},
+      }),
+    );
+
+    expect(readConfirmDialogState()).toEqual({
+      status: "confirming",
+      message: "Delete this thread?",
+      variant: "destructive",
+      dontAskAgainLabel: "Don't ask again",
+    });
+
+    respondToConfirmDialog(true, true);
+    await expect(confirmation).resolves.toEqual({ confirmed: true, dontAskAgain: true });
+    completeConfirmDialogClose();
+    expect(readConfirmDialogState()).toEqual({ status: "idle" });
+    unregister();
+  });
+
+  it("honors a custom don't-ask-again label and drops the flag on cancel", async () => {
+    const unregister = registerConfirmDialogHost();
+    const confirmation = requireRichConfirmation(
+      requestConfirmDialogWithDontAskAgain("Delete this thread?", {
+        dontAskAgain: { label: "Never ask me" },
+      }),
+    );
+
+    expect(readConfirmDialogState()).toEqual({
+      status: "confirming",
+      message: "Delete this thread?",
+      variant: "default",
+      dontAskAgainLabel: "Never ask me",
+    });
+
+    respondToConfirmDialog(false, true);
+    await expect(confirmation).resolves.toEqual({ confirmed: false, dontAskAgain: false });
+    completeConfirmDialogClose();
+    expect(readConfirmDialogState()).toEqual({ status: "idle" });
+    unregister();
+  });
+
+  it("keeps the plain boolean API resolving to the decision", async () => {
+    const unregister = registerConfirmDialogHost();
+    const confirmation = requireConfirmation(
+      requestConfirmDialog("Delete this thread?", { dontAskAgain: {} }),
+    );
+
+    respondToConfirmDialog(true, true);
+    await expect(confirmation).resolves.toBe(true);
+    completeConfirmDialogClose();
     unregister();
   });
 
@@ -62,6 +130,7 @@ describe("confirm dialog coordinator", () => {
       status: "closing",
       message: "Delete the project?",
       variant: "default",
+      dontAskAgainLabel: null,
     });
 
     completeConfirmDialogClose();
@@ -69,6 +138,7 @@ describe("confirm dialog coordinator", () => {
       status: "confirming",
       message: "Delete the worktree too?",
       variant: "default",
+      dontAskAgainLabel: null,
     });
 
     respondToConfirmDialog(true);

@@ -111,6 +111,11 @@ import {
 import { isModelPickerOpen } from "../modelPickerVisibility";
 import { useShortcutModifierState } from "../shortcutModifierState";
 import { ensureLocalApi, readLocalApi } from "../localApi";
+import {
+  requestThreadDeleteConfirmation,
+  threadBulkDeleteConfirmationMessage,
+  threadDeleteConfirmationMessage,
+} from "../lib/threadDeleteConfirm";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useDesktopUpdateState } from "../state/desktopUpdate";
@@ -1953,14 +1958,13 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       if (clicked !== "delete") return;
 
       if (appSettingsConfirmThreadDelete) {
-        const confirmed = await api.dialogs.confirm(
-          [
-            `Delete ${count} thread${count === 1 ? "" : "s"}?`,
-            "This permanently clears conversation history for these threads.",
-          ].join("\n"),
-          { variant: "destructive" },
+        const confirmed = await settlePromise(() =>
+          requestThreadDeleteConfirmation({
+            dialogs: api.dialogs,
+            message: threadBulkDeleteConfirmationMessage(count),
+          }),
         );
-        if (!confirmed) return;
+        if (confirmed._tag === "Failure" || !confirmed.value.confirmed) return;
       }
 
       const { deletedThreadKeys, firstFailure } = await deleteSelectedThreadEntries({
@@ -2315,14 +2319,13 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       }
       if (clicked !== "delete") return;
       if (appSettingsConfirmThreadDelete) {
-        const confirmed = await api.dialogs.confirm(
-          [
-            `Delete thread "${thread.title}"?`,
-            "This permanently clears conversation history for this thread.",
-          ].join("\n"),
-          { variant: "destructive" },
+        const confirmed = await settlePromise(() =>
+          requestThreadDeleteConfirmation({
+            dialogs: api.dialogs,
+            message: threadDeleteConfirmationMessage(thread.title),
+          }),
         );
-        if (!confirmed) {
+        if (confirmed._tag === "Failure" || !confirmed.value.confirmed) {
           return;
         }
       }

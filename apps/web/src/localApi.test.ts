@@ -1,6 +1,7 @@
 import {
   DEFAULT_CLIENT_SETTINGS,
   type ConfirmDialogOptions,
+  type ConfirmDialogResult,
   type ContextMenuItem,
   type DesktopBridge,
 } from "@t3tools/contracts";
@@ -18,6 +19,11 @@ const dismissContextMenuMock = vi.fn<() => void>();
 const requestConfirmDialogMock =
   vi.fn<(message: string, options?: ConfirmDialogOptions) => Promise<boolean> | undefined>();
 
+const requestConfirmDialogWithDontAskAgainMock =
+  vi.fn<
+    (message: string, options?: ConfirmDialogOptions) => Promise<ConfirmDialogResult> | undefined
+  >();
+
 vi.mock("./contextMenuFallback", () => ({
   showContextMenuFallback: showContextMenuFallbackMock,
   dismissContextMenu: dismissContextMenuMock,
@@ -25,6 +31,7 @@ vi.mock("./contextMenuFallback", () => ({
 
 vi.mock("./confirmDialog", () => ({
   requestConfirmDialog: requestConfirmDialogMock,
+  requestConfirmDialogWithDontAskAgain: requestConfirmDialogWithDontAskAgainMock,
 }));
 
 function createLocalStorageStub(): Storage {
@@ -108,11 +115,34 @@ describe("LocalApi", () => {
 
   it("fails closed in a browser when no themed host is available", async () => {
     requestConfirmDialogMock.mockReturnValue(undefined);
+    requestConfirmDialogWithDontAskAgainMock.mockReturnValue(undefined);
     const { createLocalApi } = await import("./localApi");
 
     await expect(createLocalApi().dialogs.confirm("Delete this thread?")).resolves.toBe(false);
+    await expect(
+      createLocalApi().dialogs.confirmWithDontAskAgain("Delete this thread?"),
+    ).resolves.toEqual({ confirmed: false, dontAskAgain: false });
   });
 
+  it("forwards the don't-ask-again result from the themed host", async () => {
+    requestConfirmDialogWithDontAskAgainMock.mockResolvedValue({
+      confirmed: true,
+      dontAskAgain: true,
+    });
+    const { createLocalApi } = await import("./localApi");
+    const options = {
+      variant: "destructive",
+      dontAskAgain: { label: "Don't ask again" },
+    } as const;
+
+    await expect(
+      createLocalApi().dialogs.confirmWithDontAskAgain("Delete this thread?", options),
+    ).resolves.toEqual({ confirmed: true, dontAskAgain: true });
+    expect(requestConfirmDialogWithDontAskAgainMock).toHaveBeenCalledWith(
+      "Delete this thread?",
+      options,
+    );
+  });
   it("rejects opening System Settings when the desktop bridge is unavailable", async () => {
     const { createLocalApi } = await import("./localApi");
 
