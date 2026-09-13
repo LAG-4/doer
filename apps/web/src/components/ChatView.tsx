@@ -338,6 +338,7 @@ import { environmentShell } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
 import { createPageScrollController, type PageScrollKey } from "./chat/pageScrollController";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
+import { DraftHeroSuggestions } from "./chat/DraftHeroSuggestions";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
@@ -9094,6 +9095,12 @@ export default function ChatView(props: ChatViewProps) {
                         </div>
                       </div>
                     </ComposerSurface.Shell>
+                    {isDraftHeroState ? (
+                      <DraftHeroSuggestions
+                        draftTarget={composerDraftTarget}
+                        onPick={scheduleComposerFocus}
+                      />
+                    ) : null}
                     <div
                       aria-hidden
                       className="h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"
