@@ -256,16 +256,24 @@ https://doer.lagaryan.click. No store builds, no signing certs, no Clerk/relay,
 no Discord, no AUR. Operator checklist: `docs/operations/doer-distribution.md`.
 
 - **Release workflow** (`.github/workflows/release.yml`): free GitHub-hosted
-  runners; jobs are `resolve_commit → preflight → quality → build (+wsl
-prebuild) → publish_cli → release`. Upstream-only jobs (AUR, Vercel deploys,
-  Discord, `finalize`) stay in the file but are gated to
-  `github.repository == 'pingdotgg/t3code'` — never remove the gates, and
-  never let `finalize` run on the fork (it would push to fork `main`, which
-  must stay a pure upstream mirror).
-  Nightlies run **daily 02:08 UTC** and only publish when new commits exist
-  (see `.github/scripts/check-nightly-release.cjs`). Stable ships by pushing a
-  `vX.Y.Z` tag above `apps/desktop/package.json`, or `workflow_dispatch
-channel=stable`, which builds the latest nightly commit.
+  runners; jobs are `preflight → quality → build (+wsl
+prebuild) → publish_cli → release`. Triggers: a pushed `vX.Y.Z` tag, or manual
+  `workflow_dispatch` with an optional `version` input (defaults to
+  `apps/desktop/package.json`). No nightlies, no `queue: max` pile-ups, no
+  `production` environment gate, no relay/Clerk config — one run at a time in
+  the `release-stable` group. Upstream-only jobs (AUR, Vercel deploys,
+  Discord, `finalize`) were deleted from the fork file; if an upstream merge
+  re-adds them, delete them again (and never let `finalize` run on the fork —
+  it would push to fork `main`, which must stay a pure upstream mirror).
+- **Remaining workflows**: `ci.yml` (check, test incl. 3 server shards, rust,
+  release-smoke), `publish-release-assets.yml` (manual recovery: publish a
+  GitHub Release from a finished run's `desktop-*` artifacts without
+  rebuilding), `sync-upstream.yml` (fast-forwards fork `main` to upstream
+  daily), `doer-site-check.yml` (fork-owned daily guard that
+  doer.lagaryan.click still serves the Doer site), `issue-labels.yml`. Everything else (mobile EAS/fingerprint/
+  screenshots, relay deploy, Vercel previews, mac preview, Windows test lane,
+  PR size/vouch bots, transfer report, Cursor webhook) was deleted. If an
+  upstream merge re-adds any of them, delete them again.
 - **npm CLI**: package `@lag4/doer-cli`, binaries `doer` + `doer-cli` — both bin
   entries must exist or `npx @lag4/doer-cli` breaks. First publish auto-creates the
   package; auth is the `NPM_TOKEN` repo secret (granular token, publish

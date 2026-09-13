@@ -7,10 +7,9 @@ How Doer ships to users, for free. Agent-oriented rules live in
 
 - **Desktop app** (Windows x64, Linux x64, macOS arm64 + x64, unsigned) from
   [GitHub Releases](https://github.com/LAG-4/t3code/releases), with in-app
-  auto-update. Stable channel tracks finished releases, Nightly tracks previews.
-- **Terminal**: `npx @lag4/doer-cli@latest` (stable) or `npx @lag4/doer-cli@nightly`
-  (preview). The package also installs a short `doer` command. Same backend,
-  no desktop app needed.
+  auto-update.
+- **Terminal**: `npx @lag4/doer-cli@latest`. The package also installs a short
+  `doer` command. Same backend, no desktop app needed.
 - **Website**: https://doer.lagaryan.click/download always shows the newest
   build per channel.
 
@@ -49,13 +48,15 @@ the live domain served a fresh upstream build (canonical `t3.codes`,
 
 ## Shipping
 
-- **Nightly**: automatic, daily ~02:08 UTC, only when new commits exist. Manual:
-  Actions → Release → Run workflow → `channel: nightly`.
-- **Stable**: push a `vX.Y.Z` tag higher than `apps/desktop/package.json`
-  (first release: `v0.0.41`), or dispatch `channel: stable` (builds the latest
-  nightly commit — the tested path).
+- **Stable only**: push a `vX.Y.Z` tag higher than `apps/desktop/package.json`
+  (first release: `v0.0.41`), or Actions → Release → Run workflow with an
+  optional `version` input (blank builds the `apps/desktop/package.json`
+  version at the selected ref). No nightlies, no schedules.
 - Never push a test tag: every accepted tag publishes for real (npm package +
   GitHub Release).
+- **Recovery**: if desktop artifacts built but the release job couldn't
+  publish, Actions → Publish release assets re-publishes the GitHub Release
+  from that run's `desktop-*` artifacts without rebuilding.
 
 ## Identity (do not change casually)
 
