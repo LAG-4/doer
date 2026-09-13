@@ -33,6 +33,7 @@ export function computerUseQuickStart(command: string, needsPermission: boolean)
     "Before driving an approved app for the first time in a task, tell the user what you are about to do so they can hand over the desktop.",
     "Treat the desktop as the user's real session. Ask before sending, deleting, purchasing, approving, uploading, or touching password managers or unrelated private content.",
     "Prefer a dedicated plugin or MCP integration when one can do the job; use computer use for the visual interaction it cannot.",
+    "If the job is a local web app, the shared preview browser comes first; use computer use when you need the real desktop or the preview cannot do it.",
     needsPermission
       ? "OS permissions are still missing: ask the user to run `computer-use doctor` on this machine and grant Accessibility and Screen Recording to Open Computer Use, then call computer_start again."
       : "If an action reports missing permissions, ask the user to run `computer-use doctor` on this machine and grant what it asks for.",
