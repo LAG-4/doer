@@ -89,6 +89,22 @@ function adhocSignFile(filePath) {
   execFileSync("codesign", ["--force", "--sign", "-", filePath], { stdio: "pipe" });
 }
 
+/**
+ * Order Mach-O files deepest-first so nested components are signed before
+ * the binaries that enclose them (inside-out). codesign refuses to sign an
+ * enclosing binary while a nested component is still unsigned ("code object
+ * is not signed at all / In subcomponent: .../Helpers/chrome_crashpad_handler"),
+ * which broke the macOS x64 build while arm64 passed by luck of readdir order.
+ */
+function sortMachOFilesDeepestFirst(files) {
+  const depthOf = (filePath) => filePath.split(/[/\\]/).length;
+  return [...files].sort((a, b) => {
+    const depthDelta = depthOf(b) - depthOf(a);
+    if (depthDelta !== 0) return depthDelta;
+    return a < b ? -1 : a > b ? 1 : 0;
+  });
+}
+
 /** Ad-hoc seal one .app bundle, binding every nested component. */
 function sealAppBundle(appPath) {
   execFileSync("codesign", ["--force", "--deep", "--sign", "-", appPath], { stdio: "pipe" });
@@ -127,6 +143,7 @@ function findAppBundles(appOutDir) {
 module.exports = {
   collectMachOFiles,
   adhocSignFile,
+  sortMachOFilesDeepestFirst,
   sealAppBundle,
   assertBundleAdhocSealed,
   findAppBundles,
@@ -138,7 +155,7 @@ module.exports = {
     }
     const platformName = context.packager?.platform?.name;
     if (platformName !== undefined && platformName !== "mac") return;
-    for (const file of collectMachOFiles(context.appOutDir)) {
+    for (const file of sortMachOFilesDeepestFirst(collectMachOFiles(context.appOutDir))) {
       adhocSignFile(file);
     }
     const apps = findAppBundles(context.appOutDir);
