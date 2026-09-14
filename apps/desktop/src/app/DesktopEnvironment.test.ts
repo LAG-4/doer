@@ -164,6 +164,20 @@ describe("DesktopEnvironment", () => {
     }),
   );
 
+  it.effect("prefers DOER_PORT over T3CODE_PORT", () =>
+    Effect.gen(function* () {
+      const environment = yield* makeEnvironment(
+        {},
+        {
+          DOER_PORT: "4950",
+          T3CODE_PORT: "4949",
+        },
+      );
+
+      assert.deepEqual(environment.configuredBackendPort, Option.some(4950));
+    }),
+  );
+
   it.effect("uses a configured app user model id override", () =>
     Effect.gen(function* () {
       const environment = yield* makeEnvironment(

@@ -14,6 +14,7 @@ import {
   getDesktopUpdateActionError,
   getDesktopUpdateButtonTooltip,
   getDesktopUpdateInstallConfirmationMessage,
+  getDesktopUpdateManualDownloadHint,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
   shouldShowArm64IntelBuildWarning,
@@ -242,7 +243,7 @@ function SidebarUpdateControl() {
             stackedThreadToast({
               type: "error",
               title: "Could not install update",
-              description: actionError,
+              description: `${actionError} ${getDesktopUpdateManualDownloadHint()}`,
             }),
           );
         })
