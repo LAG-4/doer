@@ -208,7 +208,7 @@ const makeWindowsPayloadFixture = Effect.fn("test.makeWindowsPayloadFixture")(fu
     );
     yield* fs.writeFileString(path.join(linuxPrebuildDir, "pty.node"), "linux-pty");
     yield* fs.writeFileString(
-      path.join(linuxPrebuildDir, "t3code-wsl-node-pty.json"),
+      path.join(linuxPrebuildDir, "doer-wsl-node-pty.json"),
       '{"arch":"x64"}',
     );
     if (input.wslRuntime === "forbidden") {
@@ -324,6 +324,31 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         repo: "t3code",
         releaseType: "prerelease",
         channel: "nightly",
+      });
+    }),
+  );
+
+  it.effect("prefers the Doer update repository over T3 and CI defaults", () =>
+    Effect.gen(function* () {
+      const config = yield* resolveGitHubPublishConfig("latest").pipe(
+        Effect.provide(
+          ConfigProvider.layer(
+            ConfigProvider.fromEnv({
+              env: {
+                DOER_DESKTOP_UPDATE_REPOSITORY: "LAG-4/t3code",
+                T3CODE_DESKTOP_UPDATE_REPOSITORY: "pingdotgg/t3code",
+                GITHUB_REPOSITORY: "someone/else",
+              },
+            }),
+          ),
+        ),
+      );
+
+      assert.deepStrictEqual(config, {
+        provider: "github",
+        owner: "LAG-4",
+        repo: "t3code",
+        releaseType: "release",
       });
     }),
   );

@@ -2,7 +2,7 @@ import type { DesktopUpdateActionResult, DesktopUpdateState } from "@t3tools/con
 
 export type DesktopUpdateButtonAction = "download" | "install" | "none";
 
-const DESKTOP_RELEASE_HISTORY_URL = "https://github.com/pingdotgg/t3code/releases";
+const DESKTOP_RELEASE_HISTORY_URL = "https://github.com/LAG-4/t3code/releases";
 const DESKTOP_RELEASE_TAG_URL = `${DESKTOP_RELEASE_HISTORY_URL}/tag`;
 
 /**
@@ -23,6 +23,16 @@ export function getDesktopUpdateReleaseUrl(version: string | null): string | nul
 
 export function getDesktopUpdateReleaseHistoryUrl(): string {
   return DESKTOP_RELEASE_HISTORY_URL;
+}
+
+/**
+ * Recovery guidance for failed installs. The updater deliberately reports only
+ * generic error text (underlying causes can carry feed URLs with secrets), so
+ * a failed install — common on unsigned macOS builds, where the OS installer
+ * refuses the staged update — would otherwise leave the user retrying forever.
+ */
+export function getDesktopUpdateManualDownloadHint(): string {
+  return `If installing keeps failing, download the update from ${DESKTOP_RELEASE_HISTORY_URL} and install it manually.`;
 }
 
 export function resolveDesktopUpdateButtonAction(
