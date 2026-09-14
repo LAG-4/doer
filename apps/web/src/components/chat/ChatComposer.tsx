@@ -73,6 +73,7 @@ import {
   expandCollapsedComposerCursor,
   formatAssistantCitationForComposer,
   replaceTextRange,
+  slashMenuInsertionForComposerSnapshot,
 } from "../../composer-logic";
 import { DISCONNECTED_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
 import {
@@ -927,6 +928,7 @@ import {
   PaperclipIcon,
   PencilRulerIcon,
   PlayIcon,
+  SlashIcon,
   XIcon,
 } from "lucide-react";
 import { proposedPlanTitle } from "../../proposedPlan";
@@ -3831,6 +3833,47 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       });
     });
   }, [setIsComposerFocused]);
+
+  // Browsing commands/skills without typing the trigger. Inserting `/` on a
+  // fresh line reuses the existing slash menu (provider commands + skills),
+  // so the button needs no separate popup or selection logic.
+  const openComposerCommandMenu = useCallback(() => {
+    if (
+      isConnecting ||
+      isComposerApprovalState ||
+      pendingUserInputs.length > 0 ||
+      projectSelectionRequired
+    ) {
+      return;
+    }
+    if (isComposerCollapsedMobile) {
+      expandMobileComposer();
+    }
+    setIsComposerScrollCollapsed(false);
+    setIsComposerFocused(true);
+    const { snapshot, trigger } = resolveActiveComposerTrigger();
+    if (trigger?.kind === "slash-command") {
+      scheduleComposerFocus();
+      return;
+    }
+    const insertion = slashMenuInsertionForComposerSnapshot(
+      snapshot.value,
+      snapshot.expandedCursor,
+    );
+    applyPromptReplacement(insertion.rangeStart, insertion.rangeEnd, insertion.replacement);
+  }, [
+    applyPromptReplacement,
+    expandMobileComposer,
+    isComposerApprovalState,
+    isComposerCollapsedMobile,
+    isConnecting,
+    pendingUserInputs.length,
+    projectSelectionRequired,
+    resolveActiveComposerTrigger,
+    scheduleComposerFocus,
+    setIsComposerFocused,
+    setIsComposerScrollCollapsed,
+  ]);
 
   // ------------------------------------------------------------------
   // Prompt history (ArrowUp / ArrowDown)
@@ -6741,6 +6784,29 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   }
                   className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
                 >
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          onPointerDown={(event) => event.preventDefault()}
+                          onClick={openComposerCommandMenu}
+                          disabled={
+                            isConnecting ||
+                            isComposerApprovalState ||
+                            projectSelectionRequired ||
+                            pendingUserInputs.length > 0
+                          }
+                          aria-label="Browse commands & skills"
+                        />
+                      }
+                    >
+                      <SlashIcon />
+                    </TooltipTrigger>
+                    <TooltipPopup>Browse commands &amp; skills</TooltipPopup>
+                  </Tooltip>
                   {showComposerAttachAction ? (
                     <>
                       <input
