@@ -7,9 +7,11 @@ import {
   buildProjectActionItems,
   buildThreadActionItems,
   buildLinkedThreadActionItems,
+  canUseNativeFolderPicker,
   enumerateCommandPaletteItems,
   filterPinnedBrowseEntries,
   filterCommandPaletteGroups,
+  getCommandPaletteInputPlaceholder,
   reduceCommandPaletteUiState,
   type CommandPaletteGroup,
 } from "./CommandPalette.logic";
@@ -620,6 +622,90 @@ describe("buildThreadActionItems", () => {
     });
 
     expect(items.map((item) => item.value)).toEqual(["thread:thread-active"]);
+  });
+});
+
+describe("canUseNativeFolderPicker", () => {
+  const primaryEnvironmentId = EnvironmentId.make("environment-primary");
+  const secondaryEnvironmentId = EnvironmentId.make("environment-secondary");
+
+  it("needs the desktop shell that owns the picker", () => {
+    expect(
+      canUseNativeFolderPicker({
+        hasDesktopBridge: false,
+        environmentId: primaryEnvironmentId,
+        primaryEnvironmentId,
+        environmentIsDesktopLocal: true,
+        desktopInstanceId: null,
+      }),
+    ).toBe(false);
+  });
+
+  it("rejects a missing environment", () => {
+    expect(
+      canUseNativeFolderPicker({
+        hasDesktopBridge: true,
+        environmentId: null,
+        primaryEnvironmentId,
+        environmentIsDesktopLocal: false,
+        desktopInstanceId: null,
+      }),
+    ).toBe(false);
+  });
+
+  it("always targets the primary environment", () => {
+    expect(
+      canUseNativeFolderPicker({
+        hasDesktopBridge: true,
+        environmentId: primaryEnvironmentId,
+        primaryEnvironmentId,
+        environmentIsDesktopLocal: false,
+        desktopInstanceId: null,
+      }),
+    ).toBe(true);
+  });
+
+  it("routes a desktop-local secondary only with its pool instance id", () => {
+    const base = {
+      hasDesktopBridge: true,
+      environmentId: secondaryEnvironmentId,
+      primaryEnvironmentId,
+      environmentIsDesktopLocal: true,
+    } as const;
+    expect(canUseNativeFolderPicker({ ...base, desktopInstanceId: "wsl:ubuntu" })).toBe(true);
+    expect(canUseNativeFolderPicker({ ...base, desktopInstanceId: null })).toBe(false);
+  });
+
+  it("never targets remote environments", () => {
+    expect(
+      canUseNativeFolderPicker({
+        hasDesktopBridge: true,
+        environmentId: secondaryEnvironmentId,
+        primaryEnvironmentId,
+        environmentIsDesktopLocal: false,
+        desktopInstanceId: "wsl:ubuntu",
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("add-project browse copy", () => {
+  it("labels the manual folder list without jargon", () => {
+    const groups = buildBrowseGroups({
+      browseEntries: [{ name: "Documents", fullPath: "/Users/test/Documents" }],
+      browseQuery: "~/",
+      canBrowseUp: false,
+      upIcon: null,
+      directoryIcon: null,
+      browseUp: vi.fn(),
+      browseTo: vi.fn(),
+    });
+    expect(groups[0]?.label).toBe("Folders");
+  });
+
+  it("prompts for a folder instead of a path", () => {
+    expect(getCommandPaletteInputPlaceholder("root-browse")).toBe("Choose a project folder…");
+    expect(getCommandPaletteInputPlaceholder("submenu-browse")).toBe("Choose a folder…");
   });
 });
 

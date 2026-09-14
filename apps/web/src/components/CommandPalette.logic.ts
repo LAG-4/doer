@@ -180,6 +180,32 @@ export function enumerateCommandPaletteItems(
 
 export type CommandPaletteMode = "root" | "root-browse" | "submenu" | "submenu-browse";
 
+/**
+ * Whether the native OS folder picker can target an environment. The desktop
+ * shell owns the picker, so pure web builds never qualify. The primary
+ * environment always resolves to the desktop's own filesystem; a desktop-local
+ * secondary backend (today: WSL) needs its pool instance id so the desktop
+ * can route the dialog into that backend's filesystem instead of the primary.
+ * Without it pickFolder would open the primary (Windows) picker, then add the
+ * chosen Windows path against the WSL env — a wrong-path footgun. Stay hidden
+ * until the bootstrap mapping is available rather than mis-routing.
+ */
+export function canUseNativeFolderPicker(input: {
+  readonly hasDesktopBridge: boolean;
+  readonly environmentId: EnvironmentId | null;
+  readonly primaryEnvironmentId: EnvironmentId | null;
+  readonly environmentIsDesktopLocal: boolean;
+  readonly desktopInstanceId: string | null;
+}): boolean {
+  if (!input.hasDesktopBridge || input.environmentId === null) {
+    return false;
+  }
+  if (input.environmentId === input.primaryEnvironmentId) {
+    return true;
+  }
+  return input.environmentIsDesktopLocal && input.desktopInstanceId !== null;
+}
+
 // A project as the palette shows it. `displayName` is the grouped label (for
 // example "owner/repo" when projects are merged across machines). Keep `title`
 // as the real project title: the automatic project icon is derived from it, and
@@ -481,7 +507,7 @@ export function buildBrowseGroups(input: {
     });
   }
 
-  return [{ value: "directories", label: "Directories", items }];
+  return [{ value: "directories", label: "Folders", items }];
 }
 
 export function filterPinnedBrowseEntries(input: {
@@ -536,10 +562,10 @@ export function getCommandPaletteInputPlaceholder(mode: CommandPaletteMode): str
     case "root":
       return "Search commands, projects, and threads...";
     case "root-browse":
-      return "Enter project path (e.g. ~/projects/my-app)";
+      return "Choose a project folder…";
     case "submenu":
       return "Search...";
     case "submenu-browse":
-      return "Enter path (e.g. ~/projects/my-app)";
+      return "Choose a folder…";
   }
 }
