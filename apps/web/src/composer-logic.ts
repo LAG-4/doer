@@ -255,6 +255,35 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
   };
 }
 
+export interface ComposerSlashMenuInsertion {
+  rangeStart: number;
+  rangeEnd: number;
+  replacement: string;
+}
+
+/**
+ * Insertion that opens the existing slash menu (provider commands + skills)
+ * on a fresh line, so a toolbar button can browse without typing `/`.
+ * The returned range uses expanded coordinates for `replaceTextRange`.
+ */
+export function slashMenuInsertionForComposerSnapshot(
+  value: string,
+  expandedCursorInput: number,
+): ComposerSlashMenuInsertion {
+  const cursor = clampCursor(value, expandedCursorInput);
+  if (value.trim().length === 0) {
+    return { rangeStart: 0, rangeEnd: value.length, replacement: "/" };
+  }
+  const lineStart = value.lastIndexOf("\n", Math.max(0, cursor - 1)) + 1;
+  const linePrefix = value.slice(lineStart, cursor);
+  if (linePrefix.trim().length === 0) {
+    // A blank line keeps its indentation outside the trigger, so replace the
+    // indent with `/` to land on a line the slash menu recognizes.
+    return { rangeStart: lineStart, rangeEnd: cursor, replacement: "/" };
+  }
+  return { rangeStart: cursor, rangeEnd: cursor, replacement: "\n/" };
+}
+
 export function parseStandaloneComposerSlashCommand(
   text: string,
 ): Exclude<ComposerSlashCommand, "model"> | null {

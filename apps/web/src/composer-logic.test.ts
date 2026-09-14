@@ -17,6 +17,7 @@ import {
   isCollapsedCursorAdjacentToInlineToken,
   parseStandaloneComposerSlashCommand,
   replaceTextRange,
+  slashMenuInsertionForComposerSnapshot,
 } from "./composer-logic";
 import { formatTerminalContextReference } from "./lib/terminalContext";
 
@@ -377,6 +378,41 @@ describe("replaceTextRange", () => {
       text: "hello ",
       cursor: 6,
     });
+  });
+});
+
+describe("slashMenuInsertionForComposerSnapshot", () => {
+  it("replaces a blank prompt with a slash trigger", () => {
+    expect(slashMenuInsertionForComposerSnapshot("   ", 3)).toEqual({
+      rangeStart: 0,
+      rangeEnd: 3,
+      replacement: "/",
+    });
+  });
+
+  it("replaces blank-line indentation so the slash starts the line", () => {
+    const value = "hello\n   ";
+    const insertion = slashMenuInsertionForComposerSnapshot(value, value.length);
+    const next = replaceTextRange(
+      value,
+      insertion.rangeStart,
+      insertion.rangeEnd,
+      insertion.replacement,
+    );
+    expect(detectComposerTrigger(next.text, next.cursor)?.kind).toBe("slash-command");
+  });
+
+  it("opens a fresh line when the current line has text", () => {
+    const value = "hello";
+    const insertion = slashMenuInsertionForComposerSnapshot(value, value.length);
+    const next = replaceTextRange(
+      value,
+      insertion.rangeStart,
+      insertion.rangeEnd,
+      insertion.replacement,
+    );
+    expect(next.text).toBe("hello\n/");
+    expect(detectComposerTrigger(next.text, next.cursor)?.kind).toBe("slash-command");
   });
 });
 
