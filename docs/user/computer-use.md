@@ -9,7 +9,9 @@ logged-in graphical session and works best on straightforward desktop setups.
 ## Getting started
 
 Computer use is on by default. The first time an agent needs it, Doer
-installs a small pinned helper and checks system permissions. On macOS, grant
+downloads and installs a small pinned helper automatically — no Node.js,
+npm, or other manual setup needed on any platform — and checks system
+permissions. On macOS, grant
 **Screen Recording** and **Accessibility** to Open Computer Use when prompted;
 without them the agent can neither see nor click anything. On Windows, keep
 the target app visible on the active desktop while the task runs.

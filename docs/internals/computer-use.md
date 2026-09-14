@@ -9,8 +9,11 @@ explains why.
 ## One external tool, two gates
 
 [open-computer-use](../../apps/server/src/computer/ComputerToolchain.ts) is
-npm-installed at a pinned version into the T3 home and run with the server's
-Node, never `npx`. Consent has two layers that must stay in agreement:
+installed at a pinned version into the T3 home and run with the server's
+Node, never `npx`. The preferred path downloads the pinned registry tarball
+with the server's own network stack and unpacks it directly, so no system
+npm, pnpm, or Node.js is required (`npm install` stays as a proxy fallback).
+Consent has two layers that must stay in agreement:
 
 1. The `computer` MCP capability, from `enableAgentComputerAccess`
    (environment default plus project override). This is the kill switch.
