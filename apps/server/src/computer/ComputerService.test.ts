@@ -3,6 +3,7 @@ import { describe, expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { FetchHttpClient } from "effect/unstable/http";
 
 import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
@@ -17,6 +18,9 @@ const serviceLayer = (prefix: string) =>
     Layer.provide(ProcessRunnerMock),
     Layer.provide(Layer.succeed(HostProcessPlatform, "darwin")),
     Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix })),
+    // Never fetched in these tests (no install path runs), but the install
+    // step requires an HTTP client in scope.
+    Layer.provide(FetchHttpClient.layer),
     Layer.provide(NodeServices.layer),
   );
 

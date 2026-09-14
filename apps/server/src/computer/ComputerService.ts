@@ -22,6 +22,7 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
+import { HttpClient } from "effect/unstable/http";
 
 import { ServerConfig } from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
@@ -212,6 +213,7 @@ export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const platform = yield* HostProcessPlatform;
   const runner = yield* ProcessRunner.ProcessRunner;
+  const httpClient = yield* HttpClient.HttpClient;
   const config = yield* ServerConfig;
   const lock = yield* Semaphore.make(1);
 
@@ -342,6 +344,10 @@ export const make = Effect.gen(function* () {
       Effect.provideService(FileSystem.FileSystem, fs),
       Effect.provideService(Path.Path, path),
       Effect.provideService(ProcessRunner.ProcessRunner, runner),
+      // The toolchain install needs no user-installed tools, but it does
+      // need the ambient platform and HTTP client to fetch the helper itself.
+      Effect.provideService(HostProcessPlatform, platform),
+      Effect.provideService(HttpClient.HttpClient, httpClient),
     );
     return paths.entryPath;
   });
