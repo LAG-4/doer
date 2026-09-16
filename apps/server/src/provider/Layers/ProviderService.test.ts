@@ -350,6 +350,16 @@ function makeRecordingAnalytics() {
         Effect.sync(() => {
           events.push({ event, ...(properties ? { properties } : {}) });
         }),
+      captureException: (error, properties) =>
+        Effect.sync(() => {
+          events.push({
+            event: "$exception",
+            properties: {
+              message: error instanceof Error ? error.message : String(error),
+              ...properties,
+            },
+          });
+        }),
       flush: Effect.void,
     }),
   );

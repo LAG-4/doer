@@ -72,6 +72,17 @@ const makeRecordingAnalytics = Effect.gen(function* () {
     AnalyticsService.of({
       record: (event, properties) =>
         Ref.update(recorded, (current) => [...current, { event, properties }]),
+      captureException: (error, properties) =>
+        Ref.update(recorded, (current) => [
+          ...current,
+          {
+            event: "$exception",
+            properties: {
+              message: error instanceof Error ? error.message : String(error),
+              ...properties,
+            },
+          },
+        ]),
       flush: Effect.void,
     }),
   );

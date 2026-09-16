@@ -1,8 +1,11 @@
 /**
- * Anonymous PostHog telemetry service.
+ * PostHog product telemetry service.
  *
  * Persists an installation-scoped anonymous identifier, buffers events in
- * memory, and flushes batches over Effect's HTTP client.
+ * memory, and flushes batches over Effect's HTTP client to the Doer PostHog
+ * Cloud project. The project key and ingest host below are public by design
+ * (they also ship in client bundles) and can be overridden with
+ * T3CODE_POSTHOG_KEY / T3CODE_POSTHOG_HOST.
  *
  * @module AnalyticsService
  */
@@ -29,14 +32,28 @@ interface BufferedAnalyticsEvent {
   readonly capturedAt: string;
 }
 
-const TelemetryEnvConfig = Config.all({
+/**
+ * TelemetryPublicConfig - The subset of telemetry settings that is safe to
+ * share with browsers: the feature flag plus the PostHog project key and
+ * host, both of which are public by design (they ship in client bundles).
+ * The browser SDK reads them from GET /api/telemetry/config at runtime so no
+ * ingest URL is ever baked into a build.
+ */
+export const TelemetryPublicConfig = Config.all({
   posthogKey: Config.string("T3CODE_POSTHOG_KEY").pipe(
-    Config.withDefault("phc_XOWci4oZP4VvLiEyrFqkFjP4CZn55mjYYBMREK5Wd6m"),
+    Config.withDefault("phc_tZ8tQXasmJMxeE4HtdGgZy5jxaCxLTLBbGCR5utaKNVx"),
   ),
   posthogHost: Config.string("T3CODE_POSTHOG_HOST").pipe(
     Config.withDefault("https://us.i.posthog.com"),
   ),
   enabled: Config.boolean("T3CODE_TELEMETRY_ENABLED").pipe(Config.withDefault(true)),
+});
+
+const TelemetryEnvConfig = Config.all({
+  public: TelemetryPublicConfig,
+  processPersonProfile: Config.boolean("T3CODE_POSTHOG_PERSON_PROFILES").pipe(
+    Config.withDefault(true),
+  ),
   flushBatchSize: Config.number("T3CODE_TELEMETRY_FLUSH_BATCH_SIZE").pipe(Config.withDefault(20)),
   maxBufferedEvents: Config.number("T3CODE_TELEMETRY_MAX_BUFFERED_EVENTS").pipe(
     Config.withDefault(1_000),
@@ -53,6 +70,15 @@ export class AnalyticsService extends Context.Service<
       properties?: Readonly<Record<string, unknown>>,
     ) => Effect.Effect<void>;
 
+    /**
+     * Record an exception for PostHog error tracking as a `$exception`
+     * event. Never throws; delivery is best-effort like any other event.
+     */
+    readonly captureException: (
+      error: unknown,
+      properties?: Readonly<Record<string, unknown>>,
+    ) => Effect.Effect<void>;
+
     /** Flush all currently queued telemetry events. */
     readonly flush: Effect.Effect<void>;
   }
@@ -62,6 +88,7 @@ export class AnalyticsService extends Context.Service<
     AnalyticsService,
     AnalyticsService.of({
       record: () => Effect.void,
+      captureException: () => Effect.void,
       flush: Effect.void,
     }),
   );
@@ -123,16 +150,21 @@ export const make = Effect.gen(function* () {
   const sendBatch = Effect.fn("AnalyticsService.sendBatch")(function* (
     events: ReadonlyArray<BufferedAnalyticsEvent>,
   ) {
-    if (!telemetryConfig.enabled || !identifier) return;
+    const apiKey = telemetryConfig.public.posthogKey.trim();
+    const apiHost = telemetryConfig.public.posthogHost.trim().replace(/\/+$/, "");
+    // An unconfigured project key means the operator has not pointed this
+    // build at their own PostHog instance yet: drop silently instead of
+    // sending anywhere.
+    if (!telemetryConfig.public.enabled || !identifier || apiKey === "" || apiHost === "") return;
 
     const payload = {
-      api_key: telemetryConfig.posthogKey,
+      api_key: apiKey,
       batch: events.map((event) => ({
         event: event.event,
         distinct_id: identifier,
         properties: {
           ...event.properties,
-          $process_person_profile: false,
+          $process_person_profile: telemetryConfig.processPersonProfile,
           platform: hostPlatform,
           wsl: Option.getOrUndefined(telemetryConfig.wslDistroName),
           arch: hostArchitecture,
@@ -148,7 +180,7 @@ export const make = Effect.gen(function* () {
       })),
     };
 
-    yield* HttpClientRequest.post(`${telemetryConfig.posthogHost}/batch/`).pipe(
+    yield* HttpClientRequest.post(`${apiHost}/batch/`).pipe(
       HttpClientRequest.bodyJson(payload),
       Effect.flatMap(httpClient.execute),
       Effect.flatMap(HttpClientResponse.filterStatusOk),
@@ -182,7 +214,7 @@ export const make = Effect.gen(function* () {
 
   const record: AnalyticsService["Service"]["record"] = Effect.fn("AnalyticsService.record")(
     function* (event, properties) {
-      if (!telemetryConfig.enabled || !identifier) return;
+      if (!telemetryConfig.public.enabled || !identifier) return;
 
       const enqueueResult = yield* enqueueBufferedEvent(event, properties);
       if (enqueueResult.dropped) {
@@ -194,13 +226,28 @@ export const make = Effect.gen(function* () {
     },
   );
 
+  const captureException: AnalyticsService["Service"]["captureException"] = Effect.fn(
+    "AnalyticsService.captureException",
+  )(function* (error, properties) {
+    if (!telemetryConfig.public.enabled || !identifier) return;
+
+    const message = error instanceof Error ? error.message : String(error);
+    const type = error instanceof Error ? error.name : typeof error;
+    yield* record("$exception", {
+      $exception_message: message.slice(0, 2_000),
+      $exception_type: type,
+      $exception_fingerprint: `${type}:${message}`.slice(0, 2_000),
+      ...properties,
+    });
+  });
+
   yield* Effect.forever(Effect.sleep(1000).pipe(Effect.flatMap(() => flush)), {
     disableYield: true,
   }).pipe(Effect.forkScoped);
 
   yield* Effect.addFinalizer(() => flush);
 
-  return AnalyticsService.of({ record, flush });
+  return AnalyticsService.of({ record, captureException, flush });
 });
 
 export const layer = Layer.effect(AnalyticsService, make);
