@@ -1,13 +1,14 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { ServerSelfUpdateError, ThreadId } from "@t3tools/contracts";
-import { HostProcessExecutablePath } from "@t3tools/shared/hostProcess";
+import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
 import * as Path from "effect/Path";
+import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
 import * as ServerConfig from "../config.ts";
@@ -24,6 +25,28 @@ interface HarnessOptions {
   readonly requestUpdate?: ServiceLauncherClient.ServiceLauncherClient["Service"]["requestUpdate"];
   readonly desktopAppUpdate?: DesktopAppUpdate.DesktopAppUpdate["Service"];
 }
+
+// The staged runtime is a release archive: the fake client serves SHA256SUMS
+// and the tarball, and the fake runner stands in for tar before it answers
+// the staged preflight.
+const archiveBytes = new TextEncoder().encode("not really a tarball");
+const releaseHttpClient = (order: string[]) =>
+  HttpClient.make((request) =>
+    Effect.gen(function* () {
+      if (request.url.endsWith("/SHA256SUMS")) {
+        const digest = yield* Effect.promise(() => crypto.subtle.digest("SHA-256", archiveBytes));
+        const hex = Array.from(new Uint8Array(digest), (byte) =>
+          byte.toString(16).padStart(2, "0"),
+        ).join("");
+        return HttpClientResponse.fromWeb(
+          request,
+          new Response(`${hex}  t3-1.1.0-linux-x64.tar.gz\n`),
+        );
+      }
+      order.push("download");
+      return HttpClientResponse.fromWeb(request, new Response(archiveBytes));
+    }),
+  );
 
 const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
   options: HarnessOptions = {},
@@ -99,7 +122,9 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
         run: () => Effect.die("unexpected desktop app update run"),
       },
     ),
-    Effect.provideService(HostProcessExecutablePath, "/usr/bin/node"),
+    Effect.provideService(HttpClient.HttpClient, releaseHttpClient(order)),
+    Effect.provideService(HostProcessPlatform, "linux"),
+    Effect.provideService(HostProcessArchitecture, "x64"),
     Effect.provide(ServerConfig.layer({ ...config, mode: options.mode ?? "web" })),
   );
   return { selfUpdate, order };

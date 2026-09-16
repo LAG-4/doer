@@ -43,7 +43,8 @@ function detectCliRunner(entryPath: string): CliRunner | null {
  * anything else suggests the bare package.
  */
 function suggestedPackageSpec(version: string): string {
-  return version.includes("-nightly.") ? "@lag4/doer-cli@nightly" : "@lag4/doer-cli";
+  const channel = /^[^-+]+-(nightly|preview)\./.exec(version)?.[1];
+  return channel === undefined ? "@lag4/doer-cli" : `@lag4/doer-cli@${channel}`;
 }
 
 /**

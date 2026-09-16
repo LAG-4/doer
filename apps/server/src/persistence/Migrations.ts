@@ -68,6 +68,9 @@ import Migration0052 from "./Migrations/052_ProjectionAutomationsDedicatedThread
 // lite's 051/052 automation migrations. It lives at 053 here so existing
 // Doer databases (already at 52, and the migrator skips by max id) still run it.
 import Migration0053 from "./Migrations/053_ProjectionThreadMessageContext.ts";
+// Upstream added this as 052_ProjectionThreadTitleState, colliding with lite's
+// 052 automation migration. It lives at 054 here for the same max-id reason.
+import Migration0054 from "./Migrations/052_ProjectionThreadTitleState.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -133,6 +136,7 @@ const migrationEntries = [
   [51, "ProjectionAutomations", Migration0051],
   [52, "ProjectionAutomationsDedicatedThread", Migration0052],
   [53, "ProjectionThreadMessageContext", Migration0053],
+  [54, "ProjectionThreadTitleState", Migration0054],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

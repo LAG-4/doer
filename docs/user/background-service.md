@@ -5,7 +5,8 @@ to keep a terminal open.
 
 ## Manage the service
 
-Run these commands on the machine that will host T3 Code:
+Install the `t3` CLI first ([Install T3 Code](./install.md#command-line)), then
+run these commands on the machine that will host T3 Code:
 
 | Task                            | Command                                       |
 | ------------------------------- | --------------------------------------------- |
@@ -15,6 +16,8 @@ Run these commands on the machine that will host T3 Code:
 | Stop and remove from startup    | `npx @lag4/doer-cli@latest service uninstall` |
 
 Uninstalling the service leaves your projects, threads, and settings intact.
+Running `t3 service install` again repairs a service that `t3 service status`
+reports as broken.
 
 Install and update use the version of the CLI you invoke. For nightly, use
 `npx @lag4/doer-cli@nightly service update`; replace `nightly` with an exact version to pin
@@ -24,6 +27,17 @@ one. An older CLI refuses to replace a newer service unless you explicitly add
 Updating restarts the server. Finish active work first, and wait for any remote
 update already in progress. To match a remote client's version, follow
 [Updating T3 Code](./updating.md).
+
+Pass an exact version (`t3 update 0.0.42`) to pin one, `--channel nightly` to
+switch trains, or `--allow-downgrade` to move backwards. `preview` is a
+maintainers' test train: its builds can be broken and are never offered as
+updates, so the installer and `t3 update` ask for confirmation before
+installing one.
+
+`t3 uninstall` removes the background service, the `t3` launcher, and the
+downloaded versions after showing you the list and asking once. Your projects,
+threads, and settings under `~/.t3/userdata` are kept. Pass `--yes` from a
+script.
 
 ## Platform support
 
@@ -73,7 +87,7 @@ that session open.
 
 On macOS, check **System Settings → General → Login Items** if the service no
 longer starts at login. If agent work cannot access Desktop, Documents, or
-Downloads, it may need Full Disk Access for the Node executable listed in
+Downloads, it may need Full Disk Access for the `t3` executable listed in
 `ProgramArguments` in
 `~/Library/LaunchAgents/click.lagaryan.doer.service.plist`.
 
