@@ -165,8 +165,8 @@ describe("ClaudeSettings auto-compaction", () => {
 });
 
 describe("ClientSettings notifications", () => {
-  it("requires opt-in when existing settings omit notification preferences", () => {
-    expect(decodeClientSettings({}).notificationMode).toBe("off");
+  it("defaults to sound so question/input popups chime without opt-in", () => {
+    expect(decodeClientSettings({}).notificationMode).toBe("sound");
     expect(decodeClientSettings({}).inAppNotificationsEnabled).toBe(false);
     expect(decodeClientSettingsPatch({})).not.toHaveProperty("inAppNotificationsEnabled");
     expect(decodeClientSettingsPatch({})).not.toHaveProperty("notificationMode");
