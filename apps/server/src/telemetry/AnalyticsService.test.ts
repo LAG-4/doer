@@ -26,6 +26,7 @@ interface RecordedBatchRequest {
         readonly serverAppVersion?: string;
         readonly serverMode?: string;
         readonly t3CodeVersion?: string;
+        readonly $process_person_profile?: boolean;
       };
     }>;
   } | null;
@@ -42,6 +43,7 @@ interface RecordedBatchBody {
       readonly serverAppVersion?: string;
       readonly serverMode?: string;
       readonly t3CodeVersion?: string;
+      readonly $process_person_profile?: boolean;
     };
   }>;
 }
@@ -141,7 +143,8 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
               event.properties?.serverOs === "Linux" &&
               event.properties.serverArch === "arm64" &&
               event.properties.serverAppVersion === event.properties.t3CodeVersion &&
-              event.properties.serverMode === "web",
+              event.properties.serverMode === "web" &&
+              event.properties.$process_person_profile === true,
           ),
         ),
         true,
@@ -185,10 +188,79 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
         yield* Layer.launch(batchServerLayer).pipe(Effect.forkScoped);
         const analytics = yield* AnalyticsService.AnalyticsService;
         yield* analytics.record("test.disabled", { index: 1 });
+        yield* analytics.captureException(new Error("test disabled boom"));
         yield* analytics.flush;
       }).pipe(Effect.provide(runtimeLayer));
 
       assert.deepEqual(capturedPaths, []);
+    }),
+  );
+
+  it.effect("captureException delivers a $exception event", () =>
+    Effect.gen(function* () {
+      const capturedRequests: Array<RecordedBatchRequest> = [];
+      const serverConfigLayer = ServerConfig.ServerConfig.layerTest(process.cwd(), {
+        prefix: "t3-telemetry-exception-",
+      });
+
+      const telemetryLayer = AnalyticsService.layer.pipe(Layer.provideMerge(serverConfigLayer));
+      const configLayer = ConfigProvider.layer(
+        ConfigProvider.fromUnknown({
+          T3CODE_TELEMETRY_ENABLED: true,
+          T3CODE_POSTHOG_KEY: "phc_test_key",
+          T3CODE_POSTHOG_HOST: "http://localhost",
+          T3CODE_TELEMETRY_FLUSH_BATCH_SIZE: 20,
+        }),
+      );
+      const batchServerLayer = HttpServer.serve(
+        Effect.gen(function* () {
+          const request = yield* HttpServerRequest.HttpServerRequest;
+          if (request.method !== "POST") {
+            return HttpServerResponse.empty({ status: 404 });
+          }
+
+          const payload = yield* request.json.pipe(
+            Effect.map((body) => body as RecordedBatchRequest["body"]),
+            Effect.orElseSucceed(() => null),
+          );
+
+          capturedRequests.push({ path: request.url, body: payload });
+
+          return HttpServerResponse.jsonUnsafe({});
+        }),
+      );
+      const runtimeLayer = telemetryLayer.pipe(
+        Layer.provide(configLayer),
+        Layer.provide(
+          Layer.mergeAll(
+            Layer.succeed(HostProcessPlatform, "linux"),
+            Layer.succeed(HostProcessArchitecture, "arm64"),
+          ),
+        ),
+        Layer.provideMerge(NodeHttpServer.layerTest),
+      );
+
+      yield* Effect.gen(function* () {
+        yield* Layer.launch(batchServerLayer).pipe(Effect.forkScoped);
+        const analytics = yield* AnalyticsService.AnalyticsService;
+        yield* analytics.captureException(new TypeError("test capture boom"), {
+          where: "test",
+        });
+        yield* analytics.flush;
+      }).pipe(Effect.provide(runtimeLayer));
+
+      const batchRequests = capturedRequests.filter(
+        (request): request is RecordedBatchRequest & { readonly body: RecordedBatchBody } =>
+          Array.isArray(request.body?.batch),
+      );
+      const exceptions = batchRequests.flatMap((request) =>
+        request.body.batch.filter((event) => event.event === "$exception"),
+      );
+      assert.equal(exceptions.length, 1);
+      const properties = exceptions[0]?.properties as Record<string, unknown> | undefined;
+      assert.equal(properties?.["$exception_type"], "TypeError");
+      assert.equal(properties?.["$exception_message"], "test capture boom");
+      assert.equal(properties?.["where"], "test");
     }),
   );
 });

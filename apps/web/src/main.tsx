@@ -7,6 +7,7 @@ import "./index.css";
 import { isElectron } from "./env";
 import { hasCloudPublicConfig } from "./cloud/publicConfig";
 import { getRouter } from "./router";
+import { initProductAnalytics } from "./analytics/productAnalytics";
 import {
   syncDocumentElectronPlatformClasses,
   syncDocumentWindowControlsOverlayClass,
@@ -18,6 +19,10 @@ import { clearChunkReloadGuard, reloadOnceForChunkLoadError } from "./lib/chunkR
 const history = isElectron ? createHashHistory() : createBrowserHistory();
 
 const router = getRouter(history);
+
+// Browser product analytics boots in the background against the connected
+// environment's runtime config. It never throws and never blocks rendering.
+initProductAnalytics();
 
 if (isElectron) {
   syncDocumentElectronPlatformClasses(navigator.platform);
