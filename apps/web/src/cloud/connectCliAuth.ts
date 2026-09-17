@@ -70,6 +70,8 @@ export function connectCliSignInRedirectUrl(
 // Kept for the fork's /connect/callback one-time-code surface
 // (ConnectCliCallbackSurface). Upstream moved to the device-authorization
 // grant, but lite still ships the callback page, so these stay.
+const CONNECT_CLI_AUTH_STATE_STORAGE_KEY = "t3code:connect-cli-auth-state:v1";
+
 export function rememberConnectCliAuthState(state: string): void {
   try {
     window.sessionStorage.setItem(CONNECT_CLI_AUTH_STATE_STORAGE_KEY, state);

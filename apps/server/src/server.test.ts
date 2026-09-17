@@ -1224,13 +1224,17 @@ const buildAppUnderTest = (options?: {
       Layer.provideMerge(makeAuthTestLayer()),
       Layer.provideMerge(ServerSecretStore.layer),
       Layer.provide(workspaceAndProjectServicesLayer),
-      Layer.provideMerge(FetchHttpClient.layer),
-      Layer.provide(VcsProcess.layer),
-      Layer.provide(layerConfig),
       // The inbox resolves the home directory through this reference so
       // full-stack tests provision scratch space under the temp base dir
       // instead of touching the real home directory.
-      Layer.provideMerge(Layer.succeed(HostProcessHomeDirectory, `${baseDir}/test-home`)),
+      Layer.provideMerge(
+        Layer.mergeAll(
+          FetchHttpClient.layer,
+          Layer.succeed(HostProcessHomeDirectory, `${baseDir}/test-home`),
+        ),
+      ),
+      Layer.provide(VcsProcess.layer),
+      Layer.provide(layerConfig),
     );
 
     yield* Layer.build(appLayer);
