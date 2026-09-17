@@ -8,6 +8,8 @@ import {
 } from "@t3tools/shared/usageLimits";
 import { feedbackBannerItem } from "./chat/ComposerFeedback";
 import { usageLimitsBannerItem } from "./chat/ComposerUsageLimits";
+import { Spinner } from "./ui/spinner";
+import { useIsInboxProvisioning } from "../inboxProvisioning";
 import { derivePendingRequests } from "@t3tools/client-runtime/pending-requests";
 import {
   questionAttachmentDraftId,
@@ -73,6 +75,7 @@ import {
   resolveProjectScripts,
 } from "@t3tools/shared/projectScripts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { normalizeProjectPathForComparison } from "@t3tools/shared/path";
 import { truncate } from "@t3tools/shared/String";
 import { resolveThreadReferenceCopyTarget } from "@t3tools/shared/threadReference";
 import {
@@ -329,6 +332,7 @@ import {
   environmentServerConfigsAtom,
   primaryServerAvailableEditorsAtom,
   primaryServerKeybindingsAtom,
+  primaryServerWelcomeAtom,
   serverEnvironment,
 } from "../state/server";
 import { terminalEnvironment } from "../state/terminal";
@@ -2098,6 +2102,23 @@ export default function ChatView(props: ChatViewProps) {
     [activeThread?.environmentId, activeThread?.projectId],
   );
   const activeProject = useProject(activeProjectRef);
+  // No-folder chats run in the auto-provisioned inbox, which stays nameless
+  // in the UI: no breadcrumb segment, no folder name in the headline.
+  const serverWelcome = useAtomValue(primaryServerWelcomeAtom);
+  const inboxWorkspaceRoot = serverWelcome?.inboxWorkspaceRoot;
+  const isInboxProject =
+    activeProject !== null &&
+    activeProject !== undefined &&
+    inboxWorkspaceRoot !== undefined &&
+    normalizeProjectPathForComparison(activeProject.workspaceRoot) ===
+      normalizeProjectPathForComparison(inboxWorkspaceRoot);
+  // Optimistic no-folder drafts navigate before their project row lands.
+  // Show a setup state instead of the dead-end while creation settles.
+  const provisioningProjectId =
+    routeKind === "draft" ? (activeProjectRef?.projectId ?? null) : null;
+  const isProvisioningProjectId = useIsInboxProvisioning(provisioningProjectId);
+  const isInboxProvisioning =
+    (activeProject === null || activeProject === undefined) && isProvisioningProjectId;
   // Environment settings with the active project's overrides applied.
   const activeProjectSettings = useMemo(
     () => resolveProjectSettings(settings, activeProject?.id ?? null, activeProject ?? undefined),
@@ -9403,6 +9424,7 @@ export default function ChatView(props: ChatViewProps) {
             activeThreadTitle={activeThread.title}
             isServerThread={isServerThread}
             activeProject={activeProject}
+            isInboxProject={isInboxProject}
             openInCwd={gitCwd}
             activeProjectScripts={activeProjectScripts}
             preferredScriptId={
@@ -9606,11 +9628,19 @@ export default function ChatView(props: ChatViewProps) {
                             : undefined
                         }
                       >
-                        <DraftHeroHeadline
-                          draftId={draftId}
-                          activeProjectRef={activeProjectRef}
-                          activeProjectTitle={activeProject?.title ?? null}
-                        />
+                        {isInboxProvisioning ? (
+                          <div className="mx-auto flex w-full max-w-5xl flex-col items-center gap-3 text-center">
+                            <Spinner className="size-5 text-muted-foreground" />
+                            <p className="text-sm text-muted-foreground">Setting up your space…</p>
+                          </div>
+                        ) : (
+                          <DraftHeroHeadline
+                            draftId={draftId}
+                            activeProjectRef={activeProjectRef}
+                            activeProjectTitle={activeProject?.title ?? null}
+                            isInboxProject={isInboxProject}
+                          />
+                        )}
                       </div>
                     </div>
                   ) : null}
@@ -9645,6 +9675,7 @@ export default function ChatView(props: ChatViewProps) {
                             isLocalDraftThread={isLocalDraftThread}
                             forceExpandedOnMobile={forceExpandedMobileComposer && isDraftHeroState}
                             projectSelectionRequired={isLocalDraftThread && activeProject === null}
+                            projectProvisioning={isInboxProvisioning}
                             phase={phase}
                             isConnecting={isConnecting}
                             isSendBusy={isSendBusy}

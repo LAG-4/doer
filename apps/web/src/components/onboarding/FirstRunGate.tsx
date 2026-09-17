@@ -114,6 +114,24 @@ export function FirstRunGate({
   // bootstrap project" just because its root string matches the primary cwd.
   const serverCwd = serverConfig?.cwd ?? null;
   const primaryEnvironmentId = serverConfig?.environment.environmentId ?? null;
+  // The auto-provisioned inbox ("My Stuff") never counts as user state: an
+  // inbox-only workspace is still fresh, and its untouched threads don't trip
+  // the multi-thread shortcut straight to the app.
+  const inboxProjectId = serverWelcome?.inboxProjectId ?? null;
+  const nonInboxProjectCount =
+    inboxProjectId === null
+      ? projects.length
+      : projects.filter((project) => project.id !== inboxProjectId).length;
+  const nonInboxThreadCount =
+    inboxProjectId === null
+      ? threads.length
+      : threads.filter(
+          (thread) =>
+            thread.projectId !== inboxProjectId ||
+            thread.latestTurn !== null ||
+            thread.latestUserMessageAt !== null ||
+            thread.session !== null,
+        ).length;
   const workspaceFresh = isFreshFirstRunWorkspace({
     primaryEnvironmentId,
     serverCwd,
@@ -121,6 +139,7 @@ export function FirstRunGate({
     bootstrapThreadId: serverWelcome?.bootstrapThreadId,
     bootstrapProjectCreated: serverWelcome?.bootstrapProjectCreated,
     bootstrapThreadCreated: serverWelcome?.bootstrapThreadCreated,
+    inboxProjectId: inboxProjectId ?? undefined,
     projects,
     threads,
   });
@@ -147,8 +166,8 @@ export function FirstRunGate({
         catalogReady: environmentCatalogReady,
         serverConfigAvailable: serverConfig !== null,
         workspaceFresh,
-        projectCount: projects.length,
-        threadCount: threads.length,
+        projectCount: nonInboxProjectCount,
+        threadCount: nonInboxThreadCount,
       });
 
   useEffect(() => {

@@ -6,6 +6,8 @@ import { FolderPlusIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
+import { useEnsureInboxProject } from "~/hooks/useEnsureInboxProject";
+import { useHandleNewThread } from "~/hooks/useHandleNewThread";
 import { useClientSettings } from "~/hooks/useSettings";
 import { hasExplicitComposerModelSelection } from "~/lib/chatThreadActions";
 import { selectProjectGroupingSettings } from "~/logicalProject";
@@ -35,12 +37,14 @@ interface DraftHeroHeadlineProps {
   readonly draftId: DraftId | null;
   readonly activeProjectRef: ScopedProjectRef | null;
   readonly activeProjectTitle: string | null;
+  readonly isInboxProject: boolean;
 }
 
 export function DraftHeroHeadline({
   draftId,
   activeProjectRef,
   activeProjectTitle,
+  isInboxProject,
 }: DraftHeroHeadlineProps) {
   const projects = useProjects();
   const threads = useThreadShells();
@@ -55,6 +59,26 @@ export function DraftHeroHeadline({
   const applyStickyState = useComposerDraftStore((store) => store.applyStickyState);
   const setModelSelection = useComposerDraftStore((store) => store.setModelSelection);
   const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
+  const { handleNewThread } = useHandleNewThread();
+  const { prepareInboxProject, settleInboxProject, isInboxCapable, isEnsuring } =
+    useEnsureInboxProject();
+  const startChatting = useCallback(async () => {
+    const prepared = prepareInboxProject();
+    if (prepared === null) {
+      openAddProject();
+      return;
+    }
+    await handleNewThread(prepared.ref, { replace: true }).catch(() => undefined);
+    if (!prepared.isNew) {
+      return;
+    }
+    const finalRef = await settleInboxProject(prepared.projectId);
+    if (finalRef === null) {
+      openAddProject();
+    } else if (finalRef.projectId !== prepared.ref.projectId) {
+      await handleNewThread(finalRef, { replace: true }).catch(() => undefined);
+    }
+  }, [handleNewThread, openAddProject, prepareInboxProject, settleInboxProject]);
 
   const environmentLabelById = useMemo(
     () =>
@@ -226,18 +250,29 @@ export function DraftHeroHeadline({
   ) : (
     <button
       type="button"
-      onClick={openAddProject}
-      className="pointer-events-auto inline cursor-pointer border-muted-foreground/35 border-b border-dotted text-muted-foreground/60 transition-colors hover:border-muted-foreground/60 hover:text-muted-foreground/80 focus-visible:rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+      onClick={() => void startChatting()}
+      disabled={isEnsuring}
+      className="pointer-events-auto inline cursor-pointer border-muted-foreground/35 border-b border-dotted text-muted-foreground/60 transition-colors hover:border-muted-foreground/60 hover:text-muted-foreground/80 focus-visible:rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
     >
-      {activeProjectTitle ?? "Add a project"}
+      {isEnsuring
+        ? "Setting up…"
+        : isInboxCapable
+          ? "Start chatting"
+          : (activeProjectTitle ?? "Add a project")}
     </button>
   );
 
   return (
     <h1 className="mx-auto w-full max-w-5xl text-center font-normal text-2xl text-foreground tracking-tight sm:text-3xl">
       {hasResolvedProject ? (
-        <>What should we build in {projectSelector}?</>
+        isInboxProject ? (
+          <>What should we build?</>
+        ) : (
+          <>What should we build in {projectSelector}?</>
+        )
       ) : canChooseProject ? (
+        <>{projectSelector} to start</>
+      ) : isInboxCapable ? (
         <>{projectSelector} to start</>
       ) : (
         <>Add a project to start</>

@@ -18,6 +18,13 @@ interface FirstRunWorkspaceInput {
   readonly bootstrapThreadId?: string | undefined;
   readonly bootstrapProjectCreated?: boolean | undefined;
   readonly bootstrapThreadCreated?: boolean | undefined;
+  /**
+   * Auto-provisioned no-folder workspace ("My Stuff"). Inbox projects and
+   * their untouched threads never make a workspace non-fresh on their own,
+   * so a fresh install with only the inbox still routes to the wizard while
+   * any real user content routes to the app.
+   */
+  readonly inboxProjectId?: string | undefined;
   readonly projects: ReadonlyArray<{
     readonly id: string;
     readonly environmentId: string;
@@ -87,11 +94,26 @@ export function transitionFirstRunGateState(
 
 /** Only a project and thread created by this startup count as a fresh nonempty workspace. */
 export function isFreshFirstRunWorkspace(input: FirstRunWorkspaceInput): boolean {
-  if (input.projects.length > 1 || input.threads.length > 1) {
+  const inboxProjectId = input.inboxProjectId;
+  const projects =
+    inboxProjectId === undefined
+      ? input.projects
+      : input.projects.filter((project) => project.id !== inboxProjectId);
+  const threads =
+    inboxProjectId === undefined
+      ? input.threads
+      : input.threads.filter(
+          (thread) =>
+            thread.projectId !== inboxProjectId ||
+            thread.latestTurn !== null ||
+            thread.latestUserMessageAt !== null ||
+            thread.session !== null,
+        );
+  if (projects.length > 1 || threads.length > 1) {
     return false;
   }
 
-  const bootstrapProject = input.projects[0];
+  const bootstrapProject = projects[0];
   if (bootstrapProject !== undefined) {
     if (
       input.bootstrapProjectCreated !== true ||
@@ -105,7 +127,7 @@ export function isFreshFirstRunWorkspace(input: FirstRunWorkspaceInput): boolean
     }
   }
 
-  const bootstrapThread = input.threads[0];
+  const bootstrapThread = threads[0];
   if (bootstrapThread === undefined) {
     return true;
   }

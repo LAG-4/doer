@@ -57,6 +57,8 @@ interface ChatHeaderProps {
   /** Drafts have no server thread yet, so the title carries no action menu. */
   isServerThread: boolean;
   activeProject: EnvironmentProject | null;
+  /** No-folder chats hide the inbox from the breadcrumb. */
+  isInboxProject: boolean;
   openInCwd: string | null;
   activeProjectScripts: ReadonlyArray<ProjectScript> | undefined;
   preferredScriptId: string | null;
@@ -126,6 +128,7 @@ export const ChatHeader = memo(function ChatHeader({
   activeThreadTitle,
   isServerThread,
   activeProject,
+  isInboxProject,
   openInCwd,
   activeProjectScripts,
   preferredScriptId,
@@ -323,10 +326,10 @@ export const ChatHeader = memo(function ChatHeader({
         ariaLabel="Thread breadcrumb"
         className="flex-1 overflow-clip [overflow-clip-margin:2px]"
       >
-        {/* The project always leads the header: knowing which project a
-            thread lives in is priority zero, and the thread title alone
-            doesn't answer it. */}
-        {activeProject ? (
+        {/* The project always leads the header — except the nameless
+            inbox: knowing which folder a thread lives in is priority zero,
+            and no-folder chats have no folder to show. */}
+        {activeProject && !isInboxProject ? (
           <>
             <WorkspaceBreadcrumbItem className="shrink">
               <Tooltip>
