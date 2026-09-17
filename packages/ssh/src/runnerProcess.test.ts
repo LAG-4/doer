@@ -121,7 +121,7 @@ if (args.includes("--package")) {
                   ),
                 ),
               );
-              // A failed PID assertion must still close the owned fixture server, including an npm child.
+              // A failed PID assertion must still close the owned fixture server.
               yield* Effect.addFinalizer(() =>
                 Effect.gen(function* () {
                   if (yield* child.isRunning) {
@@ -288,7 +288,6 @@ server.listen(0, "127.0.0.1", () => {
     );
   },
 );
-
 describe.skipIf(HostProcessPlatform.defaultValue() === "win32")(
   "remote runner install diagnostics",
   () => {

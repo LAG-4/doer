@@ -7,7 +7,6 @@ import {
   connectCliSignInRedirectUrl,
   readConnectCliAuthState,
   readConnectCliCallbackResult,
-  rememberConnectCliAuthState,
 } from "../../cloud/connectCliAuth";
 import { isElectron } from "../../env";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
@@ -45,10 +44,10 @@ const invalidLinkMessage = {
 } as const;
 
 /**
- * /connect: the URL the CLI prints for both flows. Waits for a Clerk session,
- * then forwards the CLI's PKCE request to Clerk's authorize endpoint — with a
- * loopback redirect URI when the request carries a port, so the code returns
- * straight to the waiting CLI, and the hosted callback page otherwise.
+ * /connect: the URL the CLI prints for the loopback flow. Waits for a Clerk
+ * session, then forwards the CLI's PKCE request to Clerk's authorize endpoint
+ * with the loopback redirect URI so the code returns straight to the waiting
+ * CLI. Headless hosts use Clerk's device authorization page instead.
  */
 export function ConnectCliAuthorizeSurface() {
   const [request] = useState(() => readConnectAuthorizeRequest(new URL(window.location.href)));
@@ -61,9 +60,6 @@ export function ConnectCliAuthorizeSurface() {
     if (!request) {
       return;
     }
-    // Clerk redirects to the authorize endpoint itself once sign-in completes,
-    // so the callback's state check has to be armed before handing off.
-    rememberConnectCliAuthState(request.state);
     clerk.openSignIn(
       resolveClerkSignInProps(
         connectCliSignInRedirectUrl(request, window.location.href),
@@ -88,7 +84,6 @@ export function ConnectCliAuthorizeSurface() {
       return;
     }
     redirecting.current = true;
-    rememberConnectCliAuthState(request.state);
     window.location.assign(authorizeUrl);
   }, [isLoaded, isSignedIn, openSignIn, request]);
 
@@ -103,11 +98,7 @@ export function ConnectCliAuthorizeSurface() {
   return (
     <AuthSurfaceShell>
       <ConnectCliAuthMessage
-        eyebrow={
-          request.loopbackPort === undefined
-            ? "Step 1 of 2 · Browser authorization"
-            : "Browser authorization"
-        }
+        eyebrow="Browser authorization"
         title="Connecting your terminal"
         description={
           isSignedIn
@@ -125,7 +116,6 @@ export function ConnectCliAuthorizeSurface() {
     </AuthSurfaceShell>
   );
 }
-
 /**
  * /connect/callback: Clerk's redirect target. Shows the one-time code the
  * user enters in the waiting terminal.

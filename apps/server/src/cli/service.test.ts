@@ -68,7 +68,7 @@ it("explains an incomplete nightly installation and keeps repair on its installe
   expect(output).not.toContain("@lag4/doer-cli@latest");
 });
 
-it("suggests the newer CLI version when the installed service needs an update", () => {
+it("points an older service at a repair, never at npx", () => {
   const output = formatServiceStatus(
     { ...status, current: false, installedVersion: "0.0.28" },
     "0.0.29",
@@ -84,7 +84,7 @@ it("explains where the service is supported", () => {
   );
 });
 
-it("reports a newer installed service and gives an exact-version repair command", () => {
+it("reports a newer installed service and tells the CLI to catch up to it", () => {
   const output = formatServiceStatus(
     { ...status, current: false, installedVersion: "0.0.32-nightly.1" },
     "0.0.31",
@@ -102,14 +102,18 @@ const newerServiceStatus = { ...status, current: false, installedVersion: "999.0
 
 function makeTestService(serviceStatus: BootService.BootServiceStatus) {
   const installOptions: Array<Parameters<BootService.BootService["Service"]["install"]>[0]> = [];
+  const restarts: Array<true> = [];
   const service = BootService.BootService.of({
     status: Effect.succeed(serviceStatus),
+    restart: Effect.sync(() => {
+      restarts.push(true);
+      return serviceStatus.installed;
+    }),
     install: (options) =>
       Effect.sync(() => {
         installOptions.push(options);
         return {
-          nodePath: "/test/node",
-          launcherPath: "/test/service-launcher.mjs",
+          program: ["/test/t3/runtime/versions/1.0.0/t3", "__service-launcher"],
           baseDir: "/test/t3",
           unitPath: serviceStatus.unitPath,
           logPath: serviceStatus.logPath,
@@ -117,10 +121,33 @@ function makeTestService(serviceStatus: BootService.BootServiceStatus) {
       }),
     uninstall: Effect.succeed(false),
   });
-  return { service, installOptions };
+  return { service, installOptions, restarts };
 }
 
 it.layer(Layer.mergeAll(NodeServices.layer, NetService.layer))("service commands", (it) => {
+  it.effect("restart restarts the installed service", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service-cli-test-" });
+      const { service, installOptions, restarts } = makeTestService(status);
+      vi.spyOn(BootService, "layer").mockReturnValue(
+        Layer.succeed(BootService.BootService, service),
+      );
+
+      yield* Command.runWith(serviceCommand, { version: packageJson.version })([
+        "restart",
+        "--base-dir",
+        baseDir,
+      ]).pipe(
+        Effect.provideService(HostProcessEnvironment, {}),
+        Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} }))),
+      );
+
+      expect(restarts).toEqual([true]);
+      expect(installOptions).toEqual([]);
+    }),
+  );
+
   it.effect.each(["install", "update"] as const)(
     "%s refuses a downgrade before changing the service",
     (command) =>

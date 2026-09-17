@@ -248,66 +248,18 @@ jobs:
           echo "clerk_cli_oauth_client_id=$CLERK_CLI_OAUTH_CLIENT_ID" >> "$GITHUB_OUTPUT"
           echo "relay_url=https://$relay_domain" >> "$GITHUB_OUTPUT"
 
-  # node-pty publishes no Linux prebuilt and the WSL backend runs under the
-  # distro's own (Linux) Node, which can't load the Windows/Electron binary. We
-  # build the Linux pty.node here, on Linux, and hand it to the Windows packaging
-  # job — the Windows artifact then ships a ready WSL backend binary with no
-  # cross-compiling and no first-launch compiler/node-gyp/network on the user's
-  # machine. node-pty is N-API, so one binary works across all WSL Node versions.
-  build_wsl_node_pty:
-    name: Build WSL node-pty (linux-x64)
-    # Needs only the release commit, so this runs alongside preflight.
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
-
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: |
-            args:
-              - --filter=@lag4/doer-cli...
-
-      - name: Build node-pty linux-x64 prebuild
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Resolve node-pty from apps/server (where it's a dependency) and build
-          # its native binary from source for Linux. node-addon-api resolves from
-          # node-pty's own dependency tree, so node-gyp has everything it needs.
-          pty_pkg="$(node -e "console.log(require.resolve('node-pty/package.json', { paths: ['$GITHUB_WORKSPACE/apps/server'] }))")"
-          pty_dir="$(dirname "$pty_pkg")"
-          ( cd "$pty_dir" && npx --yes node-gyp rebuild )
-          mkdir -p wsl-prebuild
-          cp "$pty_dir/build/Release/pty.node" wsl-prebuild/pty.node
-          file wsl-prebuild/pty.node
-
-      - name: Upload node-pty linux-x64 prebuild
-        uses: actions/upload-artifact@v7
-        with:
-          name: wsl-node-pty-x64
-          path: wsl-prebuild/pty.node
-          if-no-files-found: error
-
+  # The WSL backend runs the self-contained Linux CLI archive inside the
+  # distro (upstream builds it with scripts/build-cli-archive.ts and embeds it
+  # as wsl-runtime.tar.gz). The Linux x64 matrix entry builds that archive and
+  # uploads it as `cli-linux-x64`; the Windows entry downloads it and hands it
+  # to the desktop packaging step via --wsl-runtime.
   build:
     name: Build ${{ matrix.label }}
-    # build_wsl_node_pty stays in `needs` so it runs first and its artifact is
-    # available to download, but only the Windows matrix entry consumes it. We
-    # therefore gate the job on preflight + relay (must succeed) WITHOUT requiring
-    # build_wsl_node_pty, so a failed Linux prebuild doesn't skip the macOS/Linux
-    # builds. `!cancelled()` (not `!failure()`) lets the job run even when
-    # build_wsl_node_pty failed; the Windows-only download step below then fails
-    # that single platform if the prebuild is missing.
-    needs: [preflight, relay_public_config, build_wsl_node_pty]
+    # The Windows entry consumes the `cli-linux-x64` artifact built by the
+    # Linux x64 entry of this same matrix. Matrix entries run in parallel, so
+    # the Windows-only download step below fails that single platform if the
+    # archive is missing.
+    needs: [preflight, relay_public_config]
     if: ${{ !cancelled() && needs.preflight.result == 'success' && needs.relay_public_config.result == 'success' }}
     runs-on: ${{ matrix.runner }}
     # Native rebuilds (Rust, node-gyp, VS setup) are slow on free runners;
@@ -441,12 +393,12 @@ jobs:
       - name: Align package versions to release version
         run: node scripts/update-release-package-versions.ts "${{ needs.preflight.outputs.version }}"
 
-      - name: Download WSL node-pty prebuild
+      - name: Download Linux CLI archive for WSL
         if: matrix.platform == 'win'
         uses: actions/download-artifact@v7
         with:
-          name: wsl-node-pty-x64
-          path: wsl-prebuild
+          name: cli-linux-x64
+          path: wsl-runtime
 
       - name: Install Spectre-mitigated MSVC libs
         if: matrix.platform == 'win'
@@ -607,10 +559,10 @@ jobs:
               echo "macOS signing disabled (missing one or more Apple signing secrets)."
             fi
           elif [[ "${{ matrix.platform }}" == "win" ]]; then
-            # Bundle the Linux node-pty binary built by the build_wsl_node_pty job
-            # so the packaged WSL backend ships a ready binary (no first-launch
-            # compile). Required for a working WSL backend on Windows.
-            args+=(--wsl-prebuild "$GITHUB_WORKSPACE/wsl-prebuild/pty.node")
+            # Embed the Linux CLI archive built by the Linux x64 matrix entry
+            # as the WSL runtime (the WSL backend runs this archive inside the
+            # distro). Required for a working WSL backend on Windows.
+            args+=(--wsl-runtime "$GITHUB_WORKSPACE"/wsl-runtime/t3-*-linux-x64.tar.gz)
             if has_all \
               "$AZURE_TENANT_ID" \
               "$AZURE_CLIENT_ID" \
@@ -680,6 +632,43 @@ jobs:
           target_dir="resource-monitor-publish/${{ matrix.resource_key }}"
           mkdir -p "$target_dir"
           cp "$source_path" "$target_dir/$binary_name"
+
+      # The Windows entry embeds this archive as its WSL runtime, and the
+      # `release` job attaches it alongside the desktop assets. Built here, on
+      # Linux x64, because the archive's single-executable is platform-specific.
+      - name: Build Linux CLI archive for WSL
+        if: matrix.platform == 'linux' && matrix.arch == 'x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # cli.ts build bundles apps/web/dist into the server's dist/client,
+          # so build the web client first (the desktop artifact step above does
+          # not leave it behind).
+          vp run --filter @t3tools/web build
+          node apps/server/scripts/cli.ts build --verbose
+          node apps/server/scripts/cli.ts build-exe --target linux-x64 --verbose
+          monitor_dir="$RUNNER_TEMP/cli-resource-monitor"
+          mkdir -p "$monitor_dir"
+          cp "native/resource-monitor/target/${{ matrix.rust_target }}/release/t3-resource-monitor" "$monitor_dir/t3-resource-monitor"
+          node scripts/build-cli-archive.ts \
+            --platform linux \
+            --arch x64 \
+            --version "${{ needs.preflight.outputs.version }}" \
+            --resource-monitor-dir "$monitor_dir" \
+            --output-dir release-cli
+
+      - name: Smoke-test Linux CLI archive
+        if: matrix.platform == 'linux' && matrix.arch == 'x64'
+        shell: bash
+        run: node scripts/smoke-cli-archive.ts --archive release-cli/* --expect-version "${{ needs.preflight.outputs.version }}"
+
+      - name: Upload Linux CLI archive
+        if: matrix.platform == 'linux' && matrix.arch == 'x64'
+        uses: actions/upload-artifact@v7
+        with:
+          name: cli-linux-x64
+          path: release-cli/*
+          if-no-files-found: error
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
