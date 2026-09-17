@@ -31,6 +31,14 @@ export const HostProcessEnvironment = Context.Reference<NodeJS.ProcessEnv>(
   },
 );
 
+/** Overridable in tests so home-directory writes stay inside temp dirs. */
+export const HostProcessHomeDirectory = Context.Reference<string>(
+  "@t3tools/shared/hostProcess/HostProcessHomeDirectory",
+  {
+    defaultValue: () => NodeOS.homedir(),
+  },
+);
+
 export const HostProcessWorkingDirectory = Context.Reference<string>(
   "@t3tools/shared/hostProcess/HostProcessWorkingDirectory",
   {

@@ -1,5 +1,6 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { useAtomValue } from "@effect/atom-react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { LinkIcon, PlusIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -11,12 +12,14 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/
 import { SidebarInset } from "../components/ui/sidebar";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { useEnsureInboxProject } from "../hooks/useEnsureInboxProject";
 import {
   useAllEnvironmentShellsBootstrapped,
   useProjects,
   useThreadShells,
 } from "../state/entities";
 import { useEnvironments } from "../state/environments";
+import { primaryServerWelcomeAtom } from "../state/server";
 import { APP_DISPLAY_NAME } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 
@@ -42,16 +45,29 @@ function IndexDraftLanding() {
   const threads = useThreadShells();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const handleNewThread = useNewThreadHandler();
+  const serverWelcome = useAtomValue(primaryServerWelcomeAtom);
+  const inboxProjectId = serverWelcome?.inboxProjectId;
   const startingRef = useRef(false);
   const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
+  const { prepareInboxProject, settleInboxProject, isInboxCapable } = useEnsureInboxProject();
+  const preparedRef = useRef(false);
 
-  const mostRecentProject = useMemo(
-    () =>
-      bootstrapped
-        ? (sortScopedProjectsForSidebar(projects, threads, "updated_at")[0] ?? null)
-        : null,
-    [bootstrapped, projects, threads],
-  );
+  const mostRecentProject = useMemo(() => {
+    if (!bootstrapped) {
+      return null;
+    }
+    // No-folder chats belong in the auto-provisioned inbox: while the user
+    // has no chats outside it, landing opens the inbox draft instead of the
+    // most recently touched folder.
+    if (inboxProjectId !== undefined) {
+      const inboxProject = projects.find((project) => project.id === inboxProjectId);
+      const hasNonInboxThreads = threads.some((thread) => thread.projectId !== inboxProjectId);
+      if (inboxProject && !hasNonInboxThreads) {
+        return inboxProject;
+      }
+    }
+    return sortScopedProjectsForSidebar(projects, threads, "updated_at")[0] ?? null;
+  }, [bootstrapped, inboxProjectId, projects, threads]);
 
   useEffect(() => {
     if (mostRecentProject === null || startingRef.current) {
@@ -65,6 +81,37 @@ function IndexDraftLanding() {
       setStartState((state) => ({ ...state, failed: true }));
     });
   }, [handleNewThread, mostRecentProject, startState.retryRequest]);
+
+  // Zero projects is a broken state, not a destination: open the inbox
+  // draft instantly with a locally minted id while creation settles behind
+  // it. The draft shows a setup state until the row lands; a lost creation
+  // race just remaps to the winning project when it arrives.
+  useEffect(() => {
+    if (!bootstrapped || projects.length > 0 || !isInboxCapable || preparedRef.current) {
+      return;
+    }
+    const prepared = prepareInboxProject();
+    if (prepared === null) {
+      return;
+    }
+    preparedRef.current = true;
+    void handleNewThread(prepared.ref, { replace: true }).catch(() => undefined);
+    if (!prepared.isNew) {
+      return;
+    }
+    void settleInboxProject(prepared.projectId).then((finalRef) => {
+      if (finalRef !== null && finalRef.projectId !== prepared.ref.projectId) {
+        void handleNewThread(finalRef, { replace: true }).catch(() => undefined);
+      }
+    });
+  }, [
+    bootstrapped,
+    handleNewThread,
+    isInboxCapable,
+    prepareInboxProject,
+    projects.length,
+    settleInboxProject,
+  ]);
 
   if (!bootstrapped) {
     return null;

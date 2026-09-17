@@ -50,6 +50,7 @@ import { normalizeProjectPathForComparison } from "@t3tools/shared/path";
 import * as ServerConfig from "../config.ts";
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { resolveCodexHomeLayout } from "../provider/Drivers/CodexHomeLayout.ts";
+import { resolveInboxRoot } from "../inbox/InboxWorkspace.ts";
 import { expandHomePath } from "../pathExpansion.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import {
@@ -640,10 +641,12 @@ export const make = Effect.gen(function* () {
   );
   // Codex creates one scratch directory per conversation under
   // ~/Documents/Codex/<date>/<slug>. Neither those nor anything a user
-  // unpacked into Downloads is a project.
+  // unpacked into Downloads is a project. Doer's shared no-folder workspace
+  // (~/Documents/Doer) is not a project either.
   const excludedProjectAncestors = [
     path.join(homeDir, "Downloads"),
     path.join(homeDir, "Documents", "Codex"),
+    resolveInboxRoot(homeDir, path),
   ];
 
   const isExcludedProjectPath = (candidatePath: string) =>

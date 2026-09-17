@@ -2,7 +2,11 @@ import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeCrypto from "node:crypto";
-import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import {
+  HostProcessEnvironment,
+  HostProcessHomeDirectory,
+  HostProcessPlatform,
+} from "@t3tools/shared/hostProcess";
 
 import {
   type DeviceServiceState,
@@ -1198,6 +1202,10 @@ const buildAppUnderTest = (options?: {
       Layer.provideMerge(FetchHttpClient.layer),
       Layer.provide(VcsProcess.layer),
       Layer.provide(layerConfig),
+      // The inbox resolves the home directory through this reference so
+      // full-stack tests provision scratch space under the temp base dir
+      // instead of touching the real home directory.
+      Layer.provideMerge(Layer.succeed(HostProcessHomeDirectory, `${baseDir}/test-home`)),
     );
 
     yield* Layer.build(appLayer);

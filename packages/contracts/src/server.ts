@@ -756,6 +756,19 @@ export const ServerLifecycleWelcomePayload = Schema.Struct({
   bootstrapThreadId: Schema.optional(ThreadId),
   bootstrapProjectCreated: Schema.optional(Schema.Boolean),
   bootstrapThreadCreated: Schema.optional(Schema.Boolean),
+  /**
+   * Auto-provisioned no-folder workspace ("My Stuff"). Clients treat an
+   * inbox-only workspace as fresh for first-run purposes and land new chats
+   * there, so starting a chat never requires picking a directory first.
+   */
+  inboxProjectId: Schema.optional(ProjectId),
+  inboxProjectCreated: Schema.optional(Schema.Boolean),
+  /**
+   * Absolute workspace root of the auto-provisioned inbox. Lets clients
+   * recreate the inbox with a plain project.create when it is missing
+   * (e.g. after the user deletes it), so no-folder chats are one click away.
+   */
+  inboxWorkspaceRoot: Schema.optional(TrimmedNonEmptyString),
 });
 export type ServerLifecycleWelcomePayload = typeof ServerLifecycleWelcomePayload.Type;
 

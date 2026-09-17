@@ -45,6 +45,7 @@ import * as ProviderSessionReaper from "./provider/Services/ProviderSessionReape
 import { forkParked } from "./serverActivation.ts";
 import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
+import * as InboxProvisioning from "./inbox/InboxProvisioning.ts";
 import {
   formatHeadlessServeOutput,
   formatHostForUrl,
@@ -889,39 +890,43 @@ export const make = (options?: StartupOptions) =>
       const environment = yield* serverEnvironment.getDescriptor;
       yield* Effect.logDebug("startup phase: preparing welcome payload");
 
-      if (serverConfig.autoBootstrapProjectFromCwd) {
-        yield* forkParked(
-          runStartupPhase(
-            "welcome.autobootstrap",
-            Effect.gen(function* () {
-              const bootstrapCompletion = yield* completeAutoBootstrapWelcome(
-                resolveAutoBootstrapWelcomeTargets.pipe(
-                  Effect.provideService(Crypto.Crypto, crypto),
-                ),
-              );
+      // The completed welcome carries both the cwd auto-bootstrap targets
+      // (when enabled) and the always-ensured inbox workspace targets, so
+      // clients can land no-folder chats without a directory pick.
+      yield* forkParked(
+        runStartupPhase(
+          "welcome.targets",
+          Effect.gen(function* () {
+            const bootstrapCompletion = serverConfig.autoBootstrapProjectFromCwd
+              ? yield* completeAutoBootstrapWelcome(
+                  resolveAutoBootstrapWelcomeTargets.pipe(
+                    Effect.provideService(Crypto.Crypto, crypto),
+                  ),
+                )
+              : { bootstrapStatus: "complete" as const };
+            const inboxTargets = yield* InboxProvisioning.resolveInboxWelcomeTargets.pipe(
+              Effect.provideService(Crypto.Crypto, crypto),
+            );
+            const targetsCompletion = { ...bootstrapCompletion, ...inboxTargets };
 
-              yield* Effect.logDebug(
-                "startup phase: publishing completed bootstrap welcome event",
-                {
-                  environmentId: environment.environmentId,
-                  cwd: welcomeBase.cwd,
-                  projectName: welcomeBase.projectName,
-                  ...bootstrapCompletion,
-                },
-              );
-              yield* lifecycleEvents.publish({
-                version: 1,
-                type: "welcome",
-                payload: {
-                  environment,
-                  ...welcomeBase,
-                  ...bootstrapCompletion,
-                },
-              });
-            }).pipe(Effect.ignoreCause({ log: true })),
-          ),
-        );
-      }
+            yield* Effect.logDebug("startup phase: publishing completed welcome targets event", {
+              environmentId: environment.environmentId,
+              cwd: welcomeBase.cwd,
+              projectName: welcomeBase.projectName,
+              ...targetsCompletion,
+            });
+            yield* lifecycleEvents.publish({
+              version: 1,
+              type: "welcome",
+              payload: {
+                environment,
+                ...welcomeBase,
+                ...targetsCompletion,
+              },
+            });
+          }).pipe(Effect.ignoreCause({ log: true })),
+        ),
+      );
 
       yield* forkParked(
         Effect.gen(function* () {

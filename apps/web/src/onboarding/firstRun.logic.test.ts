@@ -359,6 +359,19 @@ const bootstrapThread = {
   latestUserMessageAt: null,
   session: null,
 };
+const inboxProject = {
+  id: "inbox-project",
+  environmentId: primaryEnvironmentId,
+  workspaceRoot: "/Users/someone/Documents/Doer",
+};
+const inboxThread = {
+  id: "inbox-thread",
+  projectId: inboxProject.id,
+  environmentId: primaryEnvironmentId,
+  latestTurn: null,
+  latestUserMessageAt: null,
+  session: null,
+};
 
 describe("isFreshFirstRunWorkspace", () => {
   it("accepts an empty workspace", () => {
@@ -508,6 +521,63 @@ describe("isFreshFirstRunWorkspace", () => {
         serverCwd: "/projects/current",
         projects: [bootstrapProject],
         threads: [{ ...bootstrapThread, session: { status: "ready" } }],
+      }),
+    ).toBe(false);
+  });
+
+  it("accepts an inbox-only workspace as fresh", () => {
+    expect(
+      isFreshFirstRunWorkspace({
+        primaryEnvironmentId,
+        serverCwd: "/projects/current",
+        inboxProjectId: inboxProject.id,
+        projects: [inboxProject],
+        threads: [],
+      }),
+    ).toBe(true);
+  });
+
+  it("accepts the inbox next to an unused cwd bootstrap project and thread", () => {
+    expect(
+      isFreshFirstRunWorkspace({
+        primaryEnvironmentId,
+        serverCwd: "/projects/current",
+        bootstrapProjectId: bootstrapProject.id,
+        bootstrapThreadId: bootstrapThread.id,
+        bootstrapProjectCreated: true,
+        bootstrapThreadCreated: true,
+        inboxProjectId: inboxProject.id,
+        projects: [inboxProject, bootstrapProject],
+        threads: [bootstrapThread],
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects an inbox thread that already has a user message", () => {
+    expect(
+      isFreshFirstRunWorkspace({
+        primaryEnvironmentId,
+        serverCwd: "/projects/current",
+        inboxProjectId: inboxProject.id,
+        projects: [inboxProject],
+        threads: [
+          {
+            ...inboxThread,
+            latestUserMessageAt: "2026-09-16T12:00:00.000Z",
+          },
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  it("rejects a real project next to the inbox", () => {
+    expect(
+      isFreshFirstRunWorkspace({
+        primaryEnvironmentId,
+        serverCwd: "/projects/current",
+        inboxProjectId: inboxProject.id,
+        projects: [inboxProject, bootstrapProject],
+        threads: [],
       }),
     ).toBe(false);
   });
