@@ -4,7 +4,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/LAG-4/t3code",
+    "url": "https://github.com/LAG-4/doer",
     "directory": "apps/server"
   },
   "bin": {

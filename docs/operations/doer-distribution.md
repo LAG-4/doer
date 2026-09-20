@@ -6,7 +6,7 @@ How Doer ships to users, for free. Agent-oriented rules live in
 ## What users get
 
 - **Desktop app** (Windows x64, Linux x64, macOS arm64 + x64, unsigned) from
-  [GitHub Releases](https://github.com/LAG-4/t3code/releases), with in-app
+  [GitHub Releases](https://github.com/LAG-4/doer/releases), with in-app
   auto-update.
 - **Terminal**: `npx @lag4/doer-cli@latest`. The package also installs a short
   `doer` command. Same backend, no desktop app needed.
@@ -67,7 +67,7 @@ the live domain served a fresh upstream build (canonical `t3.codes`,
 - Effect service IDs follow the package name (`@lag4/doer-cli/...` in `apps/server`);
   the `deterministicKeys` lint enforces this and the release gate runs it.
 - Triage prompt and `.github/triage/PLAYBOOK.md` must stay byte-identical
-  (there is a test); both point at `LAG-4/t3code` on branch `lite`.
+  (there is a test); both point at `LAG-4/doer` on branch `lite`.
 
 ## Later, when it matters
 

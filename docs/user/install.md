@@ -19,7 +19,7 @@ This starts the server and opens the local web app. Run
 
 ## Desktop app
 
-Download a release from [GitHub Releases](https://github.com/LAG-4/t3code/releases)
+Download a release from [GitHub Releases](https://github.com/LAG-4/doer/releases)
 or from the [download page](https://doer.lagaryan.click/download):
 
 | Platform | Install                                                                     |

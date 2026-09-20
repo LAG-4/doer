@@ -1,4 +1,4 @@
-# FORK: Normie agent harness (LAG-4/t3code)
+# FORK: Normie agent harness (LAG-4/doer)
 
 > This repo is a **separate product forked from `pingdotgg/t3code`**, not a contribution branch.
 > Never open PRs to upstream. Cherry-pick upstream fixes via the `upstream` remote when needed.
@@ -214,7 +214,7 @@ Full glossary with file links: `docs/internals/glossary.md`
 - Don't verify with browsers or computer use unless the user explicitly agrees or requests it.
 - Security is important, but should not be over-indexed on, especially for dev mode/maintainer-only features.
 
-## Fork rules (LAG-4/t3code only — never upstream this section)
+## Fork rules (LAG-4/doer only — never upstream this section)
 
 This fork ships a simplified build for non-developers. `main` must stay a pure
 mirror of upstream `pingdotgg/t3code` `main` so fixes flow in cleanly.
@@ -293,7 +293,7 @@ prebuild) → publish_cli → release`. Triggers: a pushed `vX.Y.Z` tag, or manu
   gate runs typecheck, so a rename without updating IDs blocks all releases.
 - **Triage pair**: `apps/server/src/cli/triagePrompt.ts` (`TRIAGE_PLAYBOOK`)
   and `.github/triage/PLAYBOOK.md` must stay byte-identical (a test enforces
-  it); both point at `LAG-4/t3code` on branch `lite`. Edit both together.
+  it); both point at `LAG-4/doer` on branch `lite`. Edit both together.
 - **SSH remote path**: remote hosts install `@lag4/doer-cli@<spec>` and exec the
   `doer` binary (`packages/ssh/src/tunnel.ts`, `command.ts`); the desktop
   resolves the spec from its release channel. The pinned-runtime and

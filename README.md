@@ -1,6 +1,6 @@
 # Normie Agent Harness (fork of T3 Code)
 
-> This is **LAG-4/t3code**, a separate product fork of [`pingdotgg/t3code`](https://github.com/pingdotgg/t3code)
+> This is **LAG-4/doer**, a separate product fork of [`pingdotgg/t3code`](https://github.com/pingdotgg/t3code)
 > for **non-developers** — think Claude Cowork / ChatGPT Work, but BYO-provider with OpenCode free models.
 > Not an upstream contribution branch: do not open PRs to upstream. Upstream is MIT (T3 Tools Inc);
 > that copyright + license notice is preserved in `LICENSE`.
@@ -13,7 +13,7 @@
 
 Doer is a free forever, open-source AI helper for everyday work — writing, research,
 files, plans, job applications and more. Hand it the boring work: it runs on your
-machine with a [desktop app](https://github.com/LAG-4/t3code/releases) and a web app.
+machine with a [desktop app](https://github.com/LAG-4/doer/releases) and a web app.
 No terminal. No jargon.
 
 Doer starts free with OpenCode's free models (Big Pickle first, then other free Zen
@@ -22,7 +22,7 @@ Claude Code, Cursor, Grok Build, and Google Antigravity. If they're set up on yo
 computer, Doer can use them.
 
 - Site: [doer.lagaryan.click](https://doer.lagaryan.click)
-- Downloads: [GitHub Releases](https://github.com/LAG-4/t3code/releases)
+- Downloads: [GitHub Releases](https://github.com/LAG-4/doer/releases)
 - License: MIT — built on top of [T3 Code](https://github.com/pingdotgg/t3code) and [OpenCode](https://opencode.ai).
 
 ## "Wait, what are you selling me?"
@@ -58,7 +58,7 @@ Tip: Use `npx @lag4/doer-cli@latest --help` for the full CLI reference.
 
 ### Desktop app
 
-Install the latest version of the desktop app from [GitHub Releases](https://github.com/LAG-4/t3code/releases).
+Install the latest version of the desktop app from [GitHub Releases](https://github.com/LAG-4/doer/releases).
 
 > Alpha builds are unsigned: on macOS, right-click the app and choose Open the first
 > time. Windows may show a SmartScreen warning.
@@ -113,6 +113,6 @@ vp i
 
 Read [CONTRIBUTING.md](./CONTRIBUTING.md) before reporting a bug or opening a PR.
 
-Have a feature request? Open an [issue](https://github.com/LAG-4/t3code/issues).
+Have a feature request? Open an [issue](https://github.com/LAG-4/doer/issues).
 
 Need support? Join the [Discord](https://discord.gg/jn4EGJjrvv).
