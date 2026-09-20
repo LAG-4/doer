@@ -42,7 +42,7 @@ export type ProjectionAutomation = typeof ProjectionAutomation.Type;
 const IntToBoolean = Schema.Int.pipe(
   Schema.decodeTo(
     Schema.Boolean,
-    SchemaTransformation.transformOrFail({
+    SchemaTransformation.transformEffect({
       decode: (value) => Effect.succeed(value !== 0),
       encode: (value) => Effect.succeed(value ? 1 : 0),
     }),

@@ -1053,7 +1053,7 @@ it.effect("GitVcsDriver forwards execute env to the VCS process", () => {
   );
 });
 
-<it.effect("GitVcsDriver treats a missing git binary as not inside a worktree", () =>
+it.effect("GitVcsDriver treats a missing git binary as not inside a worktree", () =>
   Effect.gen(function* () {
     const driver = yield* GitVcsDriver.makeVcsDriverShape();
 

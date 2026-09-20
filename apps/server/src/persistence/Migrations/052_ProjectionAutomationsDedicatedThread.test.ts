@@ -1,12 +1,15 @@
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
 import { runMigrations } from "../Migrations.ts";
 import migrateDedicatedThread from "./052_ProjectionAutomationsDedicatedThread.ts";
 
-it.layer(NodeSqliteClient.layerMemory())("052_ProjectionAutomationsDedicatedThread", (it) => {
+const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layer({ filename: ":memory:" })));
+
+layer("052_ProjectionAutomationsDedicatedThread", (it) => {
   it.effect("adds the dedicated flag defaulting existing rows to dedicated", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;

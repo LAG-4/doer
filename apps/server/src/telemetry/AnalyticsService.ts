@@ -32,7 +32,7 @@ interface BufferedAnalyticsEvent {
   readonly capturedAt: string;
 }
 
-</**
+/**
  * TelemetryPublicConfig - The subset of telemetry settings that is safe to
  * share with browsers: the feature flag plus the PostHog project key and
  * host, both of which are public by design (they ship in client bundles).

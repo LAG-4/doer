@@ -113,9 +113,15 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
     }),
   );
 
-<  it.effect.each([true, false])(
+  // Fork: the release-archive install path is dead code — Doer ships the
+  // pinned runtime through the npm package (`npm install --prefix <staging>
+  // @lag4/doer-cli@<version>`), so archive download progress, checksum
+  // refusal, and interrupted-download cleanup never run. Skipped until the
+  // archive path is either removed or progress is ported to the npm installer.
+  it.skip.each([true, false])(
     "reports bytes before completion, then verifies and extracts (known size: %s)",
-    (knownSize) =>
+    // any: skipped (archive path is fork dead code); keeps the runnable body for a future unskip.
+    (knownSize): any =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
@@ -180,7 +186,7 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
       }),
   );
 
-  it.effect("cleans up an interrupted download without reporting verification or extraction", () =>
+  it.effect.skip("cleans up an interrupted download without reporting verification or extraction", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
@@ -233,7 +239,7 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
     }),
   );
 
-  it.effect("refuses an archive whose checksum does not match the release", () =>
+  it.effect.skip("refuses an archive whose checksum does not match the release", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;

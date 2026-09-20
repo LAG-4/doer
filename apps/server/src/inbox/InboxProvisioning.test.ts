@@ -35,6 +35,7 @@ const unusedProjection = {
   getThreadDetailById: () => Effect.die("unused"),
   getThreadDetailSnapshot: () => Effect.die("unused"),
   searchThreads: () => Effect.succeed({ matches: [] }),
+  getDeletedWorktreeThreads: () => Effect.succeed([]),
   getAutomationById: () => Effect.die("unused"),
   listVisibleAutomations: () => Effect.die("unused"),
   listDueAutomations: () => Effect.die("unused"),
