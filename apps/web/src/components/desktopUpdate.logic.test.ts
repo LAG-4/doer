@@ -183,13 +183,13 @@ describe("getDesktopUpdateActionError", () => {
 describe("desktop update UI helpers", () => {
   it("builds the stable release URL for a downloaded version", () => {
     expect(getDesktopUpdateReleaseUrl("0.0.30")).toBe(
-      "https://github.com/LAG-4/t3code/releases/tag/v0.0.30",
+      "https://github.com/LAG-4/doer/releases/tag/v0.0.30",
     );
   });
 
   it("builds the nightly release URL without dropping its version suffix", () => {
     expect(getDesktopUpdateReleaseUrl("0.0.30-nightly.20260728.931")).toBe(
-      "https://github.com/LAG-4/t3code/releases/tag/v0.0.30-nightly.20260728.931",
+      "https://github.com/LAG-4/doer/releases/tag/v0.0.30-nightly.20260728.931",
     );
   });
 
@@ -199,12 +199,12 @@ describe("desktop update UI helpers", () => {
   });
 
   it("builds the release history URL", () => {
-    expect(getDesktopUpdateReleaseHistoryUrl()).toBe("https://github.com/LAG-4/t3code/releases");
+    expect(getDesktopUpdateReleaseHistoryUrl()).toBe("https://github.com/LAG-4/doer/releases");
   });
 
   it("points manual-download recovery guidance at the fork releases", () => {
     const hint = getDesktopUpdateManualDownloadHint();
-    expect(hint).toContain("https://github.com/LAG-4/t3code/releases");
+    expect(hint).toContain("https://github.com/LAG-4/doer/releases");
     expect(hint).not.toContain("pingdotgg");
   });
 

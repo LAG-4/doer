@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# One-command dev launcher for the LAG-4/t3code normie fork.
+# One-command dev launcher for the LAG-4/doer normie fork.
 # Usage: ./dev.sh [commands|web|desktop|server|web-only|share|mobile|doctor|status|stop|help] [-- extra args]
 # Examples:
 #   ./dev.sh web                 # server + web, isolated state

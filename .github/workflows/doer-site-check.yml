@@ -22,7 +22,7 @@ jobs:
     name: Check live Doer site
     # Never run on upstream: the workflow file only exists on the fork, and
     # upstream has no doer.lagaryan.click to check.
-    if: github.repository == 'LAG-4/t3code'
+    if: github.repository == 'LAG-4/doer'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

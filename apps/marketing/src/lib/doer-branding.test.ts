@@ -45,7 +45,7 @@ describe("doer marketing identity", () => {
 
   it("points links and metadata at the fork, never upstream", () => {
     const site = readSource("src/lib/site.ts");
-    expect(site).toContain("LAG-4/t3code");
+    expect(site).toContain("LAG-4/doer");
     expect(site).not.toContain("pingdotgg");
 
     const astroConfig = readSource("astro.config.mjs");
@@ -53,7 +53,7 @@ describe("doer marketing identity", () => {
     expect(astroConfig).not.toContain("t3.codes");
 
     const releases = readSource("src/lib/releases.ts");
-    expect(releases).toContain("LAG-4/t3code");
+    expect(releases).toContain("LAG-4/doer");
     expect(releases).not.toContain("pingdotgg");
 
     // Deleted on purpose: upstream's endorsement marquee has no place on the

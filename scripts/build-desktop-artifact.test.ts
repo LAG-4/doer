@@ -325,7 +325,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           ConfigProvider.layer(
             ConfigProvider.fromEnv({
               env: {
-                DOER_DESKTOP_UPDATE_REPOSITORY: "LAG-4/t3code",
+                DOER_DESKTOP_UPDATE_REPOSITORY: "LAG-4/doer",
                 T3CODE_DESKTOP_UPDATE_REPOSITORY: "pingdotgg/t3code",
                 GITHUB_REPOSITORY: "someone/else",
               },
@@ -337,7 +337,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.deepStrictEqual(config, {
         provider: "github",
         owner: "LAG-4",
-        repo: "t3code",
+        repo: "doer",
         releaseType: "release",
       });
     }),
