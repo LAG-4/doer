@@ -142,12 +142,12 @@ const runInteractiveSession = (input: {
     child.once("exit", (code, signal) => resume(Effect.succeed(code ?? (signal === null ? 0 : 1))));
   });
 
-const agentFlag = Flag.choice("agent", ["claude", "codex"]).pipe(
+const agentFlag = Flag.Literals("agent", ["claude", "codex"]).pipe(
   Flag.withDescription("Agent CLI to use. Default: ask when both are installed."),
   Flag.optional,
 );
 
-const modelFlag = Flag.string("model").pipe(
+const modelFlag = Flag.String("model").pipe(
   Flag.withDescription("Model passed through to the agent CLI. Default: the agent's default."),
   Flag.optional,
 );
@@ -169,8 +169,8 @@ export const triageCommand = Command.make("triage", {
       // --base-dir wins; DOER_HOME (then T3CODE_HOME) is its documented env
       // equivalent (same precedence as `doer pair`).
       const explicitBaseDir = Option.getOrUndefined(flags.baseDir);
-      const doerHome = yield* Config.string("DOER_HOME").pipe(Config.option);
-      const t3Home = yield* Config.string("T3CODE_HOME").pipe(Config.option);
+      const doerHome = yield* Config.String("DOER_HOME").pipe(Config.option);
+      const t3Home = yield* Config.String("T3CODE_HOME").pipe(Config.option);
       const envHome = Option.orElse(doerHome, () => t3Home);
       const baseDir = yield* resolveBaseDir(explicitBaseDir ?? Option.getOrUndefined(envHome));
       const paths = yield* ServerConfig.deriveServerPaths(baseDir, undefined, {});

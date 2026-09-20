@@ -32,7 +32,7 @@ interface BufferedAnalyticsEvent {
   readonly capturedAt: string;
 }
 
-/**
+</**
  * TelemetryPublicConfig - The subset of telemetry settings that is safe to
  * share with browsers: the feature flag plus the PostHog project key and
  * host, both of which are public by design (they ship in client bundles).
@@ -40,25 +40,25 @@ interface BufferedAnalyticsEvent {
  * ingest URL is ever baked into a build.
  */
 export const TelemetryPublicConfig = Config.all({
-  posthogKey: Config.string("T3CODE_POSTHOG_KEY").pipe(
+  posthogKey: Config.String("T3CODE_POSTHOG_KEY").pipe(
     Config.withDefault("phc_tZ8tQXasmJMxeE4HtdGgZy5jxaCxLTLBbGCR5utaKNVx"),
   ),
-  posthogHost: Config.string("T3CODE_POSTHOG_HOST").pipe(
+  posthogHost: Config.String("T3CODE_POSTHOG_HOST").pipe(
     Config.withDefault("https://us.i.posthog.com"),
   ),
-  enabled: Config.boolean("T3CODE_TELEMETRY_ENABLED").pipe(Config.withDefault(true)),
+  enabled: Config.Boolean("T3CODE_TELEMETRY_ENABLED").pipe(Config.withDefault(true)),
 });
 
 const TelemetryEnvConfig = Config.all({
   public: TelemetryPublicConfig,
-  processPersonProfile: Config.boolean("T3CODE_POSTHOG_PERSON_PROFILES").pipe(
+  processPersonProfile: Config.Boolean("T3CODE_POSTHOG_PERSON_PROFILES").pipe(
     Config.withDefault(true),
   ),
-  flushBatchSize: Config.number("T3CODE_TELEMETRY_FLUSH_BATCH_SIZE").pipe(Config.withDefault(20)),
-  maxBufferedEvents: Config.number("T3CODE_TELEMETRY_MAX_BUFFERED_EVENTS").pipe(
+  flushBatchSize: Config.Number("T3CODE_TELEMETRY_FLUSH_BATCH_SIZE").pipe(Config.withDefault(20)),
+  maxBufferedEvents: Config.Number("T3CODE_TELEMETRY_MAX_BUFFERED_EVENTS").pipe(
     Config.withDefault(1_000),
   ),
-  wslDistroName: Config.string("WSL_DISTRO_NAME").pipe(Config.option),
+  wslDistroName: Config.String("WSL_DISTRO_NAME").pipe(Config.option),
 });
 
 export class AnalyticsService extends Context.Service<
