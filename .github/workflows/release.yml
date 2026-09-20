@@ -639,6 +639,13 @@ jobs:
       - name: Build Linux CLI archive for WSL
         if: matrix.platform == 'linux' && matrix.arch == 'x64'
         shell: bash
+        env:
+          # The single-executable needs a Node with --build-sea (25.7+); the
+          # repo itself stays on engines.node. Exact version, not a major: vp
+          # downloads it from nodejs.org/dist, and only exact versions have a
+          # dist directory. Keep in step with SEA_NODE_VERSION in
+          # apps/server/vite.config.ts.
+          VP_NODE_VERSION: "26.8.2"
         run: |
           set -euo pipefail
           # cli.ts build bundles apps/web/dist into the server's dist/client,
