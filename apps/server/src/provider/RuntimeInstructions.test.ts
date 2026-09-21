@@ -35,6 +35,21 @@ describe("buildRuntimeInstructions", () => {
     expect(instructions).not.toContain("## Doer tools");
     expect(instructions).not.toContain("computer_*");
   });
+
+  it("always attaches the built-in everyday-assistant skill, even with no tools", () => {
+    for (const instructions of [
+      buildRuntimeInstructions({ harness: "OpenCode" }),
+      buildRuntimeInstructions({
+        harness: "OpenCode",
+        t3Tools: { browser: true, device: false, computer: false },
+      }),
+    ]) {
+      expect(instructions).toContain("<doer_everyday_assistant>");
+      expect(instructions).toContain("never uses technical terms");
+      expect(instructions).toContain("never 5 or more silent ones in a row");
+      expect(instructions).toContain("what you just did and what you will do next");
+    }
+  });
 });
 
 describe("t3ToolAvailabilityFromCapabilities", () => {

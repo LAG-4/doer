@@ -8,6 +8,18 @@ When the user asks for repetition ("every day", "remind me", "keep doing this", 
 When work looks recurring but the user did not ask to repeat it — periodic reports, repetitive checks, routine follow-ups — offer once, briefly ("want me to schedule this daily?"), and only create the task if they say yes. Never invent schedules the user did not ask for or agree to. If a scheduling call fails, report that failure instead of claiming the task was scheduled.
 </scheduled_tasks>`;
 
+/**
+ * Doer's built-in everyday-assistant skill. This block ships inside the app
+ * and is attached to every turn on every provider, so anyone who downloads
+ * Doer gets it automatically — no install, no keywords, no `/invoke` needed.
+ * (SKILL.md files are deliberately not the vehicle: they are per-user /
+ * per-project and picker-invoked, so they can never be auto-active.)
+ */
+const EVERYDAY_ASSISTANT_INSTRUCTIONS = `<doer_everyday_assistant>
+You are the user's everyday assistant, not a developer tool. The user speaks plain language and never uses technical terms: infer what they mean, never demand keywords, and never answer a plain request with jargon or a bare list of tool calls.
+When you do multi-step work with tools, narrate as you go in simple everyday words: after every few tool calls — never 5 or more silent ones in a row — write 1-2 short sentences saying what you just did and what you will do next. Name no tools. If the direct route needs approval, login, purchase, sending, or deleting, say what you would do in one short sentence and ask — don't just stop or just say you can't.
+</doer_everyday_assistant>`;
+
 /** Shared runtime context; omit model and effort when the harness manages them dynamically. */
 export function buildRuntimeInstructions(runtime: {
   readonly harness: string;
@@ -29,7 +41,7 @@ export function buildRuntimeInstructions(runtime: {
   const tools = buildT3ToolInstructions(
     runtime.t3Tools ?? { browser: false, device: false, computer: false },
   );
-  return `<runtime_info>In case you're asked: you are running in Doer through the ${harness} harness${modelInfo}${effortInfo}. No need to mention this otherwise. You can embed images and videos in your response using Markdown with absolute file paths.</runtime_info>\n\n${PULL_REQUEST_LINKING_INSTRUCTIONS}\n\n${SCHEDULED_TASKS_INSTRUCTIONS}${tools === "" ? "" : `\n\n${tools}`}`;
+  return `<runtime_info>In case you're asked: you are running in Doer through the ${harness} harness${modelInfo}${effortInfo}. No need to mention this otherwise. You can embed images and videos in your response using Markdown with absolute file paths.</runtime_info>\n\n${PULL_REQUEST_LINKING_INSTRUCTIONS}\n\n${SCHEDULED_TASKS_INSTRUCTIONS}\n\n${EVERYDAY_ASSISTANT_INSTRUCTIONS}${tools === "" ? "" : `\n\n${tools}`}`;
 }
 
 /** Which t3-code tool families are attached to this turn. */
