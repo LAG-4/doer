@@ -3426,27 +3426,23 @@ export function ConnectionsSettings() {
                   disabled={isUpdatingDesktopServerExposure}
                   render={<Button variant="outline" disabled={isUpdatingDesktopServerExposure} />}
                 >
-                  Cancel
+                  <span className="[text-box:trim-both_cap_alphabetic]">Cancel</span>
                 </AlertDialogClose>
                 <Button
-                  variant={
-                    pendingDesktopServerExposureMode === "local-only" ? "destructive" : "default"
-                  }
+                  variant="default"
                   onClick={handleConfirmDesktopServerExposureChange}
                   disabled={
                     pendingDesktopServerExposureMode === null || isUpdatingDesktopServerExposure
                   }
                 >
-                  {isUpdatingDesktopServerExposure ? (
-                    <>
-                      <Spinner className="size-3.5" />
-                      Restarting…
-                    </>
-                  ) : pendingDesktopServerExposureMode === "network-accessible" ? (
-                    "Restart and enable"
-                  ) : (
-                    "Restart and disable"
-                  )}
+                  {isUpdatingDesktopServerExposure && <Spinner className="size-3.5" />}
+                  <span className="[text-box:trim-both_cap_alphabetic]">
+                    {isUpdatingDesktopServerExposure
+                      ? "Restarting…"
+                      : pendingDesktopServerExposureMode === "network-accessible"
+                        ? "Restart and enable"
+                        : "Restart and disable"}
+                  </span>
                 </Button>
               </AlertDialogFooter>
             </AlertDialogPopup>

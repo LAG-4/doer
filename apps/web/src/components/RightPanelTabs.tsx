@@ -34,6 +34,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -63,7 +64,11 @@ import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
 import { faviconUrlForOrigin } from "~/lib/favicon";
 import { useTheme } from "~/hooks/useTheme";
 import { useClientSettings } from "~/hooks/useSettings";
-import { pullRequestEnvironment } from "~/state/pullRequests";
+import {
+  newestPullRequestSummary,
+  pullRequestEnvironment,
+  useSharedPullRequestSummary,
+} from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 
@@ -356,79 +361,80 @@ function RightPanelEmptyState(props: {
   const simpleModeEnabled = useClientSettings((settings) => settings.simpleModeEnabled);
 
   const actions = filterSimpleModeSurfaceActions(
-    [    {
-      label: "Browser",
-      icon: Globe2,
-      shortcut: "B",
-      available: props.browserAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.browser,
-      onClick: props.onAddBrowser,
-      badgeCount: 0,
-    },
-    {
-      label: "Terminal",
-      icon: TerminalSquare,
-      shortcut: "T",
-      available: props.terminalAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.terminal,
-      onClick: props.onAddTerminal,
-      badgeCount: 0,
-    },
-    {
-      label: "Files",
-      icon: Files,
-      shortcut: "F",
-      available: props.filesAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.files,
-      onClick: props.onAddFiles,
-      badgeCount: 0,
-    },
-    {
-      label: "Diff",
-      icon: FileDiff,
-      shortcut: "D",
-      available: props.diffAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.diff,
-      onClick: props.onAddDiff,
-      badgeCount: 0,
-    },
-    {
-      label: "Pull request",
-      icon: PullRequestGlyph.pullRequest,
-      shortcut: "P",
-      available: props.pullRequestAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequest,
-      onClick: props.onAddPullRequest,
-      badgeCount: 0,
-    },
-    {
-      label: "Linked pull requests",
-      icon: PullRequestGlyph.link,
-      shortcut: "L",
-      available: props.pullRequestsAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequests,
-      onClick: props.onAddPullRequests,
-      badgeCount: 0,
-    },
-    {
-      label: "Agents",
-      icon: Bot,
-      shortcut: "A",
-      available: props.agentsAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.agents,
-      onClick: props.onAddAgents,
-      badgeCount: props.liveAgentCount,
-    },
-    {
-      label: "Device",
-      description: "Watch an iOS Simulator or Android Emulator.",
-      icon: Smartphone,
-      shortcut: "M",
-      available: props.deviceAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.device,
-      onClick: props.onAddDevice,
-      badgeCount: 0,
-    },
+    [
+      {
+        label: "Browser",
+        icon: Globe2,
+        shortcut: "B",
+        available: props.browserAvailable,
+        disabledReason: SURFACE_UNAVAILABLE_HINTS.browser,
+        onClick: props.onAddBrowser,
+        badgeCount: 0,
+      },
+      {
+        label: "Terminal",
+        icon: TerminalSquare,
+        shortcut: "T",
+        available: props.terminalAvailable,
+        disabledReason: SURFACE_UNAVAILABLE_HINTS.terminal,
+        onClick: props.onAddTerminal,
+        badgeCount: 0,
+      },
+      {
+        label: "Files",
+        icon: Files,
+        shortcut: "F",
+        available: props.filesAvailable,
+        disabledReason: SURFACE_UNAVAILABLE_HINTS.files,
+        onClick: props.onAddFiles,
+        badgeCount: 0,
+      },
+      {
+        label: "Diff",
+        icon: FileDiff,
+        shortcut: "D",
+        available: props.diffAvailable,
+        disabledReason: SURFACE_UNAVAILABLE_HINTS.diff,
+        onClick: props.onAddDiff,
+        badgeCount: 0,
+      },
+      {
+        label: "Pull request",
+        icon: PullRequestGlyph.pullRequest,
+        shortcut: "P",
+        available: props.pullRequestAvailable,
+        disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequest,
+        onClick: props.onAddPullRequest,
+        badgeCount: 0,
+      },
+      {
+        label: "Linked pull requests",
+        icon: PullRequestGlyph.link,
+        shortcut: "L",
+        available: props.pullRequestsAvailable,
+        disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequests,
+        onClick: props.onAddPullRequests,
+        badgeCount: 0,
+      },
+      {
+        label: "Agents",
+        icon: Bot,
+        shortcut: "A",
+        available: props.agentsAvailable,
+        disabledReason: SURFACE_UNAVAILABLE_HINTS.agents,
+        onClick: props.onAddAgents,
+        badgeCount: props.liveAgentCount,
+      },
+      {
+        label: "Device",
+        description: "Watch an iOS Simulator or Android Emulator.",
+        icon: Smartphone,
+        shortcut: "M",
+        available: props.deviceAvailable,
+        disabledReason: SURFACE_UNAVAILABLE_HINTS.device,
+        onClick: props.onAddDevice,
+        badgeCount: 0,
+      },
     ] as const,
     simpleModeEnabled,
   );
@@ -824,19 +830,26 @@ function PullRequestSurfaceIcon({
           },
         }),
   ).data;
+  const reference = useMemo(
+    () => ({
+      projectId: surface.projectId as ProjectId,
+      repository: surface.repository,
+      number: surface.number,
+    }),
+    [surface.projectId, surface.repository, surface.number],
+  );
+  const sharedSummary = useSharedPullRequestSummary(resolvedEnvironmentId, reference, null);
   // The compact tab intentionally shows lifecycle and draft state only. Conflict warnings have
   // their own presentation on surfaces that have mergeability, while this tab stays stable as
   // detail data arrives.
-  const status =
-    linkedSnapshot !== null
-      ? linkedSnapshot
-      : detail === null
-        ? (seed ?? null)
-        : { state: detail.state, isDraft: detail.isDraft };
+  const status = linkedSnapshot ?? newestPullRequestSummary(detail, sharedSummary) ?? seed ?? null;
   if (status === null) {
     return <PullRequestGlyph.pullRequest className="size-3 shrink-0 text-muted-foreground" />;
   }
-  const presentation = resolvePullRequestState({ state: status.state, isDraft: status.isDraft });
+  const presentation = resolvePullRequestState({
+    state: status.state,
+    isDraft: status.isDraft ?? detail?.isDraft ?? seed?.isDraft ?? false,
+  });
   return <presentation.Icon className={cn("size-3 shrink-0", presentation.toneClassName)} />;
 }
 
@@ -886,70 +899,71 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   }, []);
 
   const addSurfaceActions = filterSimpleModeSurfaceActions(
-    [    {
-      label: "Browser",
-      icon: Globe2,
-      shortcut: "B",
-      available: props.browserAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.browser,
-      onClick: props.onAddBrowser,
-    },
-    {
-      label: "Terminal",
-      icon: TerminalSquare,
-      shortcut: "T",
-      available: props.terminalAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.terminal,
-      onClick: props.onAddTerminal,
-    },
-    {
-      label: "Files",
-      icon: Files,
-      shortcut: "F",
-      available: props.filesAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.files,
-      onClick: props.onAddFiles,
-    },
-    {
-      label: "Diff",
-      icon: FileDiff,
-      shortcut: "D",
-      available: props.diffAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.diff,
-      onClick: props.onAddDiff,
-    },
-    {
-      label: "Pull request",
-      icon: PullRequestGlyph.pullRequest,
-      shortcut: "P",
-      available: props.pullRequestAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.pullRequest,
-      onClick: props.onAddPullRequest,
-    },
-    {
-      label: "Linked pull requests",
-      icon: PullRequestGlyph.link,
-      shortcut: "L",
-      available: props.pullRequestsAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.pullRequests,
-      onClick: props.onAddPullRequests,
-    },
-    {
-      label: "Agents",
-      icon: Bot,
-      shortcut: "A",
-      available: props.agentsAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.agents,
-      onClick: props.onAddAgents,
-    },
-    {
-      label: "Device",
-      icon: Smartphone,
-      shortcut: "M",
-      available: props.deviceAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.device,
-      onClick: props.onAddDevice,
-    },
+    [
+      {
+        label: "Browser",
+        icon: Globe2,
+        shortcut: "B",
+        available: props.browserAvailable,
+        disabledReason: SURFACE_DISABLED_REASONS.browser,
+        onClick: props.onAddBrowser,
+      },
+      {
+        label: "Terminal",
+        icon: TerminalSquare,
+        shortcut: "T",
+        available: props.terminalAvailable,
+        disabledReason: SURFACE_DISABLED_REASONS.terminal,
+        onClick: props.onAddTerminal,
+      },
+      {
+        label: "Files",
+        icon: Files,
+        shortcut: "F",
+        available: props.filesAvailable,
+        disabledReason: SURFACE_DISABLED_REASONS.files,
+        onClick: props.onAddFiles,
+      },
+      {
+        label: "Diff",
+        icon: FileDiff,
+        shortcut: "D",
+        available: props.diffAvailable,
+        disabledReason: SURFACE_DISABLED_REASONS.diff,
+        onClick: props.onAddDiff,
+      },
+      {
+        label: "Pull request",
+        icon: PullRequestGlyph.pullRequest,
+        shortcut: "P",
+        available: props.pullRequestAvailable,
+        disabledReason: SURFACE_DISABLED_REASONS.pullRequest,
+        onClick: props.onAddPullRequest,
+      },
+      {
+        label: "Linked pull requests",
+        icon: PullRequestGlyph.link,
+        shortcut: "L",
+        available: props.pullRequestsAvailable,
+        disabledReason: SURFACE_DISABLED_REASONS.pullRequests,
+        onClick: props.onAddPullRequests,
+      },
+      {
+        label: "Agents",
+        icon: Bot,
+        shortcut: "A",
+        available: props.agentsAvailable,
+        disabledReason: SURFACE_DISABLED_REASONS.agents,
+        onClick: props.onAddAgents,
+      },
+      {
+        label: "Device",
+        icon: Smartphone,
+        shortcut: "M",
+        available: props.deviceAvailable,
+        disabledReason: SURFACE_DISABLED_REASONS.device,
+        onClick: props.onAddDevice,
+      },
     ] as const,
     simpleModeEnabled,
   );
