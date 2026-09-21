@@ -5,6 +5,10 @@ on:
   push:
     branches:
       - main
+      # Fork (Doer): lite is pushed directly (local merges, no PR), so CI
+      # must watch it too — otherwise breakage surfaces only at release
+      # time, as v0.0.49's quality-gate failures did.
+      - lite
 
 permissions:
   contents: read
