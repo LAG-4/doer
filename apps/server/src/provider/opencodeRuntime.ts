@@ -188,6 +188,17 @@ export function openCodeRuntimeErrorDetail(cause: unknown): string {
   return String(cause);
 }
 
+const AGENT_NOT_FOUND_PATTERN = /agent not found/i;
+
+/**
+ * Whether a failure is the OpenCode server rejecting an unknown agent name
+ * (e.g. `Agent not found: "Build"`). Adapters use this to fall back to the
+ * server default instead of failing the turn on a stale client selection.
+ */
+export function isOpenCodeAgentNotFoundError(cause: unknown): boolean {
+  return AGENT_NOT_FOUND_PATTERN.test(openCodeRuntimeErrorDetail(cause));
+}
+
 export const runOpenCodeSdk = <A>(
   operation: string,
   fn: (signal: AbortSignal) => Promise<A>,

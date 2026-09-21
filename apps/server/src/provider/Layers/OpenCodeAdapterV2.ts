@@ -77,6 +77,7 @@ import { type OpenCodeAdapterShape } from "../Services/OpenCodeAdapter.ts";
 import {
   buildOpenCodeV2PermissionRules,
   createOpenCodeV2Client,
+  isOpenCodeAgentNotFoundError,
   OpenCodeRuntime,
   OpenCodeRuntimeError,
   openCodeRuntimeErrorDetail,
@@ -1233,9 +1234,22 @@ export function makeOpenCodeAdapterV2(
         ).pipe(Effect.mapError(toRequestError));
       }
       if (selection.selectedAgent) {
+        const requestedAgent = selection.selectedAgent;
         yield* runOpenCodeSdk("session.switchAgent", (signal) =>
-          client.session.switchAgent({ sessionID, agent: selection.selectedAgent! }, { signal }),
-        ).pipe(Effect.mapError(toRequestError));
+          client.session.switchAgent({ sessionID, agent: requestedAgent }, { signal }),
+        ).pipe(
+          Effect.asVoid,
+          Effect.catchIf(
+            (cause) => isOpenCodeAgentNotFoundError(cause),
+            (cause) =>
+              // A stale client selection (e.g. a display label like "Build")
+              // must not kill the turn: keep the session's current agent.
+              Effect.logWarning(
+                `OpenCode session '${sessionID}' ignores unknown agent '${requestedAgent}'; continuing with its current agent: ${openCodeRuntimeErrorDetail(cause)}`,
+              ),
+          ),
+          Effect.mapError(toRequestError),
+        );
       }
     });
 
@@ -1415,24 +1429,37 @@ export function makeOpenCodeAdapterV2(
                     `OpenCode session '${resumeSessionId}' no longer exists; starting a fresh session.`,
                   );
                 }
-                const created = yield* runOpenCodeSdk("session.create", (signal) =>
-                  client.session.create(
-                    {
-                      ...(input.title ? { title: input.title } : {}),
-                      ...(selectedAgent ? { agent: selectedAgent } : {}),
-                      ...(parsedSelection
-                        ? {
-                            model: {
-                              id: parsedSelection.modelID,
-                              providerID: parsedSelection.providerID,
-                              ...(selectedVariant ? { variant: selectedVariant } : {}),
-                            },
-                          }
-                        : {}),
-                      location: { directory },
-                      permissions: buildOpenCodeV2PermissionRules(input.runtimeMode),
-                    },
-                    { signal },
+                const createSession = (agent: string | undefined) =>
+                  runOpenCodeSdk("session.create", (signal) =>
+                    client.session.create(
+                      {
+                        ...(input.title ? { title: input.title } : {}),
+                        ...(agent ? { agent } : {}),
+                        ...(parsedSelection
+                          ? {
+                              model: {
+                                id: parsedSelection.modelID,
+                                providerID: parsedSelection.providerID,
+                                ...(selectedVariant ? { variant: selectedVariant } : {}),
+                              },
+                            }
+                          : {}),
+                        location: { directory },
+                        permissions: buildOpenCodeV2PermissionRules(input.runtimeMode),
+                      },
+                      { signal },
+                    ),
+                  );
+                const created = yield* createSession(selectedAgent).pipe(
+                  Effect.catchIf(
+                    (cause) => selectedAgent !== undefined && isOpenCodeAgentNotFoundError(cause),
+                    (cause) =>
+                      // A stale client selection (e.g. a display label like
+                      // "Build") must not kill the turn: retry once with the
+                      // server default agent.
+                      Effect.logWarning(
+                        `OpenCode server does not know agent '${selectedAgent}'; creating the session with its default agent instead: ${openCodeRuntimeErrorDetail(cause)}`,
+                      ).pipe(Effect.flatMap(() => createSession(undefined))),
                   ),
                 );
                 return { openCodeSessionId: created.id, created: true };

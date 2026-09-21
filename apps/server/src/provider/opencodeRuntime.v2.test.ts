@@ -8,8 +8,10 @@ import { describe, it } from "vite-plus/test";
 
 import {
   buildOpenCodeV2PermissionRules,
+  isOpenCodeAgentNotFoundError,
   isOpenCodeV2Version,
   loadOpenCodeV2Inventory,
+  OpenCodeRuntimeError,
   type OpenCodeV2Client,
   parseServerPasswordFromOutput,
   parseServerUrlFromOutput,
@@ -66,6 +68,31 @@ describe("isOpenCodeV2Version", () => {
     NodeAssert.equal(isOpenCodeV2Version("2.0.11"), true);
     NodeAssert.equal(isOpenCodeV2Version("1.18.31"), false);
     NodeAssert.equal(isOpenCodeV2Version("not-a-version"), false);
+  });
+});
+
+describe("isOpenCodeAgentNotFoundError", () => {
+  it("matches the server's unknown-agent rejection", () => {
+    NodeAssert.equal(
+      isOpenCodeAgentNotFoundError(
+        new OpenCodeRuntimeError({
+          operation: "session.create",
+          detail: 'Agent not found: "Build"',
+        }),
+      ),
+      true,
+    );
+    NodeAssert.equal(isOpenCodeAgentNotFoundError(new Error("Agent not found: build")), true);
+  });
+
+  it("ignores unrelated failures", () => {
+    NodeAssert.equal(
+      isOpenCodeAgentNotFoundError(
+        new OpenCodeRuntimeError({ operation: "session.get", detail: "Session not found" }),
+      ),
+      false,
+    );
+    NodeAssert.equal(isOpenCodeAgentNotFoundError(new Error("boom")), false);
   });
 });
 
