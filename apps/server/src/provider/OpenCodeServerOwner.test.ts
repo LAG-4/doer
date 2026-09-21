@@ -48,6 +48,7 @@ const makeRuntime = Effect.gen(function* () {
         return {
           url: `http://127.0.0.1:${index}`,
           version: "1.14.19",
+          apiVersion: 1 as const,
           isRunning: Effect.succeed(true),
           exitCode: Effect.never,
         };
@@ -132,6 +133,7 @@ it.effect("invalidates an exited process so the next borrower starts a new one",
           return {
             url: `http://127.0.0.1:${index}`,
             version: "1.14.19",
+            apiVersion: 1 as const,
             isRunning: Effect.succeed(true),
             exitCode: Deferred.await(exitCode),
           };
@@ -181,6 +183,7 @@ it.effect("replaces a dead cached process before its exit watcher runs", () =>
           return {
             url: `http://127.0.0.1:${index}`,
             version: "1.14.19",
+            apiVersion: 1 as const,
             isRunning: Ref.get(isRunning),
             exitCode: Effect.never,
           };
@@ -237,6 +240,7 @@ it.effect("cleans up an interrupted startup and allows a retry", () =>
           return {
             url: `http://127.0.0.1:${index}`,
             version: "1.14.19",
+            apiVersion: 1 as const,
             isRunning: Effect.succeed(true),
             exitCode: Effect.never,
           };

@@ -23,6 +23,7 @@ const runtimeMock = {
     authHeaders: [] as Array<string | null>,
     closeCalls: [] as string[],
     sessionCreateCalls: 0,
+    apiVersion: 1 as 1 | 2,
     connectionError: undefined as Error | undefined,
     sessionCreateError: undefined as unknown,
     sessionResult: undefined as { data?: { id: string } } | undefined,
@@ -38,6 +39,7 @@ const runtimeMock = {
     this.state.authHeaders.length = 0;
     this.state.closeCalls.length = 0;
     this.state.sessionCreateCalls = 0;
+    this.state.apiVersion = 1;
     this.state.connectionError = undefined;
     this.state.sessionCreateError = undefined;
     this.state.sessionResult = undefined;
@@ -70,6 +72,7 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntime.OpenCodeRuntimeShape = {
           ? { serverPassword: effectiveServerPassword }
           : {}),
         version: "1.14.19",
+        apiVersion: runtimeMock.state.apiVersion,
         isRunning: Effect.succeed(true),
         exitCode: Effect.never,
       };
@@ -87,6 +90,7 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntime.OpenCodeRuntimeShape = {
           url: serverUrl ?? "http://127.0.0.1:4301",
           ...(serverPassword ? { serverPassword } : {}),
           version: "1.14.19",
+          apiVersion: runtimeMock.state.apiVersion,
           exitCode: null,
           external: Boolean(serverUrl),
         }),
@@ -622,3 +626,51 @@ it.layer(OpenCodeTextGenerationExistingServerTestLayer)(
     );
   },
 );
+
+it.layer(OpenCodeTextGenerationTestLayer)("OpenCodeTextGeneration against a v2 server", (it) => {
+  it.effect("creates a location-scoped session and uses one-shot generation", () =>
+    Effect.gen(function* () {
+      runtimeMock.state.apiVersion = 2;
+      const requests: Array<{ url: string; method: string; body: unknown }> = [];
+      const realFetch = globalThis.fetch;
+      globalThis.fetch = (async (url: unknown, init?: { method?: string; body?: unknown }) => {
+        const urlString = String(url);
+        const rawBody = init?.body;
+        const body = typeof rawBody === "string" ? (JSON.parse(rawBody) as unknown) : rawBody;
+        requests.push({ url: urlString, method: init?.method ?? "GET", body });
+        const payload = urlString.endsWith("/api/session")
+          ? {
+              data: {
+                id: "ses_v2test",
+                projectID: "project-test",
+                cost: 0,
+                tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+                time: { created: 1, updated: 1 },
+                location: { directory: process.cwd() },
+              },
+            }
+          : { data: { text: '{"subject":"Add report","body":"Generated body"}' } };
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }) as typeof globalThis.fetch;
+      try {
+        const generated = yield* withOpenCodeTextGeneration(
+          DEFAULT_OPENCODE_SETTINGS,
+          (textGeneration) => textGeneration.generateCommitMessage(DEFAULT_COMMIT_MESSAGE_INPUT),
+        );
+        expect(generated).toEqual({ subject: "Add report", body: "Generated body" });
+        expect(requests.map((request) => `${request.method} ${request.url}`)).toEqual([
+          `POST http://127.0.0.1:4301/api/session`,
+          `POST http://127.0.0.1:4301/api/session/ses_v2test/generate`,
+        ]);
+        const createBody = requests[0]?.body as Record<string, unknown>;
+        expect(createBody.location).toEqual({ directory: process.cwd() });
+        expect(createBody.permissions).toEqual([{ action: "*", resource: "*", effect: "deny" }]);
+      } finally {
+        globalThis.fetch = realFetch;
+      }
+    }),
+  );
+});

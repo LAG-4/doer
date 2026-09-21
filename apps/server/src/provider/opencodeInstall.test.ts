@@ -20,6 +20,7 @@ import {
   openCodeManagedScriptBinDir,
   openCodeNativeBinaryPath,
   openCodeNpmInstallArgs,
+  openCodeNpmPackageFromSpec,
   powershellSingleQuoted,
   resolveOpenCodeHome,
 } from "./opencodeInstall.ts";
@@ -147,8 +148,24 @@ describe("opencodeInstall", () => {
     expect(openCodeInstallArchiveFilename("windows-x64")).toBe("opencode-windows-x64.zip");
     expect(openCodeInstallArchiveFilename("linux-x64")).toBe("opencode-linux-x64.tar.gz");
     expect(openCodeInstallDownloadUrl("darwin-arm64")).toBe(
-      "https://github.com/sst/opencode/releases/latest/download/opencode-darwin-arm64.zip",
+      "https://github.com/anomalyco/opencode/releases/latest/download/opencode-darwin-arm64.zip",
     );
+  });
+
+  it("derives npm package names from versioned specs, scope-aware", () => {
+    expect(openCodeNpmPackageFromSpec("opencode-ai@latest")).toBe("opencode-ai");
+    expect(openCodeNpmPackageFromSpec("opencode-ai")).toBe("opencode-ai");
+    expect(openCodeNpmPackageFromSpec("@opencode/cli@latest")).toBe("@opencode/cli");
+    expect(openCodeNpmPackageFromSpec("@opencode/cli")).toBe("@opencode/cli");
+    expect(openCodeNpmInstallArgs("/t3home/tools/opencode", "@opencode/cli@latest")).toEqual([
+      "install",
+      "--prefix",
+      "/t3home/tools/opencode",
+      "--allow-scripts=@opencode/cli",
+      "--no-audit",
+      "--no-fund",
+      "@opencode/cli@latest",
+    ]);
   });
 
   it("builds a failing-loudly curl download command", () => {

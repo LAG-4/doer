@@ -217,6 +217,7 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntimeShape = {
           ? { serverPassword: effectiveServerPassword }
           : {}),
         version: "1.14.19",
+        apiVersion: 1 as const,
         isRunning: Effect.succeed(true),
         exitCode: Effect.never,
       };
@@ -241,6 +242,7 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntimeShape = {
         url: serverUrl ?? "http://127.0.0.1:4301",
         ...(serverPassword ? { serverPassword } : {}),
         version: "1.14.19",
+        apiVersion: 1 as const,
         exitCode: null,
         external: Boolean(serverUrl),
       };
@@ -448,6 +450,35 @@ it.layer(testLayer)("checkOpenCodeProviderStatus", (it) => {
         "Failed to execute OpenCode CLI health check: OpenCode CLI version probe timed out after 4 seconds.",
       );
     }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("rejects a v1 CLI below the minimum version", () =>
+    Effect.gen(function* () {
+      runtimeMock.state.versionStdout = "opencode 1.14.18\n";
+      const snapshot = yield* checkProvider(makeOpenCodeSettings());
+
+      NodeAssert.equal(snapshot.status, "error");
+      NodeAssert.equal(snapshot.version, "1.14.18");
+      NodeAssert.equal(
+        snapshot.message,
+        "OpenCode v1.14.18 is too old. Upgrade to v1.14.19 or newer.",
+      );
+    }),
+  );
+
+  it.effect("accepts a v2 CLI at the version gate", () =>
+    Effect.gen(function* () {
+      runtimeMock.state.versionStdout = "opencode v2.0.11\n";
+      const snapshot = yield* checkProvider(makeOpenCodeSettings());
+
+      // The gate passes, so the check proceeds to inventory (which reports
+      // no connected providers from the empty mock inventory).
+      NodeAssert.equal(snapshot.status, "warning");
+      NodeAssert.equal(
+        snapshot.message,
+        "OpenCode is available, but it did not report any connected upstream providers.",
+      );
+    }),
   );
 
   it.effect("emits OpenCode variant defaults so trait picker can resolve a visible selection", () =>
