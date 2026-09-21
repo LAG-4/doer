@@ -186,57 +186,59 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
       }),
   );
 
-  it.effect.skip("cleans up an interrupted download without reporting verification or extraction", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-progress-failed-" });
-      const checksums = yield* validChecksums;
-      const progress: PinnedRuntimeProgress[] = [];
-      let cancelled = false;
-      const client = HttpClient.make((request) =>
-        Effect.succeed(
-          HttpClientResponse.fromWeb(
-            request,
-            request.url.endsWith("/SHA256SUMS")
-              ? new Response(checksums)
-              : new Response(
-                  new ReadableStream({
-                    start(controller) {
-                      controller.enqueue(archiveBytes.slice(0, 4));
-                    },
-                    cancel() {
-                      cancelled = true;
-                    },
-                  }),
-                ),
+  it.effect.skip(
+    "cleans up an interrupted download without reporting verification or extraction",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-progress-failed-" });
+        const checksums = yield* validChecksums;
+        const progress: PinnedRuntimeProgress[] = [];
+        let cancelled = false;
+        const client = HttpClient.make((request) =>
+          Effect.succeed(
+            HttpClientResponse.fromWeb(
+              request,
+              request.url.endsWith("/SHA256SUMS")
+                ? new Response(checksums)
+                : new Response(
+                    new ReadableStream({
+                      start(controller) {
+                        controller.enqueue(archiveBytes.slice(0, 4));
+                      },
+                      cancel() {
+                        cancelled = true;
+                      },
+                    }),
+                  ),
+            ),
           ),
-        ),
-      );
-      const firstChunk = yield* Deferred.make<void>();
-      const install = yield* ensurePinnedRuntimeInstalled({
-        baseDir,
-        version,
-        fs,
-        path,
-        platform: "linux",
-        arch: "x64",
-        httpClient: client,
-        runner: extractingRunner(fs, path),
-        validate: () => Effect.die("must not validate an interrupted archive"),
-        onProgress: (event) => {
-          progress.push(event);
-          if (event.stage === "download" && event.received === 4)
-            Deferred.doneUnsafe(firstChunk, Effect.void);
-        },
-      }).pipe(Effect.forkScoped);
-      yield* Deferred.await(firstChunk);
-      yield* Fiber.interrupt(install);
-      assert.deepEqual(progress.at(-1), { stage: "download", received: 4, total: undefined });
-      assert.isTrue(progress.every((event) => event.stage === "download"));
-      assert.isTrue(cancelled);
-      assert.deepEqual(yield* fs.readDirectory(path.join(baseDir, "runtime", "versions")), []);
-    }),
+        );
+        const firstChunk = yield* Deferred.make<void>();
+        const install = yield* ensurePinnedRuntimeInstalled({
+          baseDir,
+          version,
+          fs,
+          path,
+          platform: "linux",
+          arch: "x64",
+          httpClient: client,
+          runner: extractingRunner(fs, path),
+          validate: () => Effect.die("must not validate an interrupted archive"),
+          onProgress: (event) => {
+            progress.push(event);
+            if (event.stage === "download" && event.received === 4)
+              Deferred.doneUnsafe(firstChunk, Effect.void);
+          },
+        }).pipe(Effect.forkScoped);
+        yield* Deferred.await(firstChunk);
+        yield* Fiber.interrupt(install);
+        assert.deepEqual(progress.at(-1), { stage: "download", received: 4, total: undefined });
+        assert.isTrue(progress.every((event) => event.stage === "download"));
+        assert.isTrue(cancelled);
+        assert.deepEqual(yield* fs.readDirectory(path.join(baseDir, "runtime", "versions")), []);
+      }),
   );
 
   it.effect.skip("refuses an archive whose checksum does not match the release", () =>
