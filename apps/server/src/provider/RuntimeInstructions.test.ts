@@ -74,6 +74,26 @@ describe("buildT3ToolInstructions", () => {
     expect(buildT3ToolInstructions({ browser: false, device: false, computer: false })).toBe("");
   });
 
+  it("teaches show-don't-tell browsing plus proactive upgrades when the browser is attached", () => {
+    const browserOnly = buildT3ToolInstructions({
+      browser: true,
+      device: false,
+      computer: false,
+    });
+    expect(browserOnly).toContain("Show, don't just tell");
+    expect(browserOnly).toContain("must end up visible there, not as text-only links");
+    expect(browserOnly).toContain('Users never say "browser use"');
+    expect(browserOnly).toContain("Be proactive");
+
+    const computerOnly = buildT3ToolInstructions({
+      browser: false,
+      device: false,
+      computer: true,
+    });
+    expect(computerOnly).toContain("Be proactive");
+    expect(computerOnly).not.toContain("Show, don't just tell");
+  });
+
   it("attaches the briefing to runtime instructions when tools are present", () => {
     const instructions = buildRuntimeInstructions({
       harness: "OpenCode",

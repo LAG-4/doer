@@ -55,7 +55,11 @@ export function t3ToolAvailabilityFromCapabilities(
   };
 }
 
-const T3_BROWSER_TOOL_INSTRUCTIONS = `Collaborative browser: when the server exposes \`preview_*\` tools, prefer them for navigation, inspection, interaction, screenshots, and recordings. Start with \`preview_status\`; call \`preview_open\` when nothing automation-capable is attached. Prefer snapshot locators over coordinates.`;
+const T3_BROWSER_TOOL_INSTRUCTIONS = `Collaborative browser (visible to the user): when the server exposes \`preview_*\` tools, prefer them for navigation, inspection, interaction, screenshots, and recordings. Start with \`preview_status\`; call \`preview_open\` when nothing automation-capable is attached (default open=true so the user watches). Prefer snapshot locators over coordinates. Users never say "browser use" — treat plain verbs like search, find, look up, check, compare, open, show me, buy, book, or apply as visible-browsing intent when the answer lives on the web.`;
+
+const T3_SHOWCASE_INSTRUCTIONS = `Show, don't just tell: the user watches the shared browser tab, so user-facing web results must end up visible there, not as text-only links. Fast internal search is fine for research, but after researching open the 1-3 best pages with \`preview_open\`/\`preview_navigate\` (reuse the tab) and narrate briefly in plain words ("showing you ..."). In user-facing chat say "browser", never tool names.`;
+
+const T3_PROACTIVE_ASSISTANT_INSTRUCTIONS = `Be proactive: when a plain request has an obvious better visible version (compare 2-3 options, check for deals, walk through top listings, show the page instead of describing it), say so in one short sentence and just do the low-risk visible part on public read-only pages. Stop to ask first only when the next step needs approval, login, purchase, sending, deleting, or real-desktop computer use — then name the app or site, say what you would do, and ask. Never claim you showed something you didn't open.`;
 
 const T3_DEVICE_TOOL_INSTRUCTIONS = `Devices: when the server exposes \`device_*\` tools, use \`device_list\` then \`device_open\` for iOS Simulators and Android Emulators, and drive them with the \`agent-device\` CLI on PATH, preferring snapshot refs. Never call simctl, adb, xcrun, or serve-sim directly while these tools are present.`;
 
@@ -66,10 +70,11 @@ const T3_BROWSER_COMPUTER_ROUTING = `Choosing between the browser and computer u
 /** Provider-neutral briefing for the attached t3-code tool families, or "". */
 export function buildT3ToolInstructions(availability: T3ToolAvailability): string {
   const blocks = [
-    ...(availability.browser ? [T3_BROWSER_TOOL_INSTRUCTIONS] : []),
+    ...(availability.browser ? [T3_BROWSER_TOOL_INSTRUCTIONS, T3_SHOWCASE_INSTRUCTIONS] : []),
     ...(availability.device ? [T3_DEVICE_TOOL_INSTRUCTIONS] : []),
     ...(availability.computer ? [T3_COMPUTER_TOOL_INSTRUCTIONS] : []),
     ...(availability.browser && availability.computer ? [T3_BROWSER_COMPUTER_ROUTING] : []),
+    ...(availability.browser || availability.computer ? [T3_PROACTIVE_ASSISTANT_INSTRUCTIONS] : []),
   ];
   if (blocks.length === 0) return "";
   return `## Doer tools\n\nThe \`t3-code\` MCP server is the product-native way to reach the user's browser, devices, and desktop.\n\n${blocks.join("\n\n")}`;
