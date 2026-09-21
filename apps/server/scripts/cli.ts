@@ -6,23 +6,98 @@ import * as FileSystem from "effect/FileSystem";
 import * as Logger from "effect/Logger";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 import { Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
-import { DEVELOPMENT_ICON_OVERRIDES } from "../../../scripts/lib/brand-assets.ts";
+import {
+  DEVELOPMENT_ICON_OVERRIDES,
+  resolveWebAssetBrandForPackageVersion,
+  resolveWebIconOverrides,
+} from "../../../scripts/lib/brand-assets.ts";
 import { findEsmImportsOfExternalPackages } from "../../../scripts/lib/cli-executable-imports.ts";
+import { resolveCatalogDependencies } from "../../../scripts/lib/resolve-catalog.ts";
+import { fromJsonStringPretty } from "@t3tools/shared/schemaJson";
+import { fromYaml } from "@t3tools/shared/schemaYaml";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import serverPackageJson from "../package.json" with { type: "json" };
 import {
   ServerCliBuildAssetMissingError,
   ServerCliCommandExitError,
   ServerCliDevelopmentIconSourceMissingError,
   ServerCliDevelopmentIconTargetMissingError,
   ServerCliExecutableImportError,
+  ServerCliPublishIconSourceMissingError,
+  ServerCliPublishIconTargetMissingError,
 } from "./cliErrors.ts";
 
 const RepoRoot = Effect.service(Path.Path).pipe(
   Effect.flatMap((path) => path.fromFileUrl(new URL("../../..", import.meta.url))),
 );
+
+interface PackageJson {
+  name: string;
+  repository: {
+    type: string;
+    url: string;
+    directory: string;
+  };
+  bin: Record<string, string>;
+  type: string;
+  version: string;
+  engines: Record<string, string>;
+  files: string[];
+  dependencies: Record<string, string>;
+  overrides: Record<string, string>;
+}
+
+const PackageJsonPrettyJson = fromJsonStringPretty(Schema.Unknown);
+const encodePackageJson = Schema.encodeEffect(PackageJsonPrettyJson);
+
+const WorkspaceConfig = Schema.Struct({
+  catalog: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  overrides: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+});
+type WorkspaceConfig = typeof WorkspaceConfig.Type;
+const decodeWorkspaceConfig = Schema.decodeEffect(fromYaml(WorkspaceConfig));
+
+const readWorkspaceConfig = Effect.fn("readWorkspaceConfig")(function* () {
+  const path = yield* Path.Path;
+  const fs = yield* FileSystem.FileSystem;
+  const repoRoot = yield* RepoRoot;
+  const workspaceYaml = yield* fs.readFileString(path.join(repoRoot, "pnpm-workspace.yaml"));
+  return yield* decodeWorkspaceConfig(workspaceYaml);
+});
+
+const preparePublishIcons = Effect.fn("preparePublishIcons")(function* (
+  repoRoot: string,
+  serverDir: string,
+  version: string,
+) {
+  const path = yield* Path.Path;
+  const fs = yield* FileSystem.FileSystem;
+  const brand = resolveWebAssetBrandForPackageVersion(version);
+  const icons = resolveWebIconOverrides(brand, "dist/client").map((override) => ({
+    sourcePath: path.join(repoRoot, override.sourceRelativePath),
+    targetPath: path.join(serverDir, override.targetRelativePath),
+  }));
+
+  for (const icon of icons) {
+    if (!(yield* fs.exists(icon.sourcePath))) {
+      return yield* new ServerCliPublishIconSourceMissingError({ sourcePath: icon.sourcePath });
+    }
+    if (!(yield* fs.exists(icon.targetPath))) {
+      return yield* new ServerCliPublishIconTargetMissingError({ targetPath: icon.targetPath });
+    }
+  }
+
+  return yield* Effect.forEach(icons, (icon) =>
+    Effect.all({
+      original: fs.readFile(icon.targetPath),
+      publish: fs.readFile(icon.sourcePath),
+    }).pipe(Effect.map((contents) => ({ ...icon, ...contents }))),
+  );
+});
 
 const runCommand = Effect.fn("runCommand")(function* (command: ChildProcess.StandardCommand) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -166,18 +241,42 @@ const buildExeCmd = Command.make(
 // ---------------------------------------------------------------------------
 
 /**
- * Publishes the tarballs scripts/build-npm-platform-packages.ts produced:
- * every `@t3code/t3-<platform>.tgz` first, `t3.tgz` (the launcher) last, so
- * the launcher is never installable before the executables it depends on.
- * Tarballs rather than directories because `npm publish <dir>` strips the
- * `node_modules/` the executable loads its native addons from.
+ * Fork (Doer): publishes the built server package directory directly as
+ * `@lag4/doer-cli` (`vp pm publish --filter @lag4/doer-cli`), after
+ * synthesizing a publishable package.json (concrete versions for
+ * `catalog:` deps, release version already aligned by
+ * `update-release-package-versions.ts`) and swapping in release brand
+ * icons. Upstream's tarball flow (`--packages-dir`, `@t3code/t3-*`)
+ * does not apply to the fork's single-package model.
  */
+interface PublishCommandConfig {
+  readonly access: string;
+  readonly tag: string;
+  readonly provenance: boolean;
+  readonly dryRun: boolean;
+}
+
+const createVpPmPublishArgs = (config: PublishCommandConfig): ReadonlyArray<string> => {
+  const args = [
+    "publish",
+    "--filter",
+    "@lag4/doer-cli",
+    "--access",
+    config.access,
+    "--tag",
+    config.tag,
+    "--no-git-checks",
+  ];
+
+  if (config.provenance) args.push("--provenance");
+  if (config.dryRun) args.push("--dry-run");
+
+  return args;
+};
+
 const publishCmd = Command.make(
   "publish",
   {
-    packagesDir: Flag.String("packages-dir").pipe(
-      Flag.withDescription("Output dir of scripts/build-npm-platform-packages.ts."),
-    ),
     tag: Flag.String("tag").pipe(Flag.withDefault("latest")),
     access: Flag.String("access").pipe(Flag.withDefault("public")),
     provenance: Flag.Boolean("provenance").pipe(Flag.withDefault(false)),
@@ -188,48 +287,85 @@ const publishCmd = Command.make(
     Effect.gen(function* () {
       const path = yield* Path.Path;
       const fs = yield* FileSystem.FileSystem;
-      // npm runs with cwd set to the packages dir below, so tarball paths are
-      // resolved once here rather than joined twice.
-      const packagesDir = path.resolve(config.packagesDir);
-      const scopeDir = path.join(packagesDir, "@t3code");
-      const launcherTarball = path.join(packagesDir, "t3.tgz");
-      const platformTarballs = (yield* fs
-        .readDirectory(scopeDir)
-        .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => [])))
-        .filter((entry) => entry.startsWith("t3-") && entry.endsWith(".tgz"))
-        .sort()
-        .map((entry) => path.join(scopeDir, entry));
-      if (platformTarballs.length === 0) {
-        return yield* new ServerCliBuildAssetMissingError({
-          assetPath: path.join(scopeDir, "t3-<platform>.tgz"),
-        });
-      }
-      if (!(yield* fs.exists(launcherTarball))) {
-        return yield* new ServerCliBuildAssetMissingError({ assetPath: launcherTarball });
+      const repoRoot = yield* RepoRoot;
+      const serverDir = path.join(repoRoot, "apps/server");
+      const packageJsonPath = path.join(serverDir, "package.json");
+
+      // Assert build assets exist
+      for (const relPath of ["dist/bin.mjs", "dist/client/index.html"]) {
+        const abs = path.join(serverDir, relPath);
+        if (!(yield* fs.exists(abs))) {
+          return yield* new ServerCliBuildAssetMissingError({ assetPath: abs });
+        }
       }
 
-      const args = ["publish", "--access", config.access, "--tag", config.tag];
-      if (config.provenance) args.push("--provenance");
-      if (config.dryRun) args.push("--dry-run");
+      yield* Effect.acquireUseRelease(
+        // Acquire: resolve publish metadata and read every original before mutation.
+        Effect.gen(function* () {
+          const workspaceConfig = yield* readWorkspaceConfig();
+          const workspaceCatalog = workspaceConfig.catalog ?? {};
+          const workspaceOverrides = workspaceConfig.overrides ?? {};
+          const pkg: PackageJson = {
+            name: serverPackageJson.name,
+            repository: serverPackageJson.repository,
+            bin: serverPackageJson.bin,
+            type: serverPackageJson.type,
+            version: serverPackageJson.version,
+            engines: serverPackageJson.engines,
+            files: serverPackageJson.files,
+            dependencies: resolveCatalogDependencies(
+              serverPackageJson.dependencies,
+              workspaceCatalog,
+              "apps/server",
+            ),
+            overrides: resolveCatalogDependencies(
+              workspaceOverrides,
+              workspaceCatalog,
+              "apps/server",
+            ),
+          };
 
-      for (const tarball of [...platformTarballs, launcherTarball]) {
-        const spawnCommand = yield* resolveSpawnCommand("npm", [...args, tarball]);
-        yield* Effect.log(`[cli] npm ${args.join(" ")} ${path.basename(tarball)}`);
-        yield* runCommand(
-          ChildProcess.make(spawnCommand.command, spawnCommand.args, {
-            cwd: packagesDir,
-            stdout: config.verbose ? "inherit" : "ignore",
-            stderr: "inherit",
-            shell: spawnCommand.shell,
+          return {
+            packageJsonString: yield* encodePackageJson(pkg),
+            originalPackageJson: yield* fs.readFile(packageJsonPath),
+            icons: yield* preparePublishIcons(repoRoot, serverDir, serverPackageJson.version),
+          };
+        }),
+        // Use: `vp pm publish` from the workspace root so pnpm-only workspace
+        // config, including override selectors, is interpreted correctly.
+        (resource) =>
+          Effect.gen(function* () {
+            yield* fs.writeFileString(packageJsonPath, `${resource.packageJsonString}\n`);
+            for (const icon of resource.icons) {
+              yield* fs.writeFile(icon.targetPath, icon.publish);
+            }
+            yield* Effect.log("[cli] Applied package metadata and publish icon overrides");
+
+            const args = createVpPmPublishArgs(config);
+            const spawnCommand = yield* resolveSpawnCommand("vp", ["pm", ...args]);
+
+            yield* Effect.log(`[cli] Running: vp pm ${args.join(" ")}`);
+            yield* runCommand(
+              ChildProcess.make(spawnCommand.command, spawnCommand.args, {
+                cwd: repoRoot,
+                stdout: config.verbose ? "inherit" : "ignore",
+                stderr: "inherit",
+                shell: spawnCommand.shell,
+              }),
+            );
           }),
-        );
-      }
+        // Release: restore every file even if applying overrides or publishing fails.
+        (resource) =>
+          Effect.gen(function* () {
+            yield* fs.writeFile(packageJsonPath, resource.originalPackageJson);
+            for (const icon of resource.icons) {
+              yield* fs.writeFile(icon.targetPath, icon.original);
+            }
+            if (config.verbose) yield* Effect.log("[cli] Restored original publish assets");
+          }),
+      );
     }),
-).pipe(
-  Command.withDescription(
-    "Publish the @t3code/t3-<platform> tarballs and then the t3 launcher to npm.",
-  ),
-);
+).pipe(Command.withDescription("Publish the server package to npm."));
 
 // ---------------------------------------------------------------------------
 // root command

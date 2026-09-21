@@ -36,6 +36,34 @@ export class ServerCliDevelopmentIconTargetMissingError extends Schema.TaggedErr
   }
 }
 
+/**
+ * Fork (Doer): the fork publishes the server package directory directly
+ * (`vp pm publish --filter @lag4/doer-cli`) instead of upstream's
+ * per-platform tarballs, so these publish-icon errors live here rather
+ * than in upstream's tarball flow.
+ */
+export class ServerCliPublishIconSourceMissingError extends Schema.TaggedError<ServerCliPublishIconSourceMissingError>()(
+  "ServerCliPublishIconSourceMissingError",
+  {
+    sourcePath: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Missing publish icon source: ${this.sourcePath}`;
+  }
+}
+
+export class ServerCliPublishIconTargetMissingError extends Schema.TaggedError<ServerCliPublishIconTargetMissingError>()(
+  "ServerCliPublishIconTargetMissingError",
+  {
+    targetPath: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Missing publish icon target: ${this.targetPath}. Build web first.`;
+  }
+}
+
 export class ServerCliBuildAssetMissingError extends Schema.TaggedError<ServerCliBuildAssetMissingError>()(
   "ServerCliBuildAssetMissingError",
   {
