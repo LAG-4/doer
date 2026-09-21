@@ -34,13 +34,22 @@ import * as NodePath from "node:path";
 export const DEFAULT_OPENCODE_BINARY = "opencode";
 export const OPENCODE_NPM_PACKAGE = "opencode-ai";
 export const OPENCODE_NPM_INSTALL_SPEC = `${OPENCODE_NPM_PACKAGE}@latest`;
+/**
+ * v2 CLI distribution. Fresh automatic installs prefer this: `@opencode/cli`
+ * tracks the OpenCode 2 line (`opencode-ai@latest` still publishes the v1
+ * line), and the package bundles the native binary — no post-install
+ * download step. Falls back to {@link OPENCODE_NPM_INSTALL_SPEC} (v1) when
+ * the v2 install fails; both are supported at runtime via version routing.
+ */
+export const OPENCODE_NPM_PACKAGE_V2 = "@opencode/cli";
+export const OPENCODE_NPM_INSTALL_SPEC_V2 = `${OPENCODE_NPM_PACKAGE_V2}@latest`;
 /** Directory name below `<baseDir>/tools` holding the T3-managed install. */
 export const OPENCODE_MANAGED_TOOL_DIRNAME = "opencode";
 /** The official install script — the fallback install mirrors its platform mapping. */
 export const OPENCODE_INSTALL_SCRIPT_URL = "https://opencode.ai/install";
 /** Release downloads live here; the script uses `.../latest/download/<filename>`. */
 export const OPENCODE_RELEASE_DOWNLOAD_BASE_URL =
-  "https://github.com/sst/opencode/releases/latest/download";
+  "https://github.com/anomalyco/opencode/releases/latest/download";
 
 /** True when the caller left the stock `"opencode"` command in place. */
 export function isDefaultOpenCodeBinary(binaryPath: string | null | undefined): boolean {
@@ -146,8 +155,26 @@ export function openCodeBinaryCandidates(
   return candidates;
 }
 
+/**
+ * npm package name for an install spec (`name@version`, scope-aware).
+ * `opencode-ai@latest` → `opencode-ai`; `@opencode/cli@latest` → `@opencode/cli`.
+ */
+export function openCodeNpmPackageFromSpec(spec: string): string {
+  const rest = spec.startsWith("@") ? spec.slice(1) : spec;
+  const slash = rest.indexOf("/");
+  const at = rest.lastIndexOf("@");
+  if (spec.startsWith("@") && slash >= 0) {
+    return `@${at > slash ? rest.slice(0, at) : rest}`;
+  }
+  return at > 0 ? rest.slice(0, at) : rest;
+}
+
 /** `npm install` argv that drops the CLI into the managed directory. */
-export function openCodeNpmInstallArgs(managedDir: string): ReadonlyArray<string> {
+export function openCodeNpmInstallArgs(
+  managedDir: string,
+  spec: string = OPENCODE_NPM_INSTALL_SPEC,
+): ReadonlyArray<string> {
+  const allowScriptsPackage = openCodeNpmPackageFromSpec(spec);
   return [
     "install",
     "--prefix",
@@ -156,10 +183,10 @@ export function openCodeNpmInstallArgs(managedDir: string): ReadonlyArray<string
     // postinstall copies the platform binary into place, so without this the
     // install "succeeds" but leaves a broken binary (same reason the provider
     // update commands pass --allow-scripts).
-    `--allow-scripts=${OPENCODE_NPM_PACKAGE}`,
+    `--allow-scripts=${allowScriptsPackage}`,
     "--no-audit",
     "--no-fund",
-    OPENCODE_NPM_INSTALL_SPEC,
+    spec,
   ];
 }
 

@@ -22,9 +22,14 @@ import {
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
 import {
+  createOpenCodeV2Client,
+  isOpenCodeV2Version,
+  loadOpenCodeV2Inventory,
+  MINIMUM_OPENCODE_V2_VERSION,
   MINIMUM_OPENCODE_VERSION,
   OpenCodeRuntime,
   openCodeRuntimeErrorDetail,
+  type OpenCodeApiVersion,
   type OpenCodeInventory,
 } from "../opencodeRuntime.ts";
 import { isDefaultOpenCodeBinary } from "../opencodeInstall.ts";
@@ -530,7 +535,12 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
         null,
       );
     }
-    if (compareSemverVersions(version, MINIMUM_OPENCODE_VERSION) < 0) {
+    // The v2 line (`@opencode/cli`, `opencode v2.x.y`) speaks a different
+    // server API and is gated separately; v1 keeps its existing minimum.
+    const minimumForLine = isOpenCodeV2Version(version)
+      ? MINIMUM_OPENCODE_V2_VERSION
+      : MINIMUM_OPENCODE_VERSION;
+    if (compareSemverVersions(version, minimumForLine) < 0) {
       return buildServerProvider({
         presentation: OPENCODE_PRESENTATION,
         enabled: openCodeSettings.enabled,
@@ -541,7 +551,7 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
           version,
           status: "error",
           auth: { status: "unknown" },
-          message: `OpenCode v${version} is too old. Upgrade to v${MINIMUM_OPENCODE_VERSION} or newer.`,
+          message: `OpenCode v${version} is too old. Upgrade to v${minimumForLine} or newer.`,
         },
       });
     }
@@ -551,16 +561,30 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
     readonly url: string;
     readonly serverPassword?: string;
     readonly version: string;
-  }) =>
-    openCodeRuntime
-      .loadOpenCodeInventory(
-        openCodeRuntime.createOpenCodeSdkClient({
-          baseUrl: server.url,
-          directory: cwd,
-          ...(server.serverPassword !== undefined ? { serverPassword: server.serverPassword } : {}),
-        }),
-      )
-      .pipe(Effect.map((inventory) => ({ inventory, version: server.version })));
+    readonly apiVersion: OpenCodeApiVersion;
+  }) => {
+    const inventory =
+      server.apiVersion === 2
+        ? loadOpenCodeV2Inventory(
+            createOpenCodeV2Client({
+              baseUrl: server.url,
+              ...(server.serverPassword !== undefined
+                ? { serverPassword: server.serverPassword }
+                : {}),
+            }),
+            cwd,
+          )
+        : openCodeRuntime.loadOpenCodeInventory(
+            openCodeRuntime.createOpenCodeSdkClient({
+              baseUrl: server.url,
+              directory: cwd,
+              ...(server.serverPassword !== undefined
+                ? { serverPassword: server.serverPassword }
+                : {}),
+            }),
+          );
+    return inventory.pipe(Effect.map((loaded) => ({ inventory: loaded, version: server.version })));
+  };
   const inventoryEffect = isExternalServer
     ? openCodeRuntime
         .connectToOpenCodeServer({

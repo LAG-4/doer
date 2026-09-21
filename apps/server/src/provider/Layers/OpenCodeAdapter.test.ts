@@ -213,6 +213,7 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntimeShape = {
       return {
         url,
         version: "1.15.13",
+        apiVersion: 1 as const,
         ...(serverPassword ? { serverPassword } : {}),
         exitCode: Effect.never,
         isRunning: Effect.succeed(true),
@@ -234,6 +235,7 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntimeShape = {
       return {
         url,
         version: "1.15.13",
+        apiVersion: 1 as const,
         ...(serverPassword ? { serverPassword } : {}),
         exitCode: null,
         external: Boolean(serverUrl),

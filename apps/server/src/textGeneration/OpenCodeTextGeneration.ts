@@ -199,13 +199,85 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
         resolveAttachmentPath({ attachmentsDir: serverConfig.attachmentsDir, attachment }),
     });
 
+    const runV2AgainstServer = Effect.fn("runOpenCodeJson.runV2AgainstServer")(function* (
+      server: Pick<OpenCodeRuntime.OpenCodeServerConnection, "url" | "serverPassword">,
+      selection: { readonly selectedAgent?: string; readonly selectedVariant?: string },
+    ) {
+      const client = OpenCodeRuntime.createOpenCodeV2Client({
+        baseUrl: server.url,
+        ...(server.serverPassword !== undefined ? { serverPassword: server.serverPassword } : {}),
+      });
+      const session = yield* Effect.tryPromise({
+        // v2 sessions are location-scoped: the working directory travels
+        // on the request, not the client. Generation is deny-all (same as
+        // the v1 text-generation session) and text-only — the one-shot
+        // `session.generate` route takes no file attachments.
+        try: () =>
+          client.session.create({
+            title: `Doer ${input.operation}`,
+            ...(selection.selectedAgent ? { agent: selection.selectedAgent } : {}),
+            model: {
+              id: parsedModel.modelID,
+              providerID: parsedModel.providerID,
+              ...(selection.selectedVariant ? { variant: selection.selectedVariant } : {}),
+            },
+            location: { directory: input.cwd },
+            permissions: [{ action: "*", resource: "*", effect: "deny" }],
+          }),
+        catch: (cause) =>
+          new OpenCodeTextGenerationSessionRequestError({
+            operation: input.operation,
+            cwd: input.cwd,
+            cause,
+          }),
+      });
+      if (!session.id) {
+        return yield* new OpenCodeTextGenerationSessionPayloadError({
+          operation: input.operation,
+          cwd: input.cwd,
+        });
+      }
+      const promptContext = {
+        operation: input.operation,
+        cwd: input.cwd,
+        sessionId: session.id,
+        providerId: parsedModel.providerID,
+        modelId: parsedModel.modelID,
+      };
+      const generated = yield* Effect.tryPromise({
+        try: () => client.session.generate({ sessionID: session.id, prompt: input.prompt }),
+        catch: (cause) =>
+          new OpenCodeTextGenerationPromptRequestError({
+            ...promptContext,
+            cause,
+          }),
+      });
+      const rawText = (generated.text ?? "").trim();
+      if (rawText.length === 0) {
+        return yield* new OpenCodeTextGenerationEmptyOutputError({
+          ...promptContext,
+          responsePartCount: 0,
+          textPartCount: 0,
+        });
+      }
+      return rawText;
+    });
+
     const runAgainstServer = Effect.fn("runOpenCodeJson.runAgainstServer")(
       function* (
         server: Pick<
           OpenCodeRuntime.OpenCodeServerConnection,
-          "url" | "serverPassword" | "version"
+          "url" | "serverPassword" | "version" | "apiVersion"
         >,
       ) {
+        const selectedAgent = getModelSelectionStringOptionValue(input.modelSelection, "agent");
+        const selectedVariant = getModelSelectionStringOptionValue(input.modelSelection, "variant");
+        if (server.apiVersion === 2) {
+          return yield* runV2AgainstServer(server, {
+            ...(selectedAgent ? { selectedAgent } : {}),
+            ...(selectedVariant ? { selectedVariant } : {}),
+          });
+        }
         const client = openCodeRuntime.createOpenCodeSdkClient({
           baseUrl: server.url,
           directory: input.cwd,
@@ -230,8 +302,6 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
             cwd: input.cwd,
           });
         }
-        const selectedAgent = getModelSelectionStringOptionValue(input.modelSelection, "agent");
-        const selectedVariant = getModelSelectionStringOptionValue(input.modelSelection, "variant");
         const promptContext = {
           operation: input.operation,
           cwd: input.cwd,

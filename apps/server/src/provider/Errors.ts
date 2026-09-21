@@ -203,12 +203,32 @@ export class ProviderSessionDirectoryPersistenceError extends Schema.TaggedError
   }
 }
 
+/**
+ * OpenCodeApiVersionMismatchError - A connected OpenCode server speaks a
+ * different API line (v1 vs v2) than the adapter driving it. The routed
+ * OpenCode facade catches this and hands the session to the matching
+ * adapter instead of surfacing it.
+ */
+export class OpenCodeApiVersionMismatchError extends Schema.TaggedError<OpenCodeApiVersionMismatchError>()(
+  "OpenCodeApiVersionMismatchError",
+  {
+    provider: Schema.String,
+    threadId: Schema.String,
+    actual: Schema.Union([Schema.Literal(1), Schema.Literal(2)]),
+  },
+) {
+  override get message(): string {
+    return `OpenCode server speaks API v${this.actual}, which this adapter line cannot drive (thread ${this.threadId}).`;
+  }
+}
+
 export type ProviderAdapterError =
   | ProviderAdapterValidationError
   | ProviderAdapterSessionNotFoundError
   | ProviderAdapterSessionClosedError
   | ProviderAdapterRequestError
-  | ProviderAdapterProcessError;
+  | ProviderAdapterProcessError
+  | OpenCodeApiVersionMismatchError;
 
 export type ProviderServiceError =
   | ProviderValidationError

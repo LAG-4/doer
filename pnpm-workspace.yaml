@@ -98,6 +98,9 @@ minimumReleaseAgeExclude:
   - "@posthog/core@1.53.3"
   - "@posthog/types@1.412.0"
   - posthog-js@1.431.2
+  - "@opencode/client@2.0.11"
+  - "@opencode/protocol@2.0.11"
+  - "@opencode/schema@2.0.11"
 
 overrides:
   # Earlier React Navigation declarations create a circular type alias in TypeScript 7.

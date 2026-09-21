@@ -2,8 +2,9 @@
 
 Install and authenticate OpenCode on the machine running your environment, then
 enable it in **Settings > Providers**. See [provider setup](./install.md#providers).
-T3 Code requires OpenCode 1.14.19 or newer, including when you connect an existing
-OpenCode server.
+Doer works with both OpenCode 1 (v1.14.19 or newer) and OpenCode 2 (v2.0.0 or
+newer), including when you connect an existing OpenCode server. It detects which
+version is running and speaks the matching API automatically.
 
 ## Default model
 
@@ -15,12 +16,12 @@ When no free model is available, the first reported model is used.
 
 When OpenCode is enabled and no `opencode` binary is found, T3 Code installs it
 automatically into `<T3 home>/tools/opencode` and never touches your global
-installs (no sudo). It tries `npm install opencode-ai` first (the same npm
-package the official docs recommend); on machines without npm — the usual
-non-developer machine — it downloads the official release for your system with
-curl instead (macOS and Windows included) and unpacks it into the same managed
-directory. Either way it needs network access. If the automatic install fails,
-the provider card says so — install it manually instead:
+installs (no sudo). It tries `npm install @opencode/cli` first (the OpenCode 2
+line; it falls back to `opencode-ai` when that fails); on machines without
+npm — the usual non-developer machine — it downloads the official release for
+your system with curl instead (macOS and Windows included) and unpacks it into
+the same managed directory. Either way it needs network access. If the automatic
+install fails, the provider card says so — install it manually instead:
 
 ```bash
 curl -fsSL https://opencode.ai/install | bash

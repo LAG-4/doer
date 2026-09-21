@@ -26,7 +26,7 @@ import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderDriverError } from "../Errors.ts";
-import { makeOpenCodeAdapter } from "../Layers/OpenCodeAdapter.ts";
+import { makeRoutedOpenCodeAdapter } from "../Layers/OpenCodeAdapterRouted.ts";
 import { readOpenCodeGoUsageLimits } from "../Layers/openCodeUsageLimits.ts";
 import {
   checkOpenCodeProviderStatus,
@@ -36,7 +36,12 @@ import {
 } from "../Layers/OpenCodeProvider.ts";
 import { ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
-import { OpenCodeRuntime, loadOpenCodeCommands } from "../opencodeRuntime.ts";
+import {
+  OpenCodeRuntime,
+  createOpenCodeV2Client,
+  loadOpenCodeCommands,
+  loadOpenCodeV2Inventory,
+} from "../opencodeRuntime.ts";
 import * as OpenCodeServerOwner from "../OpenCodeServerOwner.ts";
 import {
   defaultProviderContinuationIdentity,
@@ -137,7 +142,7 @@ export const OpenCodeDriver: ProviderDriver<OpenCodeSettings, OpenCodeDriverEnv>
         ),
       );
 
-      const adapter = yield* makeOpenCodeAdapter(effectiveConfig, {
+      const adapter = yield* makeRoutedOpenCodeAdapter(effectiveConfig, {
         instanceId,
         environment: processEnv,
         managedDir,
@@ -158,7 +163,9 @@ export const OpenCodeDriver: ProviderDriver<OpenCodeSettings, OpenCodeDriverEnv>
 
       const checkProvider = Effect.all(
         {
-          provider: checkOpenCodeProviderStatus(effectiveConfig, serverConfig.cwd, processEnv, { managedDir }),
+          provider: checkOpenCodeProviderStatus(effectiveConfig, serverConfig.cwd, processEnv, {
+            managedDir,
+          }),
           usageLimits: readOpenCodeGoUsageLimits({
             enabled: effectiveConfig.enabled,
             serverUrl: effectiveConfig.serverUrl,
@@ -183,7 +190,7 @@ export const OpenCodeDriver: ProviderDriver<OpenCodeSettings, OpenCodeDriverEnv>
       // empty skill list and poisons the workspace snapshot the `$` picker
       // reads. The SDK `app.skills` endpoint honors the per-request directory
       // and returns complete results regardless of size.
-      const loadWorkspaceInventory = (client: Parameters<typeof loadOpenCodeCommands>[0]) =>
+      const loadWorkspaceInventoryV1 = (client: Parameters<typeof loadOpenCodeCommands>[0]) =>
         Effect.all(
           {
             skills: openCodeRuntime.loadOpenCodeSkills(client),
@@ -207,6 +214,22 @@ export const OpenCodeDriver: ProviderDriver<OpenCodeSettings, OpenCodeDriverEnv>
                     : {}),
                   environment: processEnv,
                 });
+                if (server.apiVersion === 2) {
+                  return yield* loadOpenCodeV2Inventory(
+                    createOpenCodeV2Client({
+                      baseUrl: server.url,
+                      ...(server.serverPassword !== undefined
+                        ? { serverPassword: server.serverPassword }
+                        : {}),
+                    }),
+                    cwd,
+                  ).pipe(
+                    Effect.map((inventory) => ({
+                      skills: inventory.skills,
+                      commands: inventory.commands ?? [],
+                    })),
+                  );
+                }
                 const client = openCodeRuntime.createOpenCodeSdkClient({
                   baseUrl: server.url,
                   directory: cwd,
@@ -214,19 +237,34 @@ export const OpenCodeDriver: ProviderDriver<OpenCodeSettings, OpenCodeDriverEnv>
                     ? { serverPassword: effectiveConfig.serverPassword }
                     : {}),
                 });
-                return yield* loadWorkspaceInventory(client);
+                return yield* loadWorkspaceInventoryV1(client);
               }),
             )
           : serverOwner.withServer((server) =>
-              loadWorkspaceInventory(
-                openCodeRuntime.createOpenCodeSdkClient({
-                  baseUrl: server.url,
-                  directory: cwd,
-                  ...(server.serverPassword !== undefined
-                    ? { serverPassword: server.serverPassword }
-                    : {}),
-                }),
-              ),
+              server.apiVersion === 2
+                ? loadOpenCodeV2Inventory(
+                    createOpenCodeV2Client({
+                      baseUrl: server.url,
+                      ...(server.serverPassword !== undefined
+                        ? { serverPassword: server.serverPassword }
+                        : {}),
+                    }),
+                    cwd,
+                  ).pipe(
+                    Effect.map((inventory) => ({
+                      skills: inventory.skills,
+                      commands: inventory.commands ?? [],
+                    })),
+                  )
+                : loadWorkspaceInventoryV1(
+                    openCodeRuntime.createOpenCodeSdkClient({
+                      baseUrl: server.url,
+                      directory: cwd,
+                      ...(server.serverPassword !== undefined
+                        ? { serverPassword: server.serverPassword }
+                        : {}),
+                    }),
+                  ),
             );
 
       const snapshotSettings = makeProviderSnapshotSettingsSource(effectiveConfig, serverSettings);

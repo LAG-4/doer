@@ -13,6 +13,11 @@ import {
   type QuestionAnswer,
   type QuestionRequest,
 } from "@opencode-ai/sdk/v2";
+import { OpenCode as OpenCodeV2ClientFactory } from "@opencode/client";
+import type {
+  ModelInfo as OpenCodeV2ModelInfo,
+  ProviderInfo as OpenCodeV2ProviderInfo,
+} from "@opencode/client";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
@@ -57,11 +62,36 @@ import {
   openCodeManagedScriptBinDir,
   openCodeManagedScriptBinaryPath,
   openCodeNpmInstallArgs,
+  OPENCODE_NPM_INSTALL_SPEC,
+  OPENCODE_NPM_INSTALL_SPEC_V2,
 } from "./opencodeInstall.ts";
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 const OPENCODE_EMPTY_CONFIG_CONTENT = "{}";
 
 export const MINIMUM_OPENCODE_VERSION = "1.14.19";
+/**
+ * Minimum OpenCode 2 version Doer speaks. v2.0.0 is the first stable v2
+ * release; the v2 server API (`/api/*`, `@opencode/client`) is fixed from
+ * there. Older 2.0.0-dev/beta builds are rejected like old v1 builds.
+ */
+export const MINIMUM_OPENCODE_V2_VERSION = "2.0.0";
+
+/** Which server API contract a connected OpenCode server speaks. */
+export type OpenCodeApiVersion = 1 | 2;
+
+export interface OpenCodeServerVersion {
+  readonly version: string;
+  readonly apiVersion: OpenCodeApiVersion;
+}
+
+/** v2 client handle from `@opencode/client` (OpenCode 2 line). */
+export type OpenCodeV2Client = ReturnType<typeof OpenCodeV2ClientFactory.make>;
+
+/** True for versions speaking the v2 API (`/api/*`, `@opencode/client`). */
+export function isOpenCodeV2Version(version: string): boolean {
+  const parsed = parseSemver(version);
+  return parsed !== null && parsed.major >= 2;
+}
 const OPENCODE_HEALTH_TIMEOUT = "5 seconds";
 const OPENCODE_NPM_INSTALL_TIMEOUT_MS = 5 * 60_000;
 const OPENCODE_SCRIPT_INSTALL_TIMEOUT_MS = 5 * 60_000;
@@ -103,7 +133,8 @@ export function resolveOpenCodeServerPassword(
     : input.environment.OPENCODE_SERVER_PASSWORD;
 }
 
-const OPENCODE_SERVER_READY_PREFIX = "opencode server listening";
+const OPENCODE_SERVER_READY_PREFIXES = ["opencode server listening", "server listening"];
+const OPENCODE_SERVER_PASSWORD_PREFIX = "server password";
 const DEFAULT_OPENCODE_SERVER_TIMEOUT_MS = 30_000;
 const DEFAULT_HOSTNAME = "127.0.0.1";
 const OPENCODE_SERVER_STARTUP_MAX_OUTPUT_CHARS = 64 * 1024;
@@ -112,6 +143,7 @@ export interface OpenCodeServerProcess {
   readonly url: string;
   readonly serverPassword?: string;
   readonly version: string;
+  readonly apiVersion: OpenCodeApiVersion;
   readonly isRunning: Effect.Effect<boolean>;
   readonly exitCode: Effect.Effect<number, never>;
 }
@@ -120,6 +152,7 @@ export interface OpenCodeServerConnection {
   readonly url: string;
   readonly serverPassword?: string;
   readonly version: string;
+  readonly apiVersion: OpenCodeApiVersion;
   readonly exitCode: Effect.Effect<number, never> | null;
   readonly external: boolean;
 }
@@ -203,6 +236,146 @@ export const verifyOpenCodeServerVersion = Effect.fn("verifyOpenCodeServerVersio
   return health.version;
 });
 
+const OpenCodeV2ServerInfoSchema = Schema.Struct({
+  version: Schema.String,
+});
+const decodeOpenCodeV2ServerInfo = Schema.decodeUnknownEffect(OpenCodeV2ServerInfoSchema);
+
+/**
+ * Build a v2 API client (`@opencode/client`, OpenCode 2 line). Auth is the
+ * same Basic `opencode:<password>` scheme v1 uses; the client takes it as a
+ * plain header. Standalone (not on the runtime service) so v1-only mocks and
+ * callers are untouched.
+ */
+export function createOpenCodeV2Client(input: {
+  readonly baseUrl: string;
+  readonly serverPassword?: string;
+  readonly fetch?: typeof globalThis.fetch;
+}): OpenCodeV2Client {
+  return OpenCodeV2ClientFactory.make({
+    baseUrl: input.baseUrl,
+    ...(input.fetch ? { fetch: input.fetch } : {}),
+    ...(input.serverPassword
+      ? {
+          headers: {
+            Authorization: `Basic ${Buffer.from(`opencode:${input.serverPassword}`, "utf8").toString("base64")}`,
+          },
+        }
+      : {}),
+  });
+}
+
+/**
+ * Walk `cause`/`body`/`error`/`data` for the first numeric HTTP status.
+ * Both SDK lines surface transport statuses differently (v1 nests under
+ * `response`, v2 under `cause`), so version routing inspects all of them.
+ */
+function openCodeHttpStatusOf(cause: unknown): number | undefined {
+  const seen = new Set<unknown>();
+  const queue: Array<unknown> = [cause];
+  for (let steps = 0; queue.length > 0 && steps < 16; steps += 1) {
+    const node = queue.shift();
+    if (node === null || typeof node !== "object" || seen.has(node)) {
+      continue;
+    }
+    seen.add(node);
+    const record = node as Record<string, unknown>;
+    const response = record.response;
+    const statuses = [
+      record.status,
+      record.statusCode,
+      response !== null && typeof response === "object"
+        ? (response as { readonly status?: unknown }).status
+        : undefined,
+    ].filter((status): status is number => typeof status === "number");
+    if (statuses.length > 0) {
+      return statuses[0];
+    }
+    for (const key of ["cause", "body", "error", "data"] as const) {
+      if (record[key] !== undefined) {
+        queue.push(record[key]);
+      }
+    }
+  }
+  return undefined;
+}
+
+export const verifyOpenCodeServerVersionV2 = Effect.fn("verifyOpenCodeServerVersionV2")(function* (
+  client: OpenCodeV2Client,
+) {
+  const infoOption = yield* runOpenCodeSdk("server.info", (signal) =>
+    client.server.info({ signal }),
+  ).pipe(Effect.timeoutOption(OPENCODE_HEALTH_TIMEOUT));
+  if (Option.isNone(infoOption)) {
+    return yield* new OpenCodeRuntimeError({
+      operation: "server.info",
+      detail: "Timed out while checking the OpenCode server version.",
+    });
+  }
+  const info = yield* decodeOpenCodeV2ServerInfo(infoOption.value).pipe(
+    Effect.mapError(
+      (cause) =>
+        new OpenCodeRuntimeError({
+          operation: "server.info",
+          detail: `OpenCode server returned an invalid info response. Doer requires OpenCode v${MINIMUM_OPENCODE_V2_VERSION} or newer.`,
+          cause,
+        }),
+    ),
+  );
+  if (parseSemver(info.version) === null) {
+    return yield* new OpenCodeRuntimeError({
+      operation: "server.info",
+      detail: `OpenCode server returned an invalid version. Doer requires OpenCode v${MINIMUM_OPENCODE_V2_VERSION} or newer.`,
+    });
+  }
+  if (compareSemverVersions(info.version, MINIMUM_OPENCODE_V2_VERSION) < 0) {
+    return yield* new OpenCodeRuntimeError({
+      operation: "server.info",
+      detail: `OpenCode v${info.version} is too old. Upgrade to v${MINIMUM_OPENCODE_V2_VERSION} or newer.`,
+    });
+  }
+  return info.version;
+});
+
+/**
+ * Version-check a server of either line: probe the v2 API and the v1 health
+ * endpoint concurrently and speak whichever answers. When both fail, the v2
+ * error surfaces — unless the server answered the v2 probe with 404 (unknown
+ * `/api/*` route means a v1 server), in which case the v1 error is the
+ * relevant one. A broken v2 connection is therefore never misreported as a
+ * v1 server, and a v1 server is found even when the v2 probe fails oddly
+ * (proxies, HTML error pages, content-type quirks).
+ */
+export const verifyOpenCodeServerVersionRouted = Effect.fn("verifyOpenCodeServerVersionRouted")(
+  function* (input: { readonly v1: OpencodeClient; readonly v2: OpenCodeV2Client }) {
+    const [v2Exit, v1Exit] = yield* Effect.all(
+      [
+        Effect.exit(verifyOpenCodeServerVersionV2(input.v2)),
+        Effect.exit(verifyOpenCodeServerVersion(input.v1)),
+      ],
+      { concurrency: "unbounded" },
+    );
+    if (v2Exit._tag === "Success") {
+      return { version: v2Exit.value, apiVersion: 2 as const } satisfies OpenCodeServerVersion;
+    }
+    if (v1Exit._tag === "Success") {
+      return { version: v1Exit.value, apiVersion: 1 as const } satisfies OpenCodeServerVersion;
+    }
+    const v2Failure = Cause.squash(v2Exit.cause);
+    const failure =
+      openCodeHttpStatusOf(v2Failure) === 404 ? Cause.squash(v1Exit.cause) : v2Failure;
+    return yield* Effect.fail(
+      OpenCodeRuntimeError.is(failure)
+        ? failure
+        : new OpenCodeRuntimeError({
+            operation: "server.info",
+            detail: openCodeRuntimeErrorDetail(failure),
+            cause: failure,
+          }),
+    );
+  },
+);
+
 export interface OpenCodeCommandResult {
   readonly stdout: string;
   readonly stderr: string;
@@ -230,6 +403,220 @@ export const loadOpenCodeCommands = (client: OpencodeClient) =>
       })),
     ),
   );
+
+/**
+ * Load the provider/model/agent/skill/command inventory from a v2 server and
+ * normalize it into the shared {@link OpenCodeInventory} shape so provider
+ * status, model flattening, and capability mapping stay version-agnostic:
+ * - v2 models are a flat list (`model.list`) grouped here by `providerID`;
+ *   only enabled models count as connected, mirroring v1's authenticated set.
+ * - v2 variants are an array; they become the `{ id: settings }` map v1 uses
+ *   so reasoning selectors keep working.
+ * - v2 skills carry `path` (not `location`) and commands carry no
+ *   `source`/`hints`; both are adapted to the v1 field names downstream.
+ * - A freshly booted v2 server settles each location asynchronously: the
+ *   first reads can report empty providers or an unpruned model catalog, so
+ *   an empty result is reloaded twice before it is trusted.
+ */
+export const loadOpenCodeV2Inventory = (
+  client: OpenCodeV2Client,
+  directory: string,
+): Effect.Effect<OpenCodeInventory, OpenCodeRuntimeError> => {
+  const attempt = () =>
+    Effect.all(
+      [
+        runOpenCodeSdk("provider.list", (signal) =>
+          client.provider.list({ location: { directory } }, { signal }),
+        ),
+        runOpenCodeSdk("model.list", (signal) =>
+          client.model.list({ location: { directory } }, { signal }),
+        ),
+        runOpenCodeSdk("agent.list", (signal) =>
+          client.agent.list({ location: { directory } }, { signal }),
+        ),
+        runOpenCodeSdk("skill.list", (signal) =>
+          client.skill.list({ location: { directory } }, { signal }),
+        ),
+        runOpenCodeSdk("command.list", (signal) =>
+          client.command.list({ location: { directory } }, { signal }),
+        ),
+      ],
+      { concurrency: "unbounded" },
+    );
+  const isSettled = (
+    result: [
+      { data?: ReadonlyArray<unknown> },
+      { data?: ReadonlyArray<unknown> },
+      unknown,
+      unknown,
+      unknown,
+    ],
+  ): boolean => (result[0].data?.length ?? 0) > 0 && (result[1].data?.length ?? 0) > 0;
+  const loadOnce = () =>
+    Effect.gen(function* () {
+      let result = yield* attempt();
+      for (let retry = 0; retry < 2 && !isSettled(result); retry += 1) {
+        yield* Effect.sleep("2 seconds");
+        result = yield* attempt();
+      }
+      const [providers, models, agents, skills, commands] = result;
+      return normalizeOpenCodeV2Inventory({ providers, models, agents, skills, commands });
+    });
+  // A cold v2 server can fail individual reads while locations initialize;
+  // retry once after a short pause (mirrors the CLI inventory path) before
+  // reporting the provider unavailable.
+  return Effect.gen(function* () {
+    const first = yield* Effect.exit(loadOnce());
+    if (first._tag === "Success") {
+      return first.value;
+    }
+    yield* Effect.sleep("1 second");
+    return yield* loadOnce();
+  });
+};
+
+function normalizeOpenCodeV2Inventory(input: {
+  readonly providers: { readonly data?: ReadonlyArray<OpenCodeV2ProviderInfo> };
+  readonly models: { readonly data?: ReadonlyArray<OpenCodeV2ModelInfo> };
+  readonly agents: {
+    readonly data?: ReadonlyArray<{ name: string; mode: Agent["mode"]; hidden?: boolean }>;
+  };
+  readonly skills: {
+    readonly data?: ReadonlyArray<{ name: string; description?: string; path: string }>;
+  };
+  readonly commands: { readonly data?: ReadonlyArray<{ name: string; description?: string }> };
+}): OpenCodeInventory {
+  const { providers, models, agents, skills, commands } = input;
+  const providerById = new Map<
+    string,
+    { id: string; name: string; models: Record<string, Model> }
+  >();
+  const ensureProvider = (info: Pick<OpenCodeV2ProviderInfo, "id" | "name">) => {
+    let provider = providerById.get(info.id);
+    if (!provider) {
+      provider = { id: info.id, name: info.name, models: {} };
+      providerById.set(info.id, provider);
+    }
+    return provider;
+  };
+  for (const info of providers.data ?? []) {
+    ensureProvider(info);
+  }
+  const toV1Variants = (variants: OpenCodeV2ModelInfo["variants"]): Model["variants"] => {
+    const mapped: Record<string, { [key: string]: unknown }> = {};
+    for (const variant of variants ?? []) {
+      mapped[variant.id] = { ...variant.settings };
+    }
+    return mapped;
+  };
+  for (const model of models.data ?? []) {
+    if (model.enabled === false) {
+      continue;
+    }
+    const provider = ensureProvider({ id: model.providerID, name: model.providerID });
+    provider.models[model.modelID] = {
+      id: model.modelID,
+      providerID: model.providerID,
+      name: model.name,
+      variants: toV1Variants(model.variants),
+    } as unknown as Model;
+  }
+  const connected = [...providerById.values()]
+    .filter((provider) => Object.keys(provider.models).length > 0)
+    .map((provider) => provider.id);
+  return {
+    providerList: {
+      all: [...providerById.values()].map((provider) => ({
+        id: provider.id,
+        name: provider.name,
+        source: "api" as const,
+        env: [],
+        options: {},
+        models: provider.models,
+      })),
+      default: {},
+      connected,
+    },
+    agents: (agents.data ?? []).map((agent): Agent => ({
+      name: agent.name,
+      mode: agent.mode,
+      ...(agent.hidden !== undefined ? { hidden: agent.hidden } : {}),
+      permission: [],
+      options: {},
+    })),
+    skills: (skills.data ?? []).map((skill) => ({
+      name: skill.name,
+      ...(skill.description === undefined ? {} : { description: skill.description }),
+      location: skill.path,
+    })),
+    commands: (commands.data ?? []).map((command): OpenCodeSlashCommand => ({
+      name: command.name,
+      ...(command.description === undefined ? {} : { description: command.description }),
+      hints: [],
+    })),
+  } satisfies OpenCodeInventory;
+}
+
+export interface OpenCodeV2PermissionRule {
+  readonly action: string;
+  readonly resource: string;
+  readonly effect: "allow" | "deny" | "ask";
+}
+
+/**
+ * v2 permission ruleset (`{ action, resource, effect }`) mirroring
+ * {@link buildOpenCodePermissionRules}. Action renames follow the v2
+ * contract: `bash` → `shell`. `lsp` and `doom_loop` are not v2 Core actions
+ * and are dropped; unmatched tools still default to `ask` server-side.
+ */
+export function buildOpenCodeV2PermissionRules(
+  runtimeMode: RuntimeMode,
+): Array<OpenCodeV2PermissionRule> {
+  if (runtimeMode === "full-access") {
+    return [
+      { action: "*", resource: "*", effect: "allow" },
+      { action: "external_directory", resource: "*", effect: "allow" },
+    ];
+  }
+  const editEffect = runtimeMode === "auto-accept-edits" ? "allow" : "ask";
+  return [
+    { action: "*", resource: "*", effect: "ask" },
+    { action: "read", resource: "*", effect: "allow" },
+    { action: "read", resource: "*.env", effect: "ask" },
+    { action: "read", resource: "*.env.*", effect: "ask" },
+    { action: "read", resource: "*.env.example", effect: "allow" },
+    { action: "glob", resource: "*", effect: "allow" },
+    { action: "grep", resource: "*", effect: "allow" },
+    { action: "skill", resource: "*", effect: "allow" },
+    { action: "todowrite", resource: "*", effect: "allow" },
+    { action: "shell", resource: "*", effect: "ask" },
+    { action: "edit", resource: "*", effect: editEffect },
+    { action: "webfetch", resource: "*", effect: "ask" },
+    { action: "websearch", resource: "*", effect: "ask" },
+    { action: "codesearch", resource: "*", effect: "ask" },
+    { action: "external_directory", resource: "*", effect: "ask" },
+    { action: "question", resource: "*", effect: "allow" },
+  ];
+}
+
+export interface OpenCodeV2FilePart {
+  readonly uri: string;
+  readonly name?: string;
+}
+
+/**
+ * v2 prompt attachments (`{ uri, name }` — v2 carries no MIME type).
+ * Same native-part filtering as {@link toOpenCodeFileParts}.
+ */
+export function toOpenCodeV2FileParts(input: {
+  readonly attachments: ReadonlyArray<ChatAttachment> | undefined;
+  readonly resolveAttachmentPath: (attachment: ChatAttachment) => string | null;
+}): Array<OpenCodeV2FilePart> {
+  return toOpenCodeFileParts(input).map((part) => ({
+    uri: part.url,
+    ...(part.filename !== undefined ? { name: part.filename } : {}),
+  }));
+}
 
 export interface ParsedOpenCodeModelSlug {
   readonly providerID: string;
@@ -344,15 +731,40 @@ export interface OpenCodeRuntimeShape {
   }) => Effect.Effect<EnsureOpenCodeInstallResult, OpenCodeRuntimeError>;
 }
 
-function parseServerUrlFromOutput(output: string): string | null {
+/** @internal */
+export function parseServerUrlFromOutput(output: string): string | null {
   for (const line of output.split("\n")) {
-    if (!line.startsWith(OPENCODE_SERVER_READY_PREFIX)) {
+    // v1 prints `opencode server listening on <url>`; v2 prints
+    // `server listening on <url>`. Accept either.
+    if (!OPENCODE_SERVER_READY_PREFIXES.some((prefix) => line.startsWith(prefix))) {
       continue;
     }
     const match = line.match(/on\s+(https?:\/\/[^\s]+)/);
     return match?.[1] ?? null;
   }
   return null;
+}
+
+/**
+ * v2 prints an auto-generated password (`server password <pwd>`) when no
+ * `OPENCODE_SERVER_PASSWORD` was provided. Capture it so the client can
+ * authenticate; v1 never prints this line. Returns the last match so a
+ * restarted server's newest password wins.
+ *
+ * @internal
+ */
+export function parseServerPasswordFromOutput(output: string): string | null {
+  let password: string | null = null;
+  for (const line of output.split("\n")) {
+    if (!line.startsWith(OPENCODE_SERVER_PASSWORD_PREFIX)) {
+      continue;
+    }
+    const candidate = line.slice(OPENCODE_SERVER_PASSWORD_PREFIX.length).trim();
+    if (candidate.length > 0) {
+      password = candidate;
+    }
+  }
+  return password;
 }
 
 const SLUG_LINE_RE = /^(\S+\/\S+)\s*$/;
@@ -959,22 +1371,33 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       // Keep draining both pipes until the process scope closes. Stopping the
       // readers can block OpenCode when its output buffers fill. Startup output
       // is no longer needed, so discard later output instead of retaining it.
+      const startupOutput = (yield* Ref.get(stdoutRef)) ?? "";
       yield* Ref.set(stdoutRef, null);
       yield* Ref.set(stderrRef, null);
 
       const url = readyOption.value;
-      const version = yield* verifyOpenCodeServerVersion(
-        createOpenCodeSdkClient({
+      // v2 prints an auto-generated password when none was configured — adopt
+      // it so the client authenticates. An explicitly configured password
+      // always wins; v1 never prints one.
+      const effectivePassword =
+        serverPassword ?? parseServerPasswordFromOutput(startupOutput) ?? undefined;
+      const verified = yield* verifyOpenCodeServerVersionRouted({
+        v1: createOpenCodeSdkClient({
           baseUrl: url,
           directory: input.directory,
-          ...(serverPassword !== undefined ? { serverPassword } : {}),
+          ...(effectivePassword !== undefined ? { serverPassword: effectivePassword } : {}),
         }),
-      );
+        v2: createOpenCodeV2Client({
+          baseUrl: url,
+          ...(effectivePassword !== undefined ? { serverPassword: effectivePassword } : {}),
+        }),
+      });
 
       return {
         url,
-        ...(serverPassword !== undefined ? { serverPassword } : {}),
-        version,
+        ...(effectivePassword !== undefined ? { serverPassword: effectivePassword } : {}),
+        version: verified.version,
+        apiVersion: verified.apiVersion,
         isRunning: child.isRunning.pipe(Effect.orElseSucceed(() => false)),
         exitCode: child.exitCode.pipe(
           Effect.map(Number),
@@ -990,17 +1413,22 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
         external: true,
         ...(input.serverPassword !== undefined ? { serverPassword: input.serverPassword } : {}),
       });
-      return verifyOpenCodeServerVersion(
-        createOpenCodeSdkClient({
+      return verifyOpenCodeServerVersionRouted({
+        v1: createOpenCodeSdkClient({
           baseUrl: serverUrl,
           directory: input.directory,
           ...(serverPassword !== undefined ? { serverPassword } : {}),
         }),
-      ).pipe(
-        Effect.map((version) => ({
+        v2: createOpenCodeV2Client({
+          baseUrl: serverUrl,
+          ...(serverPassword !== undefined ? { serverPassword } : {}),
+        }),
+      }).pipe(
+        Effect.map((verified) => ({
           url: serverUrl,
           ...(serverPassword !== undefined ? { serverPassword } : {}),
-          version,
+          version: verified.version,
+          apiVersion: verified.apiVersion,
           exitCode: null,
           external: true,
         })),
@@ -1021,6 +1449,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
         url: server.url,
         ...(server.serverPassword !== undefined ? { serverPassword: server.serverPassword } : {}),
         version: server.version,
+        apiVersion: server.apiVersion,
         exitCode: server.exitCode,
         external: false,
       })),
@@ -1281,6 +1710,14 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       ),
     );
 
+  // Fresh installs prefer the v2 CLI distribution (`@opencode/cli`, the
+  // OpenCode 2 line); when it fails, retry with the v1 line (`opencode-ai`)
+  // before giving up — both are supported at runtime via version routing.
+  const OPENCODE_NPM_INSTALL_SPECS_IN_ORDER: ReadonlyArray<string> = [
+    OPENCODE_NPM_INSTALL_SPEC_V2,
+    OPENCODE_NPM_INSTALL_SPEC,
+  ];
+
   const runNpmInstall = (input: {
     readonly managedDir: string;
     readonly environment?: NodeJS.ProcessEnv;
@@ -1294,21 +1731,28 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
             "OpenCode CLI (`opencode`) is not installed and npm is unavailable to install it automatically. Install Node.js/npm, or install OpenCode manually: curl -fsSL https://opencode.ai/install | bash",
         });
       }
-      const { stdout, stderr, code } = yield* runInstallCommand({
-        label: "npm",
-        command: npm.value,
-        args: openCodeNpmInstallArgs(input.managedDir),
-        ...(input.environment ? { environment: input.environment } : {}),
-        timeoutMs: OPENCODE_NPM_INSTALL_TIMEOUT_MS,
-      });
-      if (code !== 0) {
-        const tail = `${stderr}\n${stdout}`.trim().slice(-2048);
-        return yield* new OpenCodeRuntimeError({
-          operation: "ensureOpenCodeInstalled",
-          detail: `Automatic OpenCode installation failed (npm exited with code ${code}).${tail ? ` npm output:\n${tail}` : ""}`,
+      const failures: Array<string> = [];
+      for (const spec of OPENCODE_NPM_INSTALL_SPECS_IN_ORDER) {
+        const { stdout, stderr, code } = yield* runInstallCommand({
+          label: "npm",
+          command: npm.value,
+          args: openCodeNpmInstallArgs(input.managedDir, spec),
+          ...(input.environment ? { environment: input.environment } : {}),
+          timeoutMs: OPENCODE_NPM_INSTALL_TIMEOUT_MS,
         });
+        if (code === 0) {
+          yield* Effect.logInfo(`Automatic OpenCode installation used ${spec}.`, {
+            managedDir: input.managedDir,
+          });
+          return;
+        }
+        const tail = `${stderr}\n${stdout}`.trim().slice(-1024);
+        failures.push(`${spec} (npm exited with code ${code})${tail ? `:\n${tail}` : ""}`);
       }
-      yield* Effect.void;
+      return yield* new OpenCodeRuntimeError({
+        operation: "ensureOpenCodeInstalled",
+        detail: `Automatic OpenCode installation failed. Attempts: ${failures.join("; ")}`,
+      });
     });
 
   /**
