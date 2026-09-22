@@ -36,14 +36,19 @@ function WelcomeRouteView() {
         <WelcomeWizard
           localAvailable={localAvailable}
           onDone={(projectRef) => {
-            setDismissed(true);
             if (projectRef !== undefined) {
+              setDismissed(true);
               void openNewThread(projectRef, { replace: true }).catch(() => {
                 void navigate({ to: "/", replace: true });
               });
               return;
             }
-            void navigate({ to: "/", replace: true });
+            // The hero behind the wizard is the destination: dismissing
+            // reveals "Start chatting" with no navigation, so no
+            // intermediate screen can flash. Starting a chat opens the
+            // default folder (the auto-provisioned inbox); adding a folder
+            // stays optional.
+            setDismissed(true);
           }}
         />
       ) : null}

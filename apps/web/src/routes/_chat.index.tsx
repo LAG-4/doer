@@ -7,8 +7,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
 import { isElectron } from "../env";
+import { resolveLandingProject } from "../components/landingProject.logic";
 import { NoProjectsHero } from "../components/NoProjectsHero";
-import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
 import { Button } from "../components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
 import { SidebarInset } from "../components/ui/sidebar";
@@ -55,20 +55,7 @@ function IndexDraftLanding() {
   const preparedRef = useRef(false);
 
   const mostRecentProject = useMemo(() => {
-    if (!bootstrapped) {
-      return null;
-    }
-    // No-folder chats belong in the auto-provisioned inbox: while the user
-    // has no chats outside it, landing opens the inbox draft instead of the
-    // most recently touched folder.
-    if (inboxProjectId !== undefined) {
-      const inboxProject = projects.find((project) => project.id === inboxProjectId);
-      const hasNonInboxThreads = threads.some((thread) => thread.projectId !== inboxProjectId);
-      if (inboxProject && !hasNonInboxThreads) {
-        return inboxProject;
-      }
-    }
-    return sortScopedProjectsForSidebar(projects, threads, "updated_at")[0] ?? null;
+    return resolveLandingProject({ bootstrapped, inboxProjectId, projects, threads });
   }, [bootstrapped, inboxProjectId, projects, threads]);
 
   useEffect(() => {
