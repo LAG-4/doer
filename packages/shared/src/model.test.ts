@@ -163,6 +163,35 @@ describe("descriptor helpers", () => {
     expect(getModelSelectionStringOptionValue(selection, "reasoningEffort")).toBe("high");
     expect(getModelSelectionBooleanOptionValue(selection, "fastMode")).toBe(true);
   });
+
+  it("heals display labels and casing to canonical option ids", () => {
+    const agentCaps: ModelCapabilities = createModelCapabilities({
+      optionDescriptors: [
+        {
+          id: "agent",
+          label: "Agent",
+          type: "select",
+          options: [
+            { id: "build", label: "Build", isDefault: true },
+            { id: "plan", label: "Plan" },
+          ],
+          currentValue: "build",
+        },
+      ],
+    });
+    const currentValueFor = (value: string) => {
+      const [descriptor] = getProviderOptionDescriptors({
+        caps: agentCaps,
+        selections: [{ id: "agent", value }],
+      });
+      return descriptor?.type === "select" ? descriptor.currentValue : undefined;
+    };
+    expect(currentValueFor("build")).toBe("build");
+    expect(currentValueFor("Build")).toBe("build");
+    expect(currentValueFor("BUILD")).toBe("build");
+    expect(currentValueFor("Plan")).toBe("plan");
+    expect(currentValueFor("nope")).toBe("build");
+  });
 });
 
 describe("applyClaudePromptEffortPrefix", () => {

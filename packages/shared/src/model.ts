@@ -92,6 +92,18 @@ function resolveDescriptorChoiceValue(
   if (descriptor.options.some((option) => option.id === trimmed)) {
     return trimmed;
   }
+  // Tolerate display labels and casing from stale or drifted clients: a stored
+  // "Build" still means the `build` option. Fall through to the descriptor
+  // default when nothing matches rather than failing or inventing a value.
+  const lowered = trimmed.toLowerCase();
+  const byId = descriptor.options.find((option) => option.id.toLowerCase() === lowered);
+  if (byId) {
+    return byId.id;
+  }
+  const byLabel = descriptor.options.find((option) => option.label.toLowerCase() === lowered);
+  if (byLabel) {
+    return byLabel.id;
+  }
   return descriptor.currentValue ?? descriptor.options.find((option) => option.isDefault)?.id;
 }
 

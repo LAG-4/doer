@@ -77,6 +77,8 @@ import { type OpenCodeAdapterShape } from "../Services/OpenCodeAdapter.ts";
 import {
   buildOpenCodeV2PermissionRules,
   createOpenCodeV2Client,
+  isOpenCodeAgentNotFoundError,
+  matchKnownAgentName,
   OpenCodeRuntime,
   OpenCodeRuntimeError,
   openCodeRuntimeErrorDetail,
@@ -266,6 +268,7 @@ interface OpenCodeV2SessionContext {
   currentAgent: string | undefined;
   currentVariant: string | undefined;
   commandNames: ReadonlyArray<string> | undefined;
+  agentRecords: ReadonlyArray<{ readonly id: string; readonly name: string }> | undefined;
   readonly promptSemaphore: Semaphore.Semaphore;
   readonly firstConnection: Deferred.Deferred<void, ProviderAdapterRequestError>;
   readonly stopped: Ref.Ref<boolean>;
@@ -1208,6 +1211,84 @@ export function makeOpenCodeAdapterV2(
       );
     });
 
+    /**
+     * Resolve a requested agent against the server's live agent list before
+     * it is ever sent: OpenCode validates the name lazily at execution time,
+     * so an unknown name sails through `session.create`/`session.switchAgent`
+     * and fails the turn as `session.execution.failed`. Resolution returns
+     * the execution id (the list carries display labels like `"Build"` while
+     * execution wants `"build"`); unknown names resolve to `undefined`
+     * (server default). A cold server reports empty lists while locations
+     * initialize, so an empty union is refetched once before trusting it —
+     * and never cached, so a later turn heals instead of replaying it.
+     * A still-empty list fails open to the requested value (with a warning)
+     * so a listing outage alone never blocks a turn.
+     */
+    const resolveV2SessionAgent = Effect.fn("resolveV2SessionAgent")(function* (
+      host: Pick<OpenCodeV2SessionContext, "client" | "directory" | "agentRecords">,
+      requested: string | undefined,
+    ) {
+      if (requested === undefined) {
+        return undefined;
+      }
+      if (host.agentRecords === undefined) {
+        // Directory-scoped listing only reports directory-local agents: on a
+        // stock server it comes back empty while the unscoped list carries
+        // the built-ins. Union both so labels resolve to execution ids.
+        const listAgents = (location: { readonly directory: string } | undefined) =>
+          runOpenCodeSdk("agent.list", (signal) =>
+            host.client.agent.list(location === undefined ? undefined : { location }, { signal }),
+          ).pipe(
+            Effect.map((result) =>
+              (result.data ?? []).flatMap((agent) =>
+                typeof agent.id === "string" && typeof agent.name === "string"
+                  ? [{ id: agent.id, name: agent.name } as const]
+                  : [],
+              ),
+            ),
+            Effect.timeout("10 seconds"),
+            Effect.tapError((cause) =>
+              Effect.logWarning(
+                `OpenCode agent.list (${location === undefined ? "unscoped" : "scoped"}) failed; treating as empty: ${openCodeRuntimeErrorDetail(cause)}`,
+              ),
+            ),
+            Effect.orElseSucceed(
+              (): ReadonlyArray<{ readonly id: string; readonly name: string }> => [],
+            ),
+          );
+        let union: ReadonlyArray<{ readonly id: string; readonly name: string }> = [];
+        for (let attempt = 0; attempt < 2 && union.length === 0; attempt += 1) {
+          if (attempt > 0) {
+            yield* Effect.sleep("2 seconds");
+          }
+          const [scoped, unscoped] = yield* Effect.all(
+            [listAgents({ directory: host.directory }), listAgents(undefined)],
+            { concurrency: 2 },
+          );
+          union = [...scoped, ...unscoped];
+        }
+        if (union.length > 0) {
+          host.agentRecords = union;
+        }
+      }
+      const known = host.agentRecords ?? [];
+      if (known.length === 0) {
+        yield* Effect.logWarning(
+          `OpenCode agent list came back empty; sending requested agent '${requested}' unverified.`,
+        );
+        return requested;
+      }
+      const matched = matchKnownAgentName(known, requested);
+      if (matched === undefined) {
+        yield* Effect.logWarning(
+          `OpenCode server does not know agent '${requested}'; using its default agent instead.`,
+        );
+      } else if (matched !== requested) {
+        yield* Effect.logWarning(`OpenCode agent '${requested}' resolved to '${matched}'.`);
+      }
+      return matched;
+    });
+
     const applyV2SessionSelection = Effect.fn("applyV2SessionSelection")(function* (
       client: OpenCodeV2SessionContext["client"],
       sessionID: string,
@@ -1233,9 +1314,22 @@ export function makeOpenCodeAdapterV2(
         ).pipe(Effect.mapError(toRequestError));
       }
       if (selection.selectedAgent) {
+        const requestedAgent = selection.selectedAgent;
         yield* runOpenCodeSdk("session.switchAgent", (signal) =>
-          client.session.switchAgent({ sessionID, agent: selection.selectedAgent! }, { signal }),
-        ).pipe(Effect.mapError(toRequestError));
+          client.session.switchAgent({ sessionID, agent: requestedAgent }, { signal }),
+        ).pipe(
+          Effect.asVoid,
+          Effect.catchIf(
+            (cause) => isOpenCodeAgentNotFoundError(cause),
+            (cause) =>
+              // A stale client selection (e.g. a display label like "Build")
+              // must not kill the turn: keep the session's current agent.
+              Effect.logWarning(
+                `OpenCode session '${sessionID}' ignores unknown agent '${requestedAgent}'; continuing with its current agent: ${openCodeRuntimeErrorDetail(cause)}`,
+              ),
+          ),
+          Effect.mapError(toRequestError),
+        );
       }
     });
 
@@ -1345,6 +1439,14 @@ export function makeOpenCodeAdapterV2(
                 "variant",
               );
               const parsedSelection = parseOpenCodeModelSlug(input.modelSelection?.model);
+              const agentDirectory: Pick<
+                OpenCodeV2SessionContext,
+                "client" | "directory" | "agentRecords"
+              > = { client, directory, agentRecords: undefined };
+              const resolvedStartAgent = yield* resolveV2SessionAgent(
+                agentDirectory,
+                selectedAgent,
+              );
 
               const resolved = yield* Effect.gen(function* () {
                 const adopted = resumeSessionId
@@ -1380,7 +1482,7 @@ export function makeOpenCodeAdapterV2(
                   // session on its original selection.
                   yield* applyV2SessionSelection(client, reusable.id, {
                     parsedSelection,
-                    ...(selectedAgent ? { selectedAgent } : {}),
+                    ...(resolvedStartAgent ? { selectedAgent: resolvedStartAgent } : {}),
                     ...(selectedVariant ? { selectedVariant } : {}),
                   });
                   return { openCodeSessionId: reusable.id, created: false };
@@ -1404,7 +1506,7 @@ export function makeOpenCodeAdapterV2(
                   );
                   yield* applyV2SessionSelection(client, adopted.id, {
                     parsedSelection,
-                    ...(selectedAgent ? { selectedAgent } : {}),
+                    ...(resolvedStartAgent ? { selectedAgent: resolvedStartAgent } : {}),
                     ...(selectedVariant ? { selectedVariant } : {}),
                   });
                   return { openCodeSessionId: adopted.id, created: false };
@@ -1415,24 +1517,38 @@ export function makeOpenCodeAdapterV2(
                     `OpenCode session '${resumeSessionId}' no longer exists; starting a fresh session.`,
                   );
                 }
-                const created = yield* runOpenCodeSdk("session.create", (signal) =>
-                  client.session.create(
-                    {
-                      ...(input.title ? { title: input.title } : {}),
-                      ...(selectedAgent ? { agent: selectedAgent } : {}),
-                      ...(parsedSelection
-                        ? {
-                            model: {
-                              id: parsedSelection.modelID,
-                              providerID: parsedSelection.providerID,
-                              ...(selectedVariant ? { variant: selectedVariant } : {}),
-                            },
-                          }
-                        : {}),
-                      location: { directory },
-                      permissions: buildOpenCodeV2PermissionRules(input.runtimeMode),
-                    },
-                    { signal },
+                const createSession = (agent: string | undefined) =>
+                  runOpenCodeSdk("session.create", (signal) =>
+                    client.session.create(
+                      {
+                        ...(input.title ? { title: input.title } : {}),
+                        ...(agent ? { agent } : {}),
+                        ...(parsedSelection
+                          ? {
+                              model: {
+                                id: parsedSelection.modelID,
+                                providerID: parsedSelection.providerID,
+                                ...(selectedVariant ? { variant: selectedVariant } : {}),
+                              },
+                            }
+                          : {}),
+                        location: { directory },
+                        permissions: buildOpenCodeV2PermissionRules(input.runtimeMode),
+                      },
+                      { signal },
+                    ),
+                  );
+                const created = yield* createSession(resolvedStartAgent).pipe(
+                  Effect.catchIf(
+                    (cause) =>
+                      resolvedStartAgent !== undefined && isOpenCodeAgentNotFoundError(cause),
+                    (cause) =>
+                      // A stale client selection (e.g. a display label like
+                      // "Build") must not kill the turn: retry once with the
+                      // server default agent.
+                      Effect.logWarning(
+                        `OpenCode server does not know agent '${resolvedStartAgent}'; creating the session with its default agent instead: ${openCodeRuntimeErrorDetail(cause)}`,
+                      ).pipe(Effect.flatMap(() => createSession(undefined))),
                   ),
                 );
                 return { openCodeSessionId: created.id, created: true };
@@ -1444,9 +1560,10 @@ export function makeOpenCodeAdapterV2(
                 client,
                 openCodeSessionId: resolved.openCodeSessionId,
                 created: resolved.created,
-                selectedAgent,
+                selectedAgent: resolvedStartAgent,
                 selectedVariant,
                 parsedSelection,
+                agentRecords: agentDirectory.agentRecords,
               };
             }).pipe(Effect.provideService(Scope.Scope, sessionScope)),
           );
@@ -1500,6 +1617,7 @@ export function makeOpenCodeAdapterV2(
           currentAgent: started.selectedAgent,
           currentVariant: started.selectedVariant,
           commandNames: undefined,
+          agentRecords: started.agentRecords,
           promptSemaphore: Semaphore.makeUnsafe(1),
           firstConnection: Deferred.makeUnsafe<void, ProviderAdapterRequestError>(),
           stopped: yield* Ref.make(false),
@@ -1615,7 +1733,10 @@ export function makeOpenCodeAdapterV2(
           // A sendTurn while a turn is active steers the running session.
           const steeringTurnId = context.activeTurnId;
           const turnId = steeringTurnId ?? TurnId.make(`opencode-turn-${yield* randomUUIDv4}`);
-          const agent = getModelSelectionStringOptionValue(modelSelection, "agent");
+          const agent = yield* resolveV2SessionAgent(
+            context,
+            getModelSelectionStringOptionValue(modelSelection, "agent"),
+          );
           const variant = getModelSelectionStringOptionValue(modelSelection, "variant");
 
           const slug = `${parsedModel.providerID}/${parsedModel.modelID}`;
@@ -1641,13 +1762,28 @@ export function makeOpenCodeAdapterV2(
             (input.interactionMode === "plan" ? "plan" : undefined) ??
             context.currentAgent;
           if (effectiveAgent !== undefined && effectiveAgent !== context.currentAgent) {
-            yield* runOpenCodeSdk("session.switchAgent", (signal) =>
+            // Switches validate eagerly while create/prompt stay lenient: a
+            // rejected switch must not kill the turn — stay on the session
+            // agent and let the prompt run.
+            const didSwitch = yield* runOpenCodeSdk("session.switchAgent", (signal) =>
               context.client.session.switchAgent(
                 { sessionID: context.openCodeSessionId, agent: effectiveAgent },
                 { signal },
               ),
-            ).pipe(Effect.mapError(toRequestError));
-            context.currentAgent = effectiveAgent;
+            ).pipe(
+              Effect.mapError(toRequestError),
+              Effect.as(true),
+              Effect.catchIf(
+                (cause) => isOpenCodeAgentNotFoundError(cause),
+                (cause) =>
+                  Effect.logWarning(
+                    `OpenCode rejected switch to agent '${effectiveAgent}'; staying on the session agent: ${openCodeRuntimeErrorDetail(cause)}`,
+                  ).pipe(Effect.as(false)),
+              ),
+            );
+            if (didSwitch) {
+              context.currentAgent = effectiveAgent;
+            }
           }
 
           context.activeTurnId = turnId;
