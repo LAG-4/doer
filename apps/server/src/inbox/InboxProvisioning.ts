@@ -17,6 +17,7 @@ import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
@@ -28,11 +29,16 @@ export const resolveInboxWelcomeTargets = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const randomUUID = crypto.randomUUIDv4;
   const path = yield* Path.Path;
+  const fileSystem = yield* FileSystem.FileSystem;
   const homeDir = yield* HostProcessHomeDirectory;
   const projectionReadModelQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
   const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
 
   const inboxRoot = resolveInboxRoot(homeDir, path);
+  // A project record without its directory chats into "Workspace root does
+  // not exist". Ensure the default folder before either branch so fresh
+  // installs and pre-existing inbox records both self-repair on startup.
+  yield* fileSystem.makeDirectory(inboxRoot, { recursive: true });
   const existingProject =
     yield* projectionReadModelQuery.getActiveProjectByWorkspaceRoot(inboxRoot);
   if (Option.isSome(existingProject)) {

@@ -3,6 +3,7 @@ import { DEFAULT_CODEX_MODEL, ProjectId, ProviderInstanceId } from "@t3tools/con
 import { HostProcessHomeDirectory } from "@t3tools/shared/hostProcess";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
@@ -12,6 +13,12 @@ import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEng
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { resolveInboxWelcomeTargets } from "./InboxProvisioning.ts";
 import { INBOX_PROJECT_TITLE } from "./InboxWorkspace.ts";
+
+/** Isolated real home per test: provisioning touches the real filesystem. */
+const makeTempHome = Effect.fn("InboxProvisioning.test.makeTempHome")(function* () {
+  const fileSystem = yield* FileSystem.FileSystem;
+  return yield* fileSystem.makeTempDirectoryScoped({ prefix: "doer-inbox-test" });
+});
 
 const unusedProjection = {
   getUserInputActivity: () => Effect.die("unused"),
@@ -57,7 +64,8 @@ const recordingEngine = (dispatchCalls: Ref.Ref<ReadonlyArray<Record<string, unk
 it.effect("reuses the existing inbox project without dispatching", () =>
   Effect.gen(function* () {
     const path = yield* Path.Path;
-    const home = path.join("tmp", "fake-home");
+    const fileSystem = yield* FileSystem.FileSystem;
+    const home = yield* makeTempHome();
     const inboxProjectId = ProjectId.make("project-inbox");
     const dispatchCalls = yield* Ref.make<ReadonlyArray<Record<string, unknown>>>([]);
     const targets = yield* resolveInboxWelcomeTargets.pipe(
@@ -93,13 +101,22 @@ it.effect("reuses the existing inbox project without dispatching", () =>
       inboxWorkspaceRoot: path.join(home, "Documents", "Doer"),
     });
     assert.deepStrictEqual(yield* Ref.get(dispatchCalls), []);
+    // Pre-existing records self-repair: the directory lands either way.
+    assert.equal((yield* fileSystem.stat(path.join(home, "Documents", "Doer"))).type, "Directory");
   }).pipe(Effect.provide(NodeServices.layer)),
 );
 
 it.effect("creates the inbox project including its directory", () =>
   Effect.gen(function* () {
     const path = yield* Path.Path;
-    const home = path.join("tmp", "fake-home");
+    const fileSystem = yield* FileSystem.FileSystem;
+    const home = yield* makeTempHome();
+    assert.isFalse(
+      yield* fileSystem.stat(path.join(home, "Documents", "Doer")).pipe(
+        Effect.as(true),
+        Effect.orElseSucceed(() => false),
+      ),
+    );
     const dispatchCalls = yield* Ref.make<ReadonlyArray<Record<string, unknown>>>([]);
     const targets = yield* resolveInboxWelcomeTargets.pipe(
       Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
@@ -125,12 +142,13 @@ it.effect("creates the inbox project including its directory", () =>
     assert.equal(calls[0]?.["createWorkspaceRootIfMissing"], true);
     assert.equal(calls[0]?.["projectId"], targets.inboxProjectId);
     assert.equal(targets.inboxWorkspaceRoot, path.join(home, "Documents", "Doer"));
+    assert.equal((yield* fileSystem.stat(path.join(home, "Documents", "Doer"))).type, "Directory");
   }).pipe(Effect.provide(NodeServices.layer)),
 );
 
 it.effect("degrades to no inbox when creation fails", () =>
   Effect.gen(function* () {
-    const path = yield* Path.Path;
+    const home = yield* makeTempHome();
     const targets = yield* resolveInboxWelcomeTargets.pipe(
       Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
         ...unusedProjection,
@@ -145,7 +163,7 @@ it.effect("degrades to no inbox when creation fails", () =>
         subscribeDomainEvents: Effect.succeed(Stream.empty),
         latestSequence: Effect.succeed(0),
       } satisfies OrchestrationEngine.OrchestrationEngineService["Service"]),
-      Effect.provideService(HostProcessHomeDirectory, path.join("tmp", "fake-home")),
+      Effect.provideService(HostProcessHomeDirectory, home),
     );
 
     assert.deepStrictEqual(targets, {});
