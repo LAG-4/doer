@@ -11,6 +11,7 @@ import {
   isOpenCodeAgentNotFoundError,
   isOpenCodeV2Version,
   loadOpenCodeV2Inventory,
+  matchKnownAgentName,
   OpenCodeRuntimeError,
   type OpenCodeV2Client,
   parseServerPasswordFromOutput,
@@ -93,6 +94,28 @@ describe("isOpenCodeAgentNotFoundError", () => {
       false,
     );
     NodeAssert.equal(isOpenCodeAgentNotFoundError(new Error("boom")), false);
+  });
+});
+
+describe("matchKnownAgentName", () => {
+  const known = [
+    { id: "build", name: "Build" },
+    { id: "plan", name: "Plan" },
+  ];
+
+  it("passes exact execution ids through", () => {
+    NodeAssert.equal(matchKnownAgentName(known, "build"), "build");
+  });
+
+  it("folds display labels and casing onto the execution id", () => {
+    NodeAssert.equal(matchKnownAgentName(known, "Build"), "build");
+    NodeAssert.equal(matchKnownAgentName(known, "BUILD"), "build");
+    NodeAssert.equal(matchKnownAgentName(known, "Plan"), "plan");
+  });
+
+  it("returns undefined for unknown names so callers use the server default", () => {
+    NodeAssert.equal(matchKnownAgentName(known, "deploy"), undefined);
+    NodeAssert.equal(matchKnownAgentName([], "build"), undefined);
   });
 });
 

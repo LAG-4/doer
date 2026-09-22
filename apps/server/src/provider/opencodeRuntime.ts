@@ -199,6 +199,34 @@ export function isOpenCodeAgentNotFoundError(cause: unknown): boolean {
   return AGENT_NOT_FOUND_PATTERN.test(openCodeRuntimeErrorDetail(cause));
 }
 
+export interface KnownOpenCodeAgent {
+  readonly id: string;
+  readonly name: string;
+}
+
+/**
+ * Resolve a requested agent name against the server's live agent list and
+ * return the execution id. OpenCode lists display labels (`name: "Build"`)
+ * but executes ids (`id: "build"`), so callers must send the id: exact ids
+ * pass through, labels and casing fold onto the canonical id (`"Build"` →
+ * `"build"`). Returns `undefined` when the name is unknown so callers fall
+ * back to the server default instead of sending a value the server will
+ * reject at execution time.
+ */
+export function matchKnownAgentName(
+  known: ReadonlyArray<KnownOpenCodeAgent>,
+  requested: string,
+): string | undefined {
+  const exact = known.find((agent) => agent.id === requested);
+  if (exact !== undefined) {
+    return exact.id;
+  }
+  const lowered = requested.toLowerCase();
+  return known.find(
+    (agent) => agent.id.toLowerCase() === lowered || agent.name.toLowerCase() === lowered,
+  )?.id;
+}
+
 export const runOpenCodeSdk = <A>(
   operation: string,
   fn: (signal: AbortSignal) => Promise<A>,
