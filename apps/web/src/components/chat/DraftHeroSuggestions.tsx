@@ -11,7 +11,11 @@ export interface DraftHeroSuggestion {
 // no AI background: plain words, each prompt tells the agent to ask simple
 // follow-up questions and to explain every step. The job and trip cards
 // speak to the most common needs; the price card shows off what the
-// agent can operate on the user's behalf.
+// agent can operate on the user's behalf. The computer cards cover everyday
+// tech chores — printers, Wi-Fi and devices, installing and setting things
+// up, slow machines, and boring forms — and each one tells the agent to ask
+// for the user's OK before opening, changing, submitting, or paying for
+// anything.
 export const DRAFT_HERO_SUGGESTIONS: ReadonlyArray<DraftHeroSuggestion> = [
   {
     title: "Get a better job",
@@ -36,6 +40,30 @@ export const DRAFT_HERO_SUGGESTIONS: ReadonlyArray<DraftHeroSuggestion> = [
     description: "Check Amazon, Flipkart and more, and show the best deal.",
     prompt:
       "I want to buy something online in India but I do not want to overpay. Please ask me questions step by step in simple words: what I want to buy and my budget. Keep asking until you have enough details. Then use the browser to check the price yourself on Amazon, Flipkart and other Indian stores, and show me a simple table with the cheapest option and its link. Explain every step in plain language.",
+  },
+  {
+    title: "Fix my printer or Wi-Fi",
+    description: "Printer, Wi-Fi or a device that will not connect.",
+    prompt:
+      "My printer, Wi-Fi, or another device connected to my computer is not working. Please ask me questions step by step in simple words: which device it is, what goes wrong, what computer I have, and what I already tried. Keep asking until you have enough details. Then help me fix it yourself: check what you can on my computer, and before you open any settings app or change anything, tell me what you want to open and ask for my OK. If something needs downloading, find it on the official website with the browser. Explain every step in plain language.",
+  },
+  {
+    title: "Set up my computer",
+    description: "Install apps, update drivers and change settings.",
+    prompt:
+      "I need to install, update, or fix something on my computer, for example an app, a driver, or a setting. Please ask me questions step by step in simple words: what computer I have, what I want to install or change, and what is not working today. Keep asking until you have enough details. Then do it with me one small step at a time: if it needs a download, find it on the official website with the browser, and before you open or change anything on my computer, tell me what you want to do and ask for my OK. Explain every step in plain language.",
+  },
+  {
+    title: "Fix a slow computer",
+    description: "Slow laptop, full storage or updates stuck.",
+    prompt:
+      "My computer is slow or full. Please ask me questions step by step in simple words: what computer I have, what feels slow, and when it started. Keep asking until you have enough details. Then check what you can on my computer: what is using space, what starts automatically, and whether updates are stuck. Before you delete or change anything, tell me what you found and ask for my OK. Explain every step in plain language.",
+  },
+  {
+    title: "Fill a boring form",
+    description: "Online forms, applications and PDFs, filled with you.",
+    prompt:
+      "I have a boring form to fill, for example an online application, a government form, or a PDF. Please ask me questions step by step in simple words: where the form is, what it asks for, and what details I want to use. Keep asking until you have enough. Never guess my personal details, always ask me. Then fill the form with me: open it in the browser if it is online, show me what you filled, and ask for my OK before you submit or pay anything. Explain every step in plain language.",
   },
 ];
 
