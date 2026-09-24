@@ -16,6 +16,7 @@ import { memo, useMemo, useState } from "react";
 import { useRouter } from "@tanstack/react-router";
 
 import { useLocalStorage } from "../hooks/useLocalStorage";
+import { useComposerHandleContext } from "../composerHandleContext";
 import { cn } from "../lib/utils";
 import { buildThreadRouteParams } from "../threadRoutes";
 import { automationEnvironment } from "../state/automations";
@@ -28,6 +29,26 @@ import { ScheduledTaskEditor, useScheduledTaskEditorStore } from "./ScheduledTas
 const SECTION_EXPANDED_KEY = "t3code:sidebar:scheduled-expanded";
 
 const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/**
+ * One-tap starters for the empty state. They write plain words into the chat
+ * composer — the agent configures the reminder from there — instead of
+ * opening the form. Mapped to the jobs non-dev users actually asked for.
+ */
+const REMINDER_STARTERS: ReadonlyArray<{ label: string; text: string }> = [
+  {
+    label: "Bills summary",
+    text: "Remind me every Monday at 9am to send me my bills summary.",
+  },
+  {
+    label: "Job follow-ups",
+    text: "Remind me every Friday at 5pm to nudge me on open job applications and follow-ups.",
+  },
+  {
+    label: "Morning brief",
+    text: "Remind me every day at 8am to give me a morning brief from my files.",
+  },
+];
 
 export function describeAutomationSchedule(schedule: AutomationSchedule): string {
   if (schedule.kind === "once") {
@@ -144,7 +165,7 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
                         environmentId: automation.environmentId,
                         input: { automationId: automation.id },
                       }),
-                  paused ? "Scheduled task resumed." : "Scheduled task paused.",
+                  paused ? "Reminder resumed." : "Reminder paused.",
                 )
               }
               className="cursor-pointer rounded p-1 text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground disabled:opacity-50"
@@ -164,7 +185,7 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
                     environmentId: automation.environmentId,
                     input: { automationId: automation.id },
                   }),
-                  "Task run started in its thread.",
+                  "Running now. Results land in the task.",
                 )
               }
               className="cursor-pointer rounded p-1 text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground disabled:opacity-50"
@@ -198,7 +219,7 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
                   environmentId: automation.environmentId,
                   input: { automationId: automation.id },
                 }),
-                "Scheduled task deleted. Its thread is kept.",
+                "Reminder stopped. Past results stay in History.",
               )
             }
             className="cursor-pointer rounded p-1 text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-destructive disabled:opacity-50"
@@ -222,7 +243,7 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
             aria-expanded={historyExpanded}
             className="inline-flex cursor-pointer items-center gap-0.5 hover:text-sidebar-foreground"
           >
-            {runs.length} run{runs.length === 1 ? "" : "s"}
+            {runs.length} result{runs.length === 1 ? "" : "s"}
             <ChevronDownIcon
               aria-hidden
               className={cn("size-3 transition-transform", historyExpanded && "rotate-180")}
@@ -248,7 +269,7 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
                 onClick={openThread}
                 className="cursor-pointer text-sidebar-muted-foreground underline-offset-2 hover:text-sidebar-foreground hover:underline"
               >
-                Open thread
+                Open task
               </button>
             </li>
           ))}
@@ -262,7 +283,21 @@ export function ScheduledTasksSection() {
   const automations = useAutomations();
   const projects = useProjects();
   const openCreate = useScheduledTaskEditorStore((s) => s.openCreate);
+  const composerHandleRef = useComposerHandleContext();
   const [expanded, setExpanded] = useLocalStorage(SECTION_EXPANDED_KEY, true, Schema.Boolean);
+
+  // Chat-first: starters write plain words into the composer so the agent
+  // configures the reminder. The form is only the fallback when no composer
+  // is mounted to receive the text.
+  const startReminderFromChat = (text: string) => {
+    const inserted =
+      composerHandleRef?.current?.insertTextAtEnd(text, { ensureLeadingBoundary: true }) ?? false;
+    if (inserted) {
+      composerHandleRef?.current?.focusAtEnd();
+    } else {
+      openCreate();
+    }
+  };
 
   const projectTitleByKey = useMemo(() => {
     const map = new Map<string, string>();
@@ -295,17 +330,34 @@ export function ScheduledTasksSection() {
         <div className="mx-0.5 mt-1">
           <div className="flex h-8 w-full items-center gap-2 px-2">
             <span className="shrink-0 text-xs font-medium text-sidebar-muted-foreground/60">
-              Scheduled
+              Reminders
             </span>
             <span aria-hidden className="h-px min-w-2 flex-1 bg-sidebar-border/60" />
             <button
               type="button"
-              aria-label="New scheduled task"
+              aria-label="New reminder"
               onClick={() => openCreate()}
               className="cursor-pointer rounded p-1 text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
             >
               <PlusIcon className="size-3.5" />
             </button>
+          </div>
+          <div className="flex flex-col gap-1.5 px-2 py-1">
+            <p className="text-[11px] leading-snug text-sidebar-muted-foreground/70">
+              No reminders yet — e.g. every Monday 9am: send me my bills summary.
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {REMINDER_STARTERS.map((starter) => (
+                <button
+                  key={starter.label}
+                  type="button"
+                  onClick={() => startReminderFromChat(starter.text)}
+                  className="cursor-pointer rounded-full border border-sidebar-border px-2 py-0.5 text-[11px] text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                >
+                  {starter.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
         <ScheduledTaskEditor automationsByRef={automationsByRef} />
@@ -325,7 +377,7 @@ export function ScheduledTasksSection() {
             className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left text-xs font-medium text-sidebar-muted-foreground/60"
           >
             <span className="shrink-0">
-              {expanded ? "Scheduled" : `Scheduled (${automations.length})`}
+              {expanded ? "Reminders" : `Reminders (${automations.length})`}
             </span>
             <span aria-hidden className="h-px min-w-2 flex-1 bg-sidebar-border/60" />
             <ChevronDownIcon
@@ -335,7 +387,7 @@ export function ScheduledTasksSection() {
           </button>
           <button
             type="button"
-            aria-label="New scheduled task"
+            aria-label="New reminder"
             onClick={() => openCreate()}
             className="cursor-pointer rounded p-1 text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
           >

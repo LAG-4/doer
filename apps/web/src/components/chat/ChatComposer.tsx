@@ -1266,6 +1266,8 @@ export interface ChatComposerHandle {
     text: string,
     options?: { ensureLeadingBoundary?: boolean; clipboardData?: DataTransfer },
   ) => boolean;
+  /** Submit the composer exactly as pressing send would. Returns false when nothing was dispatched. */
+  submit: () => boolean;
   /** Apply large-paste folding for text redirected from a blurred composer. */
   pasteTextAtEnd: (text: string, options?: { bypassAutoAttachment?: boolean }) => boolean;
   citeAssistantText: (
@@ -3785,10 +3787,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   ]);
 
   const submitComposer = useCallback(
-    (event?: { preventDefault: () => void }, intent: ComposerSubmissionIntent = "foreground") => {
+    (
+      event?: { preventDefault: () => void },
+      intent: ComposerSubmissionIntent = "foreground",
+    ): boolean => {
       if (noProviderAvailable || isSendDisabled) {
         event?.preventDefault();
-        return;
+        return false;
       }
       // A send while a pasted image is still compressing would strand that
       // image: the turn snapshot wouldn't include it, and it would surface
@@ -3804,7 +3809,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           title: "Still compressing a pasted image.",
           description: "Send again once its thumbnail appears.",
         });
-        return;
+        return false;
       }
       // A pasted chip's bytes arrive over the network, so the same hazard applies for longer:
       // sending now would snapshot a chip with no attachment behind it.
@@ -3815,7 +3820,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           title: "Still bringing a pasted attachment into this message.",
           description: "Send again once its chip resolves.",
         });
-        return;
+        return false;
       }
       const submission = submitComposerDraft({
         prompt: promptRef.current,
@@ -3830,10 +3835,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         },
       });
       setComposerSubmissionError(submission.validationMessage);
-      if (!submission.didDispatch) return;
+      if (!submission.didDispatch) return false;
       if (shouldBlurMobileComposerOnSubmit()) {
         blurMobileComposerAfterSend();
       }
+      return true;
     },
     [
       activeThreadId,
@@ -5936,6 +5942,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       hasPendingAttachments: () =>
         (pendingImageCompressionsRef.current.get(attachmentTargetKey) ?? 0) > 0,
       insertTextAtEnd: insertComposerTextAtEnd,
+      submit: () => submitComposer(),
       pasteTextAtEnd: (text: string, options) => {
         const bypassAutoAttachment =
           options?.bypassAutoAttachment === true ||

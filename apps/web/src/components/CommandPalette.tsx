@@ -2243,7 +2243,7 @@ function OpenCommandPaletteDialog(props: {
       kind: "action",
       value: "action:new-scheduled-task",
       searchTerms: ["scheduled task", "schedule", "recurring", "automation", "cron", "reminder"],
-      title: "New scheduled task…",
+      title: "New reminder…",
       icon: <CalendarClockIcon className={ITEM_ICON_CLASS} />,
       run: async () => {
         useScheduledTaskEditorStore.getState().openCreate();
