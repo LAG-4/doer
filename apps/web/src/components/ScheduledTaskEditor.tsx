@@ -10,8 +10,10 @@ import {
 import { createModelSelection } from "@t3tools/shared/model";
 import { useMemo, useState } from "react";
 import { create } from "zustand";
+import { useAtomValue } from "@effect/atom-react";
 
 import { useProjects, useServerConfigs } from "../state/entities";
+import { primaryServerWelcomeAtom } from "../state/server";
 import { automationEnvironment } from "../state/automations";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -19,6 +21,8 @@ import { EMPTY_SERVER_PROVIDERS } from "../state/server";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import { useClientSettings } from "../hooks/useSettings";
 import { cn, newAutomationId, newThreadId } from "../lib/utils";
+import { findInboxProjectRef } from "../inboxProject.logic";
+import { useComposerHandleContext } from "../composerHandleContext";
 import { getCustomModelOptionsByInstance } from "../modelSelection";
 import {
   applyProviderInstanceSettings,
@@ -48,8 +52,14 @@ interface ScheduledTaskEditorState {
   readonly open: boolean;
   readonly editing: ScopedAutomationRef | null;
   readonly presetProject: ScopedProjectRef | null;
+  /** Create flow starts with a plain-words box; the full form is the fallback. */
+  readonly describe: boolean;
+  /** Text typed in the describe box; pre-fills the manual form's prompt. */
+  readonly describeText: string;
   readonly openCreate: (presetProject?: ScopedProjectRef | null) => void;
   readonly openEdit: (ref: ScopedAutomationRef) => void;
+  readonly showManualForm: () => void;
+  readonly setDescribeText: (text: string) => void;
   readonly close: () => void;
 }
 
@@ -57,9 +67,14 @@ export const useScheduledTaskEditorStore = create<ScheduledTaskEditorState>()((s
   open: false,
   editing: null,
   presetProject: null,
-  openCreate: (presetProject = null) => set({ open: true, editing: null, presetProject }),
-  openEdit: (ref) => set({ open: true, editing: ref, presetProject: null }),
-  close: () => set({ open: false, editing: null, presetProject: null }),
+  describe: false,
+  describeText: "",
+  openCreate: (presetProject = null) =>
+    set({ open: true, editing: null, presetProject, describe: true, describeText: "" }),
+  openEdit: (ref) => set({ open: true, editing: ref, presetProject: null, describe: false }),
+  showManualForm: () => set({ describe: false }),
+  setDescribeText: (text) => set({ describeText: text }),
+  close: () => set({ open: false, editing: null, presetProject: null, describe: false }),
 }));
 
 const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -142,6 +157,7 @@ export function ScheduledTaskEditor(props: {
   const open = useScheduledTaskEditorStore((s) => s.open);
   const editing = useScheduledTaskEditorStore((s) => s.editing);
   const presetProject = useScheduledTaskEditorStore((s) => s.presetProject);
+  const describe = useScheduledTaskEditorStore((s) => s.describe);
   const close = useScheduledTaskEditorStore((s) => s.close);
 
   const editingAutomation = editing
@@ -150,7 +166,7 @@ export function ScheduledTaskEditor(props: {
 
   const editorKey = editing
     ? `edit:${editing.environmentId}:${editing.automationId}`
-    : `create:${presetProject?.environmentId ?? ""}:${presetProject?.projectId ?? ""}`;
+    : `create:${presetProject?.environmentId ?? ""}:${presetProject?.projectId ?? ""}:${describe ? "describe" : "manual"}`;
 
   return (
     <Dialog
@@ -162,13 +178,17 @@ export function ScheduledTaskEditor(props: {
       <DialogPopup className="sm:mt-10">
         <DialogPanel>
           {open ? (
-            <ScheduledTaskEditorForm
-              key={editorKey}
-              editing={editing}
-              editingAutomation={editingAutomation}
-              presetProject={presetProject}
-              close={close}
-            />
+            editing === null && describe ? (
+              <ScheduledTaskDescribeForm key={editorKey} close={close} />
+            ) : (
+              <ScheduledTaskEditorForm
+                key={editorKey}
+                editing={editing}
+                editingAutomation={editingAutomation}
+                presetProject={presetProject}
+                close={close}
+              />
+            )
           ) : null}
         </DialogPanel>
       </DialogPopup>
@@ -176,7 +196,88 @@ export function ScheduledTaskEditor(props: {
   );
 }
 
-function initialFormState(editingAutomation: Automation | null): {
+/**
+ * Describe-first entry: one plain-words box. Continue sends it to the chat
+ * so the agent sets the reminder up and shows it before creating anything;
+ * the manual form is the fallback (and picks up the typed text as its prompt).
+ */
+function ScheduledTaskDescribeForm(props: { readonly close: () => void }) {
+  const { close } = props;
+  const describeText = useScheduledTaskEditorStore((s) => s.describeText);
+  const setDescribeText = useScheduledTaskEditorStore((s) => s.setDescribeText);
+  const showManualForm = useScheduledTaskEditorStore((s) => s.showManualForm);
+  const composerHandleRef = useComposerHandleContext();
+
+  const canContinue = describeText.trim().length > 0;
+
+  const continueWithAi = () => {
+    const description = describeText.trim();
+    if (description.length === 0) return;
+    // User-voiced confirm-first: reads as their own words in the sent
+    // message, and the runtime instructions tell the agent to propose the
+    // setup and ask before creating it.
+    const base = /remind\s+me/i.test(description)
+      ? description
+      : `I want a reminder: ${description}`;
+    const request = `${base}\n\nShow me what you'll set up and confirm with me before creating it.`;
+    const handle = composerHandleRef?.current;
+    if (!handle) {
+      showManualForm();
+      return;
+    }
+    if (!handle.insertTextAtEnd(request, { ensureLeadingBoundary: true })) {
+      showManualForm();
+      return;
+    }
+    setDescribeText("");
+    close();
+    // Send straight away — no extra tap. On failure (busy, validation) the
+    // text stays in the composer for the user to send by hand.
+    if (!handle.submit()) {
+      handle.focusAtEnd();
+    }
+  };
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>New reminder</DialogTitle>
+        <DialogDescription>
+          Describe what you want in plain words. I&apos;ll set it up and show you before creating
+          anything.
+        </DialogDescription>
+      </DialogHeader>
+      <div className="flex flex-col gap-4 px-4 py-2">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="scheduled-task-describe">What should happen, and when?</Label>
+          <Textarea
+            id="scheduled-task-describe"
+            value={describeText}
+            onChange={(event) => setDescribeText(event.target.value)}
+            placeholder="e.g. Every Monday at 9am, send me my bills summary…"
+            rows={4}
+          />
+        </div>
+      </div>
+      <DialogFooter variant="bare">
+        <Button variant="ghost" onClick={showManualForm}>
+          Fill in details myself
+        </Button>
+        <Button variant="ghost" onClick={close}>
+          Cancel
+        </Button>
+        <Button onClick={continueWithAi} disabled={!canContinue}>
+          Continue
+        </Button>
+      </DialogFooter>
+    </>
+  );
+}
+
+function initialFormState(
+  editingAutomation: Automation | null,
+  draftPrompt = "",
+): {
   readonly title: string;
   readonly prompt: string;
   readonly kind: ScheduleKind;
@@ -188,7 +289,7 @@ function initialFormState(editingAutomation: Automation | null): {
   if (editingAutomation === null) {
     return {
       title: "",
-      prompt: "",
+      prompt: draftPrompt,
       kind: "once",
       onceAt: defaultOnceAt(),
       time: "09:00",
@@ -215,6 +316,7 @@ function ScheduledTaskEditorForm(props: {
   readonly close: () => void;
 }) {
   const { editing, editingAutomation, presetProject, close } = props;
+  const describeText = useScheduledTaskEditorStore((s) => s.describeText);
   const serverConfigs = useServerConfigs();
   const clientSettings = useClientSettings((s) => s);
   const createThread = useAtomCommand(threadEnvironment.create);
@@ -223,7 +325,7 @@ function ScheduledTaskEditorForm(props: {
 
   const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  // Scheduled tasks run on this machine only: the project list covers the
+  // Reminders run on this machine only: the Space list covers the
   // primary environment, never remote servers.
   const localProjects = useMemo(
     () =>
@@ -233,10 +335,25 @@ function ScheduledTaskEditorForm(props: {
     [projects, primaryEnvironmentId],
   );
 
-  const initial = useMemo(() => initialFormState(editingAutomation), [editingAutomation]);
+  // No Space picker: reminders work anywhere on this machine. General
+  // reminders live in the auto-provisioned inbox folder; the agent passes an
+  // explicit projectId only for folder-specific work.
+  const serverWelcome = useAtomValue(primaryServerWelcomeAtom);
+  const inboxRef = useMemo(
+    () =>
+      findInboxProjectRef(localProjects, {
+        inboxProjectId: serverWelcome?.inboxProjectId,
+        inboxWorkspaceRoot: serverWelcome?.inboxWorkspaceRoot,
+      }),
+    [localProjects, serverWelcome?.inboxProjectId, serverWelcome?.inboxWorkspaceRoot],
+  );
+
+  const initial = useMemo(
+    () => initialFormState(editingAutomation, describeText),
+    [editingAutomation, describeText],
+  );
   const [title, setTitle] = useState(initial.title);
   const [prompt, setPrompt] = useState(initial.prompt);
-  const [projectId, setProjectId] = useState<string | null>(null);
   const [kind, setKind] = useState<ScheduleKind>(initial.kind);
   const [onceAt, setOnceAt] = useState(initial.onceAt);
   const [time, setTime] = useState(initial.time);
@@ -247,13 +364,15 @@ function ScheduledTaskEditorForm(props: {
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const selectedProject =
-    localProjects.find((project) => project.id === projectId) ??
-    (presetProject
-      ? localProjects.find((project) => project.id === presetProject.projectId)
-      : null) ??
-    localProjects[0] ??
-    null;
+  const presetSelectedProject =
+    presetProject === null
+      ? null
+      : (localProjects.find((project) => project.id === presetProject.projectId) ?? null);
+  const inboxSelectedProject =
+    inboxRef === null
+      ? null
+      : (localProjects.find((project) => project.id === inboxRef.projectId) ?? null);
+  const selectedProject = presetSelectedProject ?? inboxSelectedProject ?? localProjects[0] ?? null;
 
   const modelData = useMemo(() => {
     if (selectedProject === null) {
@@ -285,17 +404,19 @@ function ScheduledTaskEditorForm(props: {
 
   const effectiveInstanceId = modelInstanceId ?? modelData.selection?.instanceId ?? null;
   const effectiveModel = model ?? modelData.selection?.model ?? null;
+  // Friendly city for "9am your time (Kolkata)": the last IANA segment.
+  const timezoneCity = timezone.split("/").pop()?.replaceAll("_", " ") ?? "";
 
   const save = async () => {
     if (saving) return;
     const trimmedTitle = title.trim();
     const trimmedPrompt = prompt.trim();
     if (trimmedTitle.length === 0) {
-      setFormError("Give the task a title.");
+      setFormError("Give the reminder a title.");
       return;
     }
     if (trimmedPrompt.length === 0) {
-      setFormError("Write the prompt the agent should run.");
+      setFormError("Say what it should do each time.");
       return;
     }
     const { schedule, error } = buildSchedule({ kind, onceAt, time, weekday, timezone });
@@ -325,19 +446,19 @@ function ScheduledTaskEditorForm(props: {
           input: { automationId: editing.automationId, ...patch },
         });
         if (result._tag === "Failure") {
-          setFormError("Could not save the task. The server rejected the update.");
+          setFormError("Could not save the reminder. The timing may be invalid.");
           return;
         }
-        toastManager.add({ type: "success", title: "Scheduled task updated." });
+        toastManager.add({ type: "success", title: "Reminder updated." });
         close();
         return;
       }
       if (selectedProject === null) {
-        setFormError("Pick a project for the task to run in.");
+        setFormError("Add a Space first, then try again.");
         return;
       }
       if (effectiveInstanceId === null || effectiveModel === null) {
-        setFormError("Pick a model for the task thread first.");
+        setFormError("Pick a model first (under Advanced).");
         return;
       }
       const threadId = newThreadId();
@@ -355,7 +476,7 @@ function ScheduledTaskEditorForm(props: {
         },
       });
       if (threadResult._tag === "Failure") {
-        setFormError("Could not create the task thread. Is this machine connected?");
+        setFormError("Could not set up the reminder. Is this computer connected?");
         return;
       }
       const automationResult = await createAutomation({
@@ -371,10 +492,10 @@ function ScheduledTaskEditorForm(props: {
         },
       });
       if (automationResult._tag === "Failure") {
-        setFormError("The thread was created but the schedule was rejected. It will not run.");
+        setFormError("The timing was rejected, so it will not run.");
         return;
       }
-      toastManager.add({ type: "success", title: "Scheduled task created." });
+      toastManager.add({ type: "success", title: "Reminder created." });
       close();
     } finally {
       setSaving(false);
@@ -384,10 +505,10 @@ function ScheduledTaskEditorForm(props: {
   return (
     <>
       <DialogHeader>
-        <DialogTitle>{editing !== null ? "Edit scheduled task" : "New scheduled task"}</DialogTitle>
+        <DialogTitle>{editing !== null ? "Edit reminder" : "New reminder"}</DialogTitle>
         <DialogDescription>
-          The agent runs the prompt unattended on full access in the task&apos;s thread — no
-          approval prompts, and a finished run settles itself.
+          Say what you want in plain words. It runs by itself — past results stay in History, and
+          you can undo anytime.
         </DialogDescription>
       </DialogHeader>
       <div className="flex flex-col gap-4 px-4 py-2">
@@ -400,88 +521,16 @@ function ScheduledTaskEditorForm(props: {
             placeholder="Morning brief"
           />
         </div>
-        {editing === null ? (
-          <div className="flex flex-col gap-1.5">
-            <Label id="scheduled-task-project-label">Project</Label>
-            {localProjects.length === 0 ? (
-              <p className="text-xs text-muted-foreground">
-                No projects on this machine yet. Add one first.
-              </p>
-            ) : (
-              <div
-                role="radiogroup"
-                aria-labelledby="scheduled-task-project-label"
-                className="flex max-h-44 flex-col gap-1 overflow-y-auto rounded-lg border border-input p-1"
-              >
-                {localProjects.map((project) => {
-                  const selected = selectedProject?.id === project.id;
-                  return (
-                    <button
-                      key={project.id}
-                      type="button"
-                      role="radio"
-                      aria-checked={selected}
-                      onClick={() => setProjectId(project.id)}
-                      className={cn(
-                        "flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-1.5 text-left",
-                        selected ? "border-primary/60" : "border-transparent hover:border-input",
-                      )}
-                    >
-                      <span
-                        aria-hidden
-                        className={cn(
-                          "flex size-4 shrink-0 items-center justify-center rounded-full border",
-                          selected ? "border-primary" : "border-input",
-                        )}
-                      >
-                        {selected ? <span className="size-2 rounded-full bg-primary" /> : null}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm">{project.title}</span>
-                        <span className="block truncate text-xs text-muted-foreground">
-                          {project.workspaceRoot}
-                        </span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground">Scheduled tasks run on this machine.</p>
-          </div>
-        ) : null}
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="scheduled-task-prompt">Prompt</Label>
+          <Label htmlFor="scheduled-task-prompt">What should I do each time?</Label>
           <Textarea
             id="scheduled-task-prompt"
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
-            placeholder="Summarize overnight activity in this project."
+            placeholder="e.g. Look in this Space and list unpaid bills…"
             rows={4}
           />
         </div>
-        {editing === null ? (
-          <div className="flex flex-col gap-1.5">
-            <Label>Model</Label>
-            {effectiveInstanceId !== null && effectiveModel !== null ? (
-              <ProviderModelPicker
-                activeInstanceId={effectiveInstanceId}
-                model={effectiveModel}
-                lockedProvider={null}
-                instanceEntries={modelData.entries}
-                modelOptionsByInstance={modelData.options}
-                onInstanceModelChange={(instanceId, nextModel) => {
-                  setModelInstanceId(instanceId);
-                  setModel(nextModel);
-                }}
-              />
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                No model available. Pick a default model in Settings first.
-              </p>
-            )}
-          </div>
-        ) : null}
         <div className="flex flex-col gap-1.5">
           <Label id="scheduled-task-repeats-label">Repeats</Label>
           <div
@@ -548,31 +597,65 @@ function ScheduledTaskEditorForm(props: {
                 </div>
               </div>
             ) : null}
-            <div className="flex gap-3">
-              <div className="flex flex-1 flex-col gap-1.5">
-                <Label htmlFor="scheduled-task-time">Time</Label>
-                <Input
-                  id="scheduled-task-time"
-                  type="time"
-                  value={time}
-                  onChange={(event) => setTime(event.target.value)}
-                />
-              </div>
-              <div className="flex flex-1 flex-col gap-1.5">
-                <Label htmlFor="scheduled-task-timezone">Timezone</Label>
-                <Input
-                  id="scheduled-task-timezone"
-                  value={timezone}
-                  onChange={(event) => setTimezone(event.target.value)}
-                  placeholder="America/New_York"
-                />
-              </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="scheduled-task-time">Time</Label>
+              <Input
+                id="scheduled-task-time"
+                type="time"
+                value={time}
+                onChange={(event) => setTime(event.target.value)}
+              />
             </div>
             <p className="text-xs text-muted-foreground">
-              Daily and weekly tasks fire at this wall-clock time, daylight saving included.
+              {time} your time ({timezoneCity}) — daylight saving included.
             </p>
           </div>
         )}
+        <p className="text-xs text-muted-foreground">
+          Runs on: This computer — it needs to be on at that time.
+        </p>
+        {editing === null || kind !== "once" ? (
+          <details className="text-xs text-muted-foreground">
+            <summary className="cursor-pointer text-sm font-medium text-foreground">
+              Advanced
+            </summary>
+            <div className="flex flex-col gap-4 pt-2">
+              {editing === null ? (
+                <div className="flex flex-col gap-1.5">
+                  <Label>Model</Label>
+                  {effectiveInstanceId !== null && effectiveModel !== null ? (
+                    <ProviderModelPicker
+                      activeInstanceId={effectiveInstanceId}
+                      model={effectiveModel}
+                      lockedProvider={null}
+                      instanceEntries={modelData.entries}
+                      modelOptionsByInstance={modelData.options}
+                      onInstanceModelChange={(instanceId, nextModel) => {
+                        setModelInstanceId(instanceId);
+                        setModel(nextModel);
+                      }}
+                    />
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      No model available. Pick a default model in Settings first.
+                    </p>
+                  )}
+                </div>
+              ) : null}
+              {kind !== "once" ? (
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="scheduled-task-timezone">Timezone</Label>
+                  <Input
+                    id="scheduled-task-timezone"
+                    value={timezone}
+                    onChange={(event) => setTimezone(event.target.value)}
+                    placeholder="America/New_York"
+                  />
+                </div>
+              ) : null}
+            </div>
+          </details>
+        ) : null}
         {formError !== null ? (
           <p role="alert" className="text-xs text-destructive">
             {formError}
@@ -584,7 +667,7 @@ function ScheduledTaskEditorForm(props: {
           Cancel
         </Button>
         <Button onClick={save} disabled={saving}>
-          {saving ? "Saving…" : editing !== null ? "Save changes" : "Create task"}
+          {saving ? "Saving…" : editing !== null ? "Save changes" : "Create reminder"}
         </Button>
       </DialogFooter>
     </>
