@@ -375,6 +375,7 @@ import { createPageScrollController, type PageScrollKey } from "./chat/pageScrol
 import { isTimelineScrollTarget } from "./chat/timelineScrollTarget";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { DraftHeroSuggestions } from "./chat/DraftHeroSuggestions";
+import { buildStarterRequest, starterFileRequirement } from "./chat/guidedStarterTasks";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
@@ -7368,6 +7369,7 @@ export default function ChatView(props: ChatViewProps) {
       annotation: PreviewAnnotationPayload;
       image: ComposerImageAttachment | null;
     },
+    starterRequest?: string,
   ) => {
     e?.preventDefault();
     // Typed out in full rather than picked from the menu. Attachments or contexts
@@ -7435,6 +7437,12 @@ export default function ChatView(props: ChatViewProps) {
         id: `chat-send-environment-unavailable:${toastSlot}`,
       });
       return;
+    }
+    if (
+      starterRequest &&
+      (phase === "running" || pendingUserInputs.length > 0 || activePendingApproval)
+    ) {
+      return false;
     }
     if (activePendingProgress) {
       if (directAnnotation) {
@@ -7522,11 +7530,14 @@ export default function ChatView(props: ChatViewProps) {
         : sendContextPreviewAnnotations;
     // A direct "send annotation" writes the draft and sends in the same tick; the reference
     // must be in the text now, not after the next render.
-    const promptForSend = directAnnotation
-      ? ensureInlineContextReferences(promptRef.current, [
-          previewAnnotationContextReference(directAnnotation.annotation),
-        ])
-      : promptRef.current;
+    const draftPromptBeforeSend = promptRef.current;
+    const promptForSend =
+      starterRequest ??
+      (directAnnotation
+        ? ensureInlineContextReferences(promptRef.current, [
+            previewAnnotationContextReference(directAnnotation.annotation),
+          ])
+        : promptRef.current);
     const {
       trimmedPrompt: trimmed,
       sendableTerminalContexts: sendableComposerTerminalContexts,
@@ -7598,6 +7609,7 @@ export default function ChatView(props: ChatViewProps) {
     }
     if (
       !directAnnotation &&
+      !starterRequest &&
       sendInteractionModeEnabled &&
       showPlanFollowUpPrompt &&
       activeProposedPlan &&
@@ -7709,6 +7721,7 @@ export default function ChatView(props: ChatViewProps) {
       (useQueuedMessageStore.getState().queuesByThreadKey[activeThreadKey] ?? []).some(
         (message) => message.sending !== undefined || !message.holdUntilUserAction,
       );
+    if (starterRequest && queueStillSending) return false;
     if (
       !directAnnotation &&
       activeThreadKey &&
@@ -7777,6 +7790,7 @@ export default function ChatView(props: ChatViewProps) {
         promptForSend,
       )
       .trim();
+    const promptForRecovery = starterRequest ? draftPromptBeforeSend : messageTextForSend;
     // Records bind attachments by the id each side knows: the local id for the optimistic
     // row, the upload id (or local id on the data-URL path) on the wire; the server
     // rebinds them to the persisted id.
@@ -8163,7 +8177,7 @@ export default function ChatView(props: ChatViewProps) {
         const restoreFailedDraft = () => {
           setMultipleModelSelections(failedSelections);
           if (clearedDraft) {
-            setComposerDraftPrompt(composerDraftTarget, messageTextForSend);
+            setComposerDraftPrompt(composerDraftTarget, promptForRecovery);
             addComposerDraftImages(
               composerDraftTarget,
               composerImagesSnapshot.map(cloneComposerImageForRetry),
@@ -8176,13 +8190,10 @@ export default function ChatView(props: ChatViewProps) {
             );
             setComposerDraftReviewComments(composerDraftTarget, composerReviewCommentsSnapshot);
             if (composerRef.current && currentRouteThreadKeyRef.current === routeThreadKey) {
-              promptRef.current = messageTextForSend;
+              promptRef.current = promptForRecovery;
               composerRef.current.resetCursorState({
-                cursor: collapseExpandedComposerCursor(
-                  messageTextForSend,
-                  messageTextForSend.length,
-                ),
-                prompt: messageTextForSend,
+                cursor: collapseExpandedComposerCursor(promptForRecovery, promptForRecovery.length),
+                prompt: promptForRecovery,
                 detectTrigger: true,
               });
             }
@@ -8559,20 +8570,20 @@ export default function ChatView(props: ChatViewProps) {
           const next = existing.filter((message) => message.id !== messageIdForSend);
           return next.length === existing.length ? existing : next;
         });
-        promptRef.current = messageTextForSend;
+        promptRef.current = promptForRecovery;
         const retryComposerImages = composerImagesSnapshot.map(cloneComposerImageForRetry);
         composerImagesRef.current = retryComposerImages;
         composerFilesRef.current = composerFilesSnapshot;
         composerTerminalContextsRef.current = composerTerminalContextsSnapshot;
-        setComposerDraftPrompt(composerDraftTarget, messageTextForSend);
+        setComposerDraftPrompt(composerDraftTarget, promptForRecovery);
         addComposerDraftImages(composerDraftTarget, retryComposerImages);
         addComposerDraftFiles(composerDraftTarget, composerFilesSnapshot);
         setComposerDraftTerminalContexts(composerDraftTarget, composerTerminalContextsSnapshot);
         setComposerDraftPreviewAnnotations(composerDraftTarget, composerPreviewAnnotationsSnapshot);
         setComposerDraftReviewComments(composerDraftTarget, composerReviewCommentsSnapshot);
         composerRef.current?.resetCursorState({
-          cursor: collapseExpandedComposerCursor(messageTextForSend, messageTextForSend.length),
-          prompt: messageTextForSend,
+          cursor: collapseExpandedComposerCursor(promptForRecovery, promptForRecovery.length),
+          prompt: promptForRecovery,
           detectTrigger: true,
         });
       }
@@ -8625,6 +8636,7 @@ export default function ChatView(props: ChatViewProps) {
       );
       resetLocalDispatch();
     }
+    return turnStartSucceeded;
   };
 
   // Queued messages go out from QueuedMessageSender, which also covers
@@ -10223,12 +10235,52 @@ export default function ChatView(props: ChatViewProps) {
                         </div>
                       </div>
                     </ComposerSurface.Shell>
-                    {isDraftHeroState ? (
-                      <DraftHeroSuggestions
-                        draftTarget={composerDraftTarget}
-                        onPick={scheduleComposerFocus}
-                      />
-                    ) : null}
+                    <DraftHeroSuggestions
+                      draftTarget={composerDraftTarget}
+                      environmentId={environmentId}
+                      visible={isDraftHeroState}
+                      supportsAttachmentUploads={supportsAttachmentUploads}
+                      disabledReason={
+                        isConnecting || activeEnvironmentUnavailable
+                          ? "Connecting to this computer. Your answers are kept."
+                          : isSendBusy || isRevertingCheckpoint || threadDetailLoading
+                            ? "Please wait for the current action to finish."
+                            : !activeProject
+                              ? "Choose a Space above before starting your Task."
+                              : projectCloneSendBlockReason
+                      }
+                      submissionError={threadError ?? null}
+                      onAddFiles={async (files) =>
+                        (await composerRef.current?.addStarterFiles(files)) ?? false
+                      }
+                      onRemoveAttachment={(id) => composerRef.current?.removeStarterAttachment(id)}
+                      onStart={async (submission) => {
+                        const context = composerRef.current?.getSendContext();
+                        if (!context?.providerAvailable) {
+                          throw new Error(
+                            "Your assistant is not ready. Close this panel and check the assistant setup below your message, then return to this Task.",
+                          );
+                        }
+                        if (context.multipleModelSelections !== null) {
+                          throw new Error(
+                            "Choose one assistant below your message before starting a guided Task.",
+                          );
+                        }
+                        if (composerRef.current?.hasPendingAttachments()) return false;
+                        const files = [...context.images, ...context.files];
+                        const missingFiles = starterFileRequirement(submission.task, files.length);
+                        if (missingFiles) throw new Error(missingFiles);
+                        const request = buildStarterRequest({
+                          ...submission,
+                          existingPrompt: promptRef.current,
+                          fileNames: files.map((file) => file.name),
+                        });
+                        const started =
+                          (await onSend(undefined, "foreground", undefined, request)) === true;
+                        if (started) scheduleComposerFocus();
+                        return started;
+                      }}
+                    />
                     <div
                       aria-hidden
                       className="h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"

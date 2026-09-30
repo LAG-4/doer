@@ -1,112 +1,423 @@
+import { useRef, useState } from "react";
+import { create } from "zustand";
+import type { EnvironmentId } from "@t3tools/contracts";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ComposerThreadTarget } from "~/composerDraftStore";
-import { useComposerDraftStore, useComposerThreadDraft } from "~/composerDraftStore";
+import { useComposerThreadDraft } from "~/composerDraftStore";
+import { Button } from "~/components/ui/button";
+import { Input } from "~/components/ui/input";
+import { Textarea } from "~/components/ui/textarea";
+import {
+  Dialog,
+  DialogPopup,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogPanel,
+  DialogFooter,
+} from "~/components/ui/dialog";
+import { retryAttachmentUpload, useAttachmentUploadStore } from "~/lib/attachmentUploadQueue";
+import { attachmentUploadBlockReason } from "~/lib/attachmentUploadState";
+import { composerFileNeedsReattach } from "~/composerDraftStore";
+import { stripInlineContextReferences } from "~/lib/composerContextReferences";
+import {
+  GUIDED_STARTER_TASKS,
+  buildStarterSummary,
+  starterFileRequirement,
+  type GuidedStarterTask,
+  type StarterAnswers,
+} from "./guidedStarterTasks";
 
-export interface DraftHeroSuggestion {
-  readonly title: string;
-  readonly description: string;
-  readonly prompt: string;
+interface StarterSession {
+  answers: StarterAnswers;
+  summary: string | null;
+  reviewing: boolean;
 }
 
-// Starter cards for the fresh-chat hero. Written for first-time users with
-// no AI background: plain words, each prompt tells the agent to ask simple
-// follow-up questions and to explain every step. The job and trip cards
-// speak to the most common needs; the price card shows off what the
-// agent can operate on the user's behalf. The computer cards cover everyday
-// tech chores — printers, Wi-Fi and devices, installing and setting things
-// up, slow machines, and boring forms — and each one tells the agent to ask
-// for the user's OK before opening, changing, submitting, or paying for
-// anything.
-export const DRAFT_HERO_SUGGESTIONS: ReadonlyArray<DraftHeroSuggestion> = [
-  {
-    title: "Get a better job",
-    description: "Find real openings for you and apply on your behalf.",
-    prompt:
-      "I want a better job in India. Please ask me questions step by step in simple words: what work I do, my experience, my city, and what salary I want. Keep asking until you have enough details. Then use the browser to find 5 real current job openings that fit me. Then open those websites in the inbuilt browser and ask me to log in on each job website, and once I am logged in, apply for those jobs on my behalf. Explain every step in plain language.",
-  },
-  {
-    title: "Plan a cheap trip",
-    description: "Flights, stays, daily plan and full cost per person.",
-    prompt:
-      "I am planning a trip in India or abroad but I do not know where to start. Please ask me questions step by step in simple words: where I want to go, how many people are coming, my budget per person, and how many days I have. Keep asking until you have enough details. Then use the browser to research everything yourself: what this place is famous for, cheapest flights, best places to stay, things to do each day with their cost, and what things I can buy there with cheaper options. If my budget is too low for this place, suggest a cheaper similar place instead. Then show me the full plan as a day-by-day table plus a cost table with the total per person. Keep everything short and easy to read: small tables and bullet points, no big paragraphs. Explain every step in plain language.",
-  },
-  {
-    title: "Sort out a document",
-    description: "Resumes, leave letters and applications from a few lines.",
-    prompt:
-      "Please help me write a document. Ask me questions step by step in simple words: first what I need, for example a resume, a leave application, or a job application, then the basic details. Keep asking until you have enough. Then write a clean, polite final draft I can copy and use. Explain what you wrote in plain language.",
-  },
-  {
-    title: "Find the cheapest price",
-    description: "Check Amazon, Flipkart and more, and show the best deal.",
-    prompt:
-      "I want to buy something online in India but I do not want to overpay. Please ask me questions step by step in simple words: what I want to buy and my budget. Keep asking until you have enough details. Then use the browser to check the price yourself on Amazon, Flipkart and other Indian stores, and show me a simple table with the cheapest option and its link. Explain every step in plain language.",
-  },
-  {
-    title: "Fix my printer or Wi-Fi",
-    description: "Printer, Wi-Fi or a device that will not connect.",
-    prompt:
-      "My printer, Wi-Fi, or another device connected to my computer is not working. Please ask me questions step by step in simple words: which device it is, what goes wrong, what computer I have, and what I already tried. Keep asking until you have enough details. Then help me fix it yourself: check what you can on my computer, and before you open any settings app or change anything, tell me what you want to open and ask for my OK. If something needs downloading, find it on the official website with the browser. Explain every step in plain language.",
-  },
-  {
-    title: "Set up my computer",
-    description: "Install apps, update drivers and change settings.",
-    prompt:
-      "I need to install, update, or fix something on my computer, for example an app, a driver, or a setting. Please ask me questions step by step in simple words: what computer I have, what I want to install or change, and what is not working today. Keep asking until you have enough details. Then do it with me one small step at a time: if it needs a download, find it on the official website with the browser, and before you open or change anything on my computer, tell me what you want to do and ask for my OK. Explain every step in plain language.",
-  },
-  {
-    title: "Fix a slow computer",
-    description: "Slow laptop, full storage or updates stuck.",
-    prompt:
-      "My computer is slow or full. Please ask me questions step by step in simple words: what computer I have, what feels slow, and when it started. Keep asking until you have enough details. Then check what you can on my computer: what is using space, what starts automatically, and whether updates are stuck. Before you delete or change anything, tell me what you found and ask for my OK. Explain every step in plain language.",
-  },
-  {
-    title: "Fill a boring form",
-    description: "Online forms, applications and PDFs, filled with you.",
-    prompt:
-      "I have a boring form to fill, for example an online application, a government form, or a PDF. Please ask me questions step by step in simple words: where the form is, what it asks for, and what details I want to use. Keep asking until you have enough. Never guess my personal details, always ask me. Then fill the form with me: open it in the browser if it is online, show me what you filled, and ask for my OK before you submit or pay anything. Explain every step in plain language.",
-  },
-];
+// Retain answers when a draft is temporarily unmounted during dispatch or navigation.
+const emptySession: StarterSession = { answers: {}, summary: null, reviewing: false };
+const useStarterSessions = create<{
+  sessions: Readonly<Record<string, Readonly<Record<string, StarterSession>>>>;
+  update: (targetKey: string, taskId: string, patch: Partial<StarterSession>) => void;
+  remove: (targetKey: string, taskId: string) => void;
+}>((set) => ({
+  sessions: {},
+  update: (targetKey, taskId, patch) =>
+    set((state) => ({
+      sessions: {
+        ...state.sessions,
+        [targetKey]: {
+          ...state.sessions[targetKey],
+          [taskId]: { ...(state.sessions[targetKey]?.[taskId] ?? emptySession), ...patch },
+        },
+      },
+    })),
+  remove: (targetKey, taskId) =>
+    set((state) => {
+      const remaining = { ...state.sessions[targetKey] };
+      delete remaining[taskId];
+      const sessions = { ...state.sessions };
+      if (Object.keys(remaining).length) sessions[targetKey] = remaining;
+      else delete sessions[targetKey];
+      return { sessions };
+    }),
+}));
 
-/**
- * The cards spoonfeed the first prompt, so they only make sense on an
- * untouched composer. Once the user has typed (or picked) something they
- * get out of the way instead of pushing the input around.
- */
-export function shouldShowHeroSuggestions(prompt: string): boolean {
-  return prompt.trim().length === 0;
+export interface StarterSubmission {
+  task: GuidedStarterTask;
+  answers: StarterAnswers;
+  summary: string;
 }
 
 interface DraftHeroSuggestionsProps {
   readonly draftTarget: ComposerThreadTarget;
-  readonly onPick?: () => void;
+  readonly environmentId: EnvironmentId;
+  readonly visible: boolean;
+  readonly supportsAttachmentUploads: boolean;
+  readonly disabledReason: string | null;
+  readonly submissionError: string | null;
+  readonly onAddFiles: (files: File[]) => Promise<boolean>;
+  readonly onRemoveAttachment: (id: string) => void;
+  readonly onStart: (submission: StarterSubmission) => Promise<boolean>;
 }
 
-export function DraftHeroSuggestions({ draftTarget, onPick }: DraftHeroSuggestionsProps) {
-  const setPrompt = useComposerDraftStore((store) => store.setPrompt);
+export function DraftHeroSuggestions({
+  draftTarget,
+  environmentId,
+  visible,
+  supportsAttachmentUploads,
+  disabledReason,
+  submissionError,
+  onAddFiles,
+  onRemoveAttachment,
+  onStart,
+}: DraftHeroSuggestionsProps) {
   const draft = useComposerThreadDraft(draftTarget);
+  const uploads = useAttachmentUploadStore((state) => state.uploadsByImageId);
+  const targetKey = typeof draftTarget === "string" ? draftTarget : scopedThreadKey(draftTarget);
+  const [selected, setSelected] = useState<{ targetKey: string; task: GuidedStarterTask } | null>(
+    null,
+  );
+  const [busy, setBusy] = useState(false);
+  const [preparingFiles, setPreparingFiles] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const startingRef = useRef(false);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const task = selected?.targetKey === targetKey ? selected.task : null;
+  const session = useStarterSessions((state) =>
+    task ? (state.sessions[targetKey]?.[task.id] ?? emptySession) : emptySession,
+  );
+  const attachments = [...draft.images, ...draft.files];
+  const existingNotes = stripInlineContextReferences(draft.prompt).trim();
+  const updateSession = (patch: Partial<StarterSession>) => {
+    if (!task) return;
+    useStarterSessions.getState().update(targetKey, task.id, patch);
+  };
+  const requirement = task ? starterFileRequirement(task, attachments.length) : null;
+  const uploadReason = preparingFiles
+    ? "Preparing your files…"
+    : draft.files.some(composerFileNeedsReattach)
+      ? "Add the original files again before starting."
+      : supportsAttachmentUploads
+        ? attachmentUploadBlockReason({
+            imageIds: attachments.map((file) => file.id),
+            uploadsByImageId: uploads,
+            environmentId,
+          })
+        : null;
+  const fileReason =
+    draft.files.length > 0 && !supportsAttachmentUploads
+      ? "This computer cannot accept files yet. Check the connection or remove the files."
+      : null;
+  const blockReason = disabledReason ?? requirement ?? fileReason ?? uploadReason;
+  const summary = task
+    ? (session.summary ??
+      buildStarterSummary(
+        task,
+        session.answers,
+        attachments.map((file) => file.name),
+      ))
+    : "";
 
-  if (!shouldShowHeroSuggestions(draft.prompt)) {
-    return null;
+  async function start() {
+    if (!task || startingRef.current || blockReason || !summary.trim()) return;
+    startingRef.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      const started = await onStart({ task, answers: session.answers, summary });
+      if (started) {
+        useStarterSessions.getState().remove(targetKey, task.id);
+        setSelected(null);
+      } else {
+        setError(
+          "Your Task could not start. Your answers and files are kept. Check the message below or the connection, then try again.",
+        );
+      }
+    } catch (failure) {
+      setError(
+        failure instanceof Error ? failure.message : "Your Task could not start. Please try again.",
+      );
+    } finally {
+      startingRef.current = false;
+      setBusy(false);
+    }
   }
 
   return (
-    <div className="pointer-events-auto mx-auto grid w-full max-w-3xl grid-cols-1 gap-2.5 pt-4 sm:grid-cols-2">
-      {DRAFT_HERO_SUGGESTIONS.map((suggestion) => (
-        <button
-          key={suggestion.title}
-          type="button"
-          onClick={() => {
-            setPrompt(draftTarget, suggestion.prompt);
-            onPick?.();
-          }}
-          className="rounded-2xl border border-border/50 bg-card px-4 py-3.5 text-left transition-colors hover:border-border hover:bg-accent/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <span className="block text-starter font-medium text-foreground">{suggestion.title}</span>
-          <span className="mt-0.5 block text-sm text-muted-foreground">
-            {suggestion.description}
-          </span>
-        </button>
-      ))}
-    </div>
+    <>
+      {visible ? (
+        <div className="pointer-events-auto mx-auto w-full max-w-3xl pt-4">
+          <p className="mb-3 text-center text-sm text-muted-foreground">
+            Choose a guided Task, or type your own above.
+          </p>
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+            {GUIDED_STARTER_TASKS.map((suggestion) => (
+              <button
+                key={suggestion.id}
+                type="button"
+                onClick={() => {
+                  setError(null);
+                  setSelected({ targetKey, task: suggestion });
+                }}
+                className="rounded-2xl border border-border/50 bg-card px-4 py-3.5 text-left transition-colors hover:border-border hover:bg-accent/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <span className="block text-starter font-medium text-foreground">
+                  {suggestion.title}
+                </span>
+                <span className="mt-0.5 block text-sm text-muted-foreground">
+                  {suggestion.description}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      <Dialog
+        open={task !== null}
+        onOpenChange={(open) => {
+          if (!open && !startingRef.current && !preparingFiles) setSelected(null);
+        }}
+      >
+        <DialogPopup showCloseButton={!busy && !preparingFiles} initialFocus={titleRef}>
+          <DialogHeader>
+            <DialogTitle ref={titleRef} tabIndex={-1}>
+              {task?.title}
+            </DialogTitle>
+            <DialogDescription>
+              {session.reviewing
+                ? "Review your Task before starting. You can edit the summary or go back to your answers."
+                : task?.description}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogPanel>
+            {session.reviewing ? (
+              <div className="space-y-2">
+                <label htmlFor="starter-summary" className="text-sm font-medium">
+                  Doer will…
+                </label>
+                <Textarea
+                  id="starter-summary"
+                  value={summary}
+                  disabled={busy}
+                  onChange={(event) => updateSession({ summary: event.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  The work continues in your regular conversation. Sending, submitting or buying
+                  needs a separate review.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-xs text-muted-foreground">
+                  Share what you know. You can leave a detail blank or choose “I'm not sure”.
+                </p>
+                {task?.questions.map((question) => (
+                  <div key={question.id} className="space-y-2">
+                    <label htmlFor={`starter-${question.id}`} className="text-sm font-medium">
+                      {question.label}
+                    </label>
+                    <Textarea
+                      id={`starter-${question.id}`}
+                      size="sm"
+                      value={session.answers[question.id] ?? ""}
+                      placeholder={question.placeholder}
+                      disabled={busy}
+                      onChange={(event) =>
+                        updateSession({
+                          answers: { ...session.answers, [question.id]: event.target.value },
+                          summary: null,
+                        })
+                      }
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      {(question.choices ?? ["I'm not sure"]).map((choice) => (
+                        <Button
+                          key={choice}
+                          type="button"
+                          size="xs"
+                          variant={
+                            session.answers[question.id] === choice ? "secondary" : "outline"
+                          }
+                          disabled={busy}
+                          aria-pressed={session.answers[question.id] === choice}
+                          onClick={() =>
+                            updateSession({
+                              answers: { ...session.answers, [question.id]: choice },
+                              summary: null,
+                            })
+                          }
+                        >
+                          {choice}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                {task?.attachmentLabel ? (
+                  <div className="space-y-2">
+                    <label htmlFor="starter-files" className="text-sm font-medium">
+                      {task.attachmentLabel}
+                    </label>
+                    <Input
+                      id="starter-files"
+                      nativeInput
+                      type="file"
+                      multiple
+                      disabled={busy || preparingFiles || !supportsAttachmentUploads}
+                      onChange={(event) => {
+                        const files = Array.from(event.target.files ?? []);
+                        event.target.value = "";
+                        if (!files.length) return;
+                        setPreparingFiles(true);
+                        setError(null);
+                        void onAddFiles(files)
+                          .catch((failure: unknown) =>
+                            setError(
+                              failure instanceof Error ? failure.message : "Could not add files.",
+                            ),
+                          )
+                          .finally(() => setPreparingFiles(false));
+                      }}
+                    />
+                    {!supportsAttachmentUploads ? (
+                      <p className="text-xs text-muted-foreground">
+                        Files are unavailable on this computer right now. You can still describe
+                        what you need.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            )}
+            {attachments.length ? (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Files included in this Task</p>
+                {attachments.map((file) => {
+                  const upload = uploads[file.id];
+                  return (
+                    <div key={file.id} className="flex items-center gap-2 text-sm">
+                      <span className="min-w-0 flex-1 break-words">
+                        {file.name}{" "}
+                        {upload?.status === "uploading"
+                          ? "· Uploading…"
+                          : upload?.status === "failed"
+                            ? "· Upload failed"
+                            : ""}
+                      </span>
+                      {upload?.status === "failed" ? (
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          onClick={() =>
+                            retryAttachmentUpload({ environmentId, image: file, draftTarget })
+                          }
+                          disabled={busy}
+                        >
+                          Retry
+                        </Button>
+                      ) : null}
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        aria-label={`Remove ${file.name}`}
+                        disabled={busy}
+                        onClick={() => {
+                          onRemoveAttachment(file.id);
+                          updateSession({ summary: null });
+                        }}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+            {existingNotes ? (
+              <div className="space-y-1">
+                <p className="text-sm font-medium">
+                  Your existing draft is included as additional notes.
+                </p>
+                <p className="whitespace-pre-wrap break-words text-xs text-muted-foreground">
+                  {existingNotes}
+                </p>
+              </div>
+            ) : null}
+            <p className="text-xs text-muted-foreground">
+              Cancel keeps your answers and files so you can return later.
+            </p>
+            {blockReason ? (
+              <p role="status" className="text-sm text-muted-foreground">
+                {blockReason}
+              </p>
+            ) : null}
+            {error || submissionError ? (
+              <p role="alert" className="text-sm text-destructive">
+                {error} {submissionError}
+              </p>
+            ) : null}
+          </DialogPanel>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              disabled={busy || preparingFiles}
+              onClick={() => setSelected(null)}
+            >
+              Cancel
+            </Button>
+            {session.reviewing ? (
+              <Button
+                variant="outline"
+                disabled={busy}
+                onClick={() => {
+                  updateSession({ reviewing: false });
+                  titleRef.current?.focus();
+                }}
+              >
+                Back
+              </Button>
+            ) : null}
+            <Button
+              disabled={
+                busy ||
+                preparingFiles ||
+                (session.reviewing ? blockReason !== null || !summary.trim() : requirement !== null)
+              }
+              onClick={() => {
+                if (session.reviewing) {
+                  void start();
+                } else {
+                  updateSession({ reviewing: true, summary });
+                  titleRef.current?.focus();
+                }
+              }}
+            >
+              {busy ? "Starting…" : session.reviewing ? task?.startLabel : "Review Task"}
+            </Button>
+          </DialogFooter>
+        </DialogPopup>
+      </Dialog>
+    </>
   );
 }

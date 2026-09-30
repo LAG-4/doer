@@ -1260,6 +1260,9 @@ export interface ChatComposerHandle {
   restoreAfterTimelineReachedEnd: () => void;
   collapseForTimelineScrollKey: (key: string) => void;
   addDroppedFiles: (files: File[]) => void;
+  /** Stage guided-task files without editing or focusing the free-text draft. */
+  addStarterFiles: (files: File[]) => Promise<boolean>;
+  removeStarterAttachment: (id: string) => void;
   addDroppedFolders: (folders: File[]) => void;
   hasPendingAttachments: () => boolean;
   insertTextAtEnd: (
@@ -5331,6 +5334,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       readonly source?: ChatFileAttachment["source"];
       readonly selection?: { start: number; end: number };
       readonly skipImageInlineChip?: boolean;
+      readonly skipInlineReferences?: boolean;
     },
   ): Promise<boolean> => {
     if (!activeThreadId || files.length === 0 || isRevertingCheckpointRef.current) return false;
@@ -5358,6 +5362,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     // requests no inline image chip.
     const imageAttachmentsGetChips =
       !options?.skipImageInlineChip &&
+      !options?.skipInlineReferences &&
       (options?.selection !== undefined ||
         isConnecting ||
         isComposerApprovalState ||
@@ -5448,13 +5453,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     if (acceptedFiles.length > 0) {
       // Only files the draft actually took get a chip; a duplicate is deduped by the store
       // and a chip for it would point at nothing.
-      const storedIds = new Set(addComposerFilesToDraft(acceptedFiles));
+      const storedIds = new Set(
+        options?.skipInlineReferences
+          ? addComposerDraftFiles(attachmentDraftTarget, acceptedFiles)
+          : addComposerFilesToDraft(acceptedFiles),
+      );
       const storedFiles = acceptedFiles.filter((file) => storedIds.has(file.id));
       if (storedFiles.length > 0) {
-        insertedAny = insertAttachmentReferences(
-          storedFiles.map(fileContextReference),
-          options?.selection,
-        );
+        insertedAny = options?.skipInlineReferences
+          ? true
+          : insertAttachmentReferences(storedFiles.map(fileContextReference), options?.selection);
       }
       if (options?.source?._tag === "pasted-text" && storedFiles.length > 0) {
         const attached = storedFiles[0]!;
@@ -5520,6 +5528,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             : [],
       );
       const storedImages = nextImages.filter((image) => storedImageIds.has(image.id));
+      if (options?.skipInlineReferences && storedImages.length > 0) insertedAny = true;
       if (storedImages.length > 0 && imageAttachmentsGetChips) {
         insertedAny =
           insertAttachmentReferences(storedImages.map(imageContextReference)) || insertedAny;
@@ -5916,6 +5925,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           setIsComposerScrollCollapsed(true);
         }
       },
+      addStarterFiles: (files) => addComposerAttachments(files, { skipInlineReferences: true }),
+      removeStarterAttachment: (id) => {
+        if (composerFilesRef.current.some((file) => file.id === id)) {
+          removeComposerFileFromDraft(id);
+        } else {
+          removeComposerImageFromDraft(id);
+        }
+      },
       addDroppedFiles: (files: File[]) => {
         void addComposerAttachments(files).then((inserted) => {
           if (!inserted) focusComposer();
@@ -6105,6 +6122,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [
       activeThread,
       addComposerAttachments,
+      removeComposerFileFromDraft,
+      removeComposerImageFromDraft,
       foldPastedText,
       composerDraftTarget,
       composerCursor,
