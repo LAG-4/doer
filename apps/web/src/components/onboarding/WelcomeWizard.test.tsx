@@ -1,86 +1,63 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 const mocks = vi.hoisted(() => ({
-  importThreads: vi.fn(),
-  createProject: vi.fn(),
   complete: vi.fn(),
+  submit: vi.fn(),
   refresh: vi.fn(),
+  navigate: vi.fn(),
   toast: vi.fn(),
+  prepareInbox: vi.fn(),
+  settleInbox: vi.fn(),
+  providers: [] as Array<Record<string, unknown>>,
+  config: null as Record<string, unknown> | null,
+  welcome: null as Record<string, unknown> | null,
   projects: [] as Array<{ id: string; environmentId: string; workspaceRoot: string }>,
+  inboxCapable: true,
+  thread: null as Record<string, unknown> | null,
+  threadStatus: "empty" as string,
 }));
-vi.mock("../../state/agentSessions", () => ({ agentSessionImport: "import" }));
-vi.mock("../../state/projects", () => ({ projectEnvironment: { create: "create" } }));
+
 vi.mock("../../state/use-atom-command", () => ({
-  useAtomCommand: (command: string) =>
-    command === "import"
-      ? mocks.importThreads
-      : command === "create"
-        ? mocks.createProject
-        : mocks.refresh,
+  useAtomCommand: (command: string) => (command === "refresh" ? mocks.refresh : mocks.refresh),
 }));
 vi.mock("../../onboarding/firstRun", () => ({ useCompleteOnboarding: () => mocks.complete }));
+vi.mock("../../onboarding/firstTaskSubmit", () => ({ submitFirstTask: mocks.submit }));
 vi.mock("../../state/entities", () => ({
   useProjects: () => mocks.projects,
   readProjects: () => mocks.projects,
+  useServerConfigs: () => new Map(),
+  useThread: () => mocks.thread,
+  useThreadStatus: () => mocks.threadStatus,
 }));
-vi.mock("../../state/environments", () => {
-  const environment = {
-    environmentId: "test-env",
-    label: "Computer",
-    connection: { phase: "connected" },
-  };
-  return {
-    useEnvironments: () => ({ environments: [environment] }),
-    usePrimaryEnvironment: () => environment,
-  };
-});
+vi.mock("../../state/environments", () => ({
+  usePrimaryEnvironment: () => ({ environmentId: "env-1", label: "Computer" }),
+}));
 vi.mock("../../state/server", () => ({
-  serverEnvironment: {
-    providersValueAtom: () => [],
-    configValueAtom: () => null,
-    refreshProviders: "refresh",
+  primaryServerProvidersAtom: "providers-atom",
+  primaryServerConfigAtom: "config-atom",
+  primaryServerWelcomeAtom: "welcome-atom",
+  serverEnvironment: { refreshProviders: "refresh" },
+}));
+vi.mock("../../hooks/useEnsureInboxProject", () => ({
+  useEnsureInboxProject: () => ({
+    prepareInboxProject: mocks.prepareInbox,
+    settleInboxProject: mocks.settleInbox,
+    isInboxCapable: mocks.inboxCapable,
+  }),
+}));
+vi.mock("@effect/atom-react", () => ({
+  useAtomValue: (atom: string) => {
+    if (atom === "providers-atom") return mocks.providers;
+    if (atom === "config-atom") return mocks.config;
+    if (atom === "welcome-atom") return mocks.welcome;
+    return null;
   },
 }));
-vi.mock("@effect/atom-react", () => ({ useAtomValue: (value: unknown) => value }));
-vi.mock("../../onboarding/useProjectScans", () => ({
-  useProjectScans: () => [
-    {
-      environmentId: "test-env",
-      isPending: false,
-      error: null,
-      refresh: mocks.refresh,
-      data: {
-        truncated: false,
-        candidates: [
-          {
-            path: "/project",
-            title: "project",
-            projectId: "test-project",
-            threadCount: 29,
-            lastActiveAt: new Date().toISOString(),
-            sources: ["codex"],
-          },
-        ],
-      },
-    },
-  ],
-}));
-vi.mock("../../connection/onboarding", () => ({ connectPairing: vi.fn() }));
-vi.mock("../../state/terminal", () => ({ terminalEnvironment: {} }));
-vi.mock("../clerk/useT3ConnectAuthPrompt", () => ({ useT3ConnectAuthPrompt: vi.fn() }));
-vi.mock("../../cloud/publicConfig", () => ({ hasCloudPublicConfig: () => false }));
-vi.mock("../ThreadTerminalDrawer", () => ({ TerminalViewport: () => null }));
-vi.mock("../settings/ChatGptWelcomeCoordinator", () => ({ ChatGptWelcomeCoordinator: () => null }));
-vi.mock("../settings/CodexSetupSection", () => ({
-  CodexSetupSection: () => null,
-  AddManagedCodexAccountDialog: () => null,
-}));
-vi.mock("../cloud/CloudEnvironmentConnectList", () => ({
-  CloudEnvironmentConnectRows: () => null,
+vi.mock("@tanstack/react-router", () => ({
+  useRouter: () => ({ navigate: mocks.navigate }),
 }));
 vi.mock("../ui/toast", () => ({
   toastManager: { add: mocks.toast, close: vi.fn(), update: vi.fn() },
@@ -88,11 +65,32 @@ vi.mock("../ui/toast", () => ({
 
 import { WelcomeWizard } from "./WelcomeWizard";
 
+const READY_OPENCODE = {
+  instanceId: "opencode",
+  driver: "opencode",
+  displayName: "OpenCode",
+  enabled: true,
+  installed: true,
+  status: "ready",
+  availability: "available",
+  auth: { status: "authenticated" },
+  models: [
+    {
+      slug: "opencode/big-pickle",
+      name: "Big Pickle",
+      isCustom: false,
+      isDefault: true,
+      capabilities: null,
+    },
+  ],
+};
+
 let root: Root;
 let container: HTMLDivElement;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  window.localStorage.clear();
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -105,110 +103,225 @@ beforeEach(() => {
     configurable: true,
     value: () => [],
   });
-  mocks.projects = [{ id: "test-project", environmentId: "test-env", workspaceRoot: "/project" }];
+  mocks.providers = [{ ...READY_OPENCODE }];
+  mocks.config = { settings: {} };
+  mocks.welcome = { inboxProjectId: "inbox-1", inboxWorkspaceRoot: "/inbox" };
+  mocks.projects = [{ id: "inbox-1", environmentId: "env-1", workspaceRoot: "/inbox" }];
+  mocks.inboxCapable = true;
+  mocks.thread = null;
+  mocks.threadStatus = "empty";
   mocks.complete.mockResolvedValue(undefined);
-  mocks.refresh.mockResolvedValue(undefined);
-  mocks.importThreads.mockResolvedValue({
-    _tag: "Success",
-    value: { importedCount: 28, skippedCount: 1 },
+  mocks.refresh.mockResolvedValue({});
+  mocks.navigate.mockResolvedValue(undefined);
+  mocks.prepareInbox.mockReturnValue({
+    ref: { environmentId: "env-1", projectId: "inbox-1" },
+    projectId: "inbox-1",
+    isNew: false,
   });
+  mocks.settleInbox.mockResolvedValue({ environmentId: "env-1", projectId: "inbox-1" });
+  mocks.submit.mockResolvedValue({ environmentId: "env-1", threadId: "thread-1" });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
 });
+
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
 });
 
-async function click(label: string) {
-  const button = [...document.querySelectorAll("button")].find(
+function button(label: string): HTMLButtonElement {
+  const found = [...document.querySelectorAll("button")].find(
     (element) => element.textContent?.trim() === label,
   );
-  expect(button, `button ${label}`).toBeDefined();
-  await act(async () => button!.click());
+  expect(found, `button ${label}`).toBeDefined();
+  return found as HTMLButtonElement;
 }
 
-it("enters the workspace after a partial import and warns after navigation finishes", async () => {
-  let finishNavigation = () => {};
-  const navigation = new Promise<void>((resolve) => {
-    finishNavigation = resolve;
-  });
-  const onDone = vi.fn(() => navigation);
-  await act(async () => root.render(<WelcomeWizard localAvailable onDone={onDone} />));
-  await click("Continue");
-  await click("Continue");
-  await click("Import 1 project");
-  expect(onDone).toHaveBeenCalledWith({
-    environmentId: EnvironmentId.make("test-env"),
-    projectId: ProjectId.make("test-project"),
-  });
-  expect(mocks.toast).not.toHaveBeenCalled();
-  await act(async () => finishNavigation());
-  expect(mocks.toast).toHaveBeenCalledWith(
-    expect.objectContaining({
-      type: "warning",
-      description: "Imported 28 threads. 1 thread could not be imported.",
-    }),
-  );
-  expect(mocks.toast.mock.invocationCallOrder[0]).toBeGreaterThan(
-    onDone.mock.invocationCallOrder[0]!,
-  );
+async function click(label: string) {
+  await act(async () => button(label).click());
+}
+
+function text(): string {
+  return document.body.textContent ?? "";
+}
+
+it("opens with the first-task choice and no technical setup", async () => {
+  const onDone = vi.fn();
+  await act(async () => root.render(<WelcomeWizard onDone={onDone} />));
+  expect(text()).toContain("Let’s try something useful.");
+  expect(text()).toContain("Doer will explain the important points");
+  expect(button("Use my document")).toBeDefined();
+  expect(button("Try a sample")).toBeDefined();
+  expect(button("Skip for now")).toBeDefined();
+  expect(text()).toContain("No accounts to connect");
 });
 
-it.each([
-  [0, 0, null],
-  [29, 0, null],
-  [1, 0, null],
-  [0, 1, "1 thread could not be imported."],
-  [0, 2, "2 threads could not be imported."],
-] as const)(
-  "finishes setup with %i imported and %i skipped threads",
-  async (importedCount, skippedCount, warning) => {
-    mocks.importThreads.mockResolvedValue({
-      _tag: "Success",
-      value: { importedCount, skippedCount },
-    });
-    const onDone = vi.fn();
-    await act(async () => root.render(<WelcomeWizard localAvailable onDone={onDone} />));
-    await click("Continue");
-    await click("Continue");
-    await click("Import 1 project");
-    expect(onDone).toHaveBeenCalledOnce();
-    if (warning === null && importedCount > 0) {
-      expect(mocks.toast).toHaveBeenCalledWith({
-        type: "success",
-        title: `Imported ${importedCount} ${importedCount === 1 ? "thread" : "threads"}`,
-      });
-    } else if (warning === null) {
-      expect(mocks.toast).not.toHaveBeenCalled();
-    } else {
-      expect(mocks.toast).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "warning", description: warning }),
-      );
-    }
-  },
-);
-
-it("keeps setup open when saving completion fails and preserves the import warning on retry", async () => {
-  mocks.complete.mockRejectedValueOnce(new Error("settings unavailable"));
+it("runs the sample task end to end through the real submit path", async () => {
   const onDone = vi.fn();
-  await act(async () => root.render(<WelcomeWizard localAvailable onDone={onDone} />));
-  await click("Continue");
-  await click("Continue");
-  await click("Import 1 project");
-  expect(onDone).not.toHaveBeenCalled();
-  expect(mocks.toast).toHaveBeenCalledWith(
-    expect.objectContaining({ type: "error", title: "Could not finish setup" }),
-  );
-  await click("Do not import projects");
+  await act(async () => root.render(<WelcomeWizard onDone={onDone} />));
+  await click("Try a sample");
+  expect(text()).toContain("Here’s what happens next.");
+  expect(text()).toContain("sample-sales-report.md");
+  expect(text()).toContain("Sample report — fictional data.");
+  expect(text()).toContain("Your free AI is ready");
+  await click("Explain this report");
+  expect(mocks.submit).toHaveBeenCalledOnce();
+  const input = mocks.submit.mock.calls[0]![0] as {
+    prompt: string;
+    file: File;
+    modelSelection: { instanceId: string; model: string };
+  };
+  expect(input.file.name).toBe("sample-sales-report.md");
+  expect(input.prompt).toContain("sample-sales-report.md");
+  expect(input.prompt).toContain("improved or declined");
+  expect(input.modelSelection).toEqual({ instanceId: "opencode", model: "opencode/big-pickle" });
+  expect(mocks.complete).toHaveBeenCalledOnce();
+  expect(mocks.navigate).toHaveBeenCalledWith({
+    to: "/$environmentId/$threadId",
+    params: { environmentId: "env-1", threadId: "thread-1" },
+    replace: true,
+  });
   expect(onDone).toHaveBeenCalledOnce();
-  expect(mocks.importThreads).toHaveBeenCalledOnce();
-  expect(mocks.toast).toHaveBeenLastCalledWith(
-    expect.objectContaining({
-      type: "warning",
-      description: "Imported 28 threads. 1 thread could not be imported.",
+  expect(JSON.parse(window.localStorage.getItem("doer.first-task.v1")!)).toMatchObject({
+    status: "pending",
+    thread: { environmentId: "env-1", threadId: "thread-1" },
+  });
+});
+
+it("prevents duplicate tasks from repeated clicks", async () => {
+  let release!: () => void;
+  mocks.submit.mockReturnValueOnce(
+    new Promise((resolve) => {
+      release = () => resolve({ environmentId: "env-1", threadId: "thread-1" });
     }),
   );
+  const onDone = vi.fn();
+  await act(async () => root.render(<WelcomeWizard onDone={onDone} />));
+  await click("Try a sample");
+  const first = click("Explain this report");
+  const second = click("Explain this report");
+  await act(async () => {
+    release();
+    await first;
+    await second;
+  });
+  expect(mocks.submit).toHaveBeenCalledOnce();
+});
+
+it("keeps inputs and shows recovery when starting fails", async () => {
+  mocks.submit.mockRejectedValueOnce(new Error("Computer is offline"));
+  const onDone = vi.fn();
+  await act(async () => root.render(<WelcomeWizard onDone={onDone} />));
+  await click("Try a sample");
+  await click("Explain this report");
+  expect(text()).toContain("Computer is offline");
+  expect(text()).toContain("sample-sales-report.md");
+  expect(onDone).not.toHaveBeenCalled();
+  expect(mocks.complete).not.toHaveBeenCalled();
+});
+
+it("shows setup progress truthfully while the free provider installs", async () => {
+  mocks.providers = [];
+  mocks.config = null;
+  const onDone = vi.fn();
+  await act(async () => root.render(<WelcomeWizard onDone={onDone} />));
+  await click("Try a sample");
+  expect(text()).toContain("Getting your free AI ready…");
+  expect(button("Explain this report").disabled).toBe(true);
+  expect(onDone).not.toHaveBeenCalled();
+});
+
+it("shows provider failures with a retry that re-probes", async () => {
+  mocks.providers = [
+    {
+      ...READY_OPENCODE,
+      status: "error",
+      message: "Probe failed",
+    },
+  ];
+  const onDone = vi.fn();
+  await act(async () => root.render(<WelcomeWizard onDone={onDone} />));
+  await click("Try a sample");
+  expect(text()).toContain("Probe failed");
+  expect(button("Explain this report").disabled).toBe(true);
+  await click("Try again");
+  expect(mocks.refresh).toHaveBeenCalledWith({ environmentId: "env-1", input: {} });
+  expect(onDone).not.toHaveBeenCalled();
+});
+
+it("pauses instead of silently switching to a paid provider", async () => {
+  mocks.providers = [
+    { ...READY_OPENCODE, status: "error" },
+    {
+      instanceId: "claudeAgent",
+      driver: "claudeAgent",
+      displayName: "Claude",
+      enabled: true,
+      installed: true,
+      status: "ready",
+      availability: "available",
+      auth: { status: "authenticated" },
+      models: [{ slug: "claude-opus", name: "Opus", isCustom: false, capabilities: null }],
+    },
+  ];
+  const onDone = vi.fn();
+  await act(async () => root.render(<WelcomeWizard onDone={onDone} />));
+  await click("Try a sample");
+  expect(text()).toContain("won’t switch you to a paid service");
+  expect(button("Explain this report").disabled).toBe(true);
+  expect(mocks.submit).not.toHaveBeenCalled();
+});
+
+it("records a skip distinctly from first-task success", async () => {
+  const onDone = vi.fn();
+  await act(async () => root.render(<WelcomeWizard onDone={onDone} />));
+  await click("Skip for now");
+  expect(mocks.submit).not.toHaveBeenCalled();
+  expect(mocks.complete).toHaveBeenCalledOnce();
+  expect(onDone).toHaveBeenCalledOnce();
+  expect(JSON.parse(window.localStorage.getItem("doer.first-task.v1")!)).toMatchObject({
+    status: "skipped",
+    thread: null,
+  });
+});
+
+it("offers the way back to a pending task instead of duplicating it", async () => {
+  window.localStorage.setItem(
+    "doer.first-task.v1",
+    JSON.stringify({
+      status: "pending",
+      thread: { environmentId: "env-1", threadId: "thread-1" },
+      fileName: "report.pdf",
+      followUpDismissed: false,
+      startedAt: "2026-09-30T00:00:00.000Z",
+      completedAt: null,
+    }),
+  );
+  mocks.thread = { id: "thread-1" };
+  mocks.threadStatus = "live";
+  const onDone = vi.fn();
+  await act(async () => root.render(<WelcomeWizard onDone={onDone} />));
+  expect(text()).toContain("Your report task is still running.");
+  await click("View my task");
+  expect(mocks.navigate).toHaveBeenCalledWith({
+    to: "/$environmentId/$threadId",
+    params: { environmentId: "env-1", threadId: "thread-1" },
+    replace: true,
+  });
+  expect(onDone).toHaveBeenCalledOnce();
+  expect(mocks.submit).not.toHaveBeenCalled();
+  expect(mocks.complete).not.toHaveBeenCalled();
+});
+
+it("skips with Escape", async () => {
+  const onDone = vi.fn();
+  await act(async () => root.render(<WelcomeWizard onDone={onDone} />));
+  const popup = document.querySelector('[aria-label="Welcome to Doer"]')!;
+  await act(async () => {
+    popup.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  });
+  expect(onDone).toHaveBeenCalledOnce();
+  expect(mocks.complete).toHaveBeenCalledOnce();
 });

@@ -1,22 +1,25 @@
-# Welcome tour
+# Your first task
 
-Doer shows a short tour when you open a new installation for the first time.
+Doer greets a new installation with something useful instead of a tour.
 Existing workspaces skip it. There is nothing to set up: this computer is
-already connected and free models are already on.
+already connected, your work starts in your My Stuff space, and no accounts
+need connecting.
 
-The tour has three pages:
+Pick **Use my document** to attach a file you want explained, or **Try a
+sample** to use a short fictional sales report supplied by Doer. Doer reads
+the file and explains it in plain language: what improved or declined, the
+most important figures, and three follow-up questions or actions.
 
-1. **Welcome to Doer** — what Doer can do for you.
-2. **You stay in charge** — tell it what you need, watch it browse the web and
-   compare options, then approve. Undo any step in History.
-3. **Ready when you are** — start chatting, or add a folder to your Space first.
-   A small note explains that free models are provided by OpenCode.
+The explanation runs as a real task in your My Stuff space, where it stays
+for later. While the free AI gets ready you see progress instead of a ready
+checkmark, and starting stays paused if the free service is unavailable —
+Doer never switches you to a paid service without asking. If starting fails,
+your file is kept so you can try again.
 
-Select **Continue** to move through the pages, or **Start using Doer** on the
-last page to reach the start screen. There, **Start chatting** opens the
-default folder (created for you if needed) and **Add project** points Doer at
-one of your folders instead. Select **Not Now** at any time to skip the tour.
-You can move back with **Back**, jump with the dots, or use the arrow keys;
-Escape skips the tour. Clicking outside the popup never dismisses it.
+Select **Skip for now** at any time (or press Escape) to reach the start
+screen instead. There, **Start chatting** opens the default folder and
+**Add project** points Doer at one of your folders.
 
-To see the tour again, open `/welcome` in the app.
+When your first explanation is ready, Doer offers next steps: ask about the
+report, try another task, or go to your tasks. To see the welcome screen
+again, open `/welcome` in the app.

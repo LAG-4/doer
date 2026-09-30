@@ -1,9 +1,8 @@
-import { createFileRoute, redirect, useLocation, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, redirect, useLocation } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { NoProjectsHero } from "../components/NoProjectsHero";
 import { WelcomeWizard } from "../components/onboarding/WelcomeWizard";
-import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 
 /** Onboarding overlays the workspace. Visiting /welcome reopens setup. */
 export const Route = createFileRoute("/welcome")({
@@ -17,37 +16,22 @@ export const Route = createFileRoute("/welcome")({
 });
 
 function WelcomeRouteView() {
-  const { authGateState } = Route.useRouteContext();
-  const navigate = useNavigate();
   // The root shell can remount this pending outlet after the location changes.
   // Never reopen setup while the destination route is still loading.
   const isWelcomeRoute = useLocation({ select: (location) => location.pathname === "/welcome" });
   const [dismissed, setDismissed] = useState(false);
-  const openNewThread = useNewThreadHandler();
-  // An authenticated gate means a primary server is serving this app —
-  // desktop, `npx @lag4/doer-cli`, or a dev server — and that server is "this machine"
-  // no matter what hostname the browser used. Only hosted-static has no
-  // local server to offer.
-  const localAvailable = authGateState.status === "authenticated";
   return (
     <>
       <NoProjectsHero />
       {isWelcomeRoute && !dismissed ? (
         <WelcomeWizard
-          localAvailable={localAvailable}
-          onDone={(projectRef) => {
-            if (projectRef !== undefined) {
-              setDismissed(true);
-              void openNewThread(projectRef, { replace: true }).catch(() => {
-                void navigate({ to: "/", replace: true });
-              });
-              return;
-            }
+          onDone={() => {
             // The hero behind the wizard is the destination: dismissing
             // reveals "Start chatting" with no navigation, so no
             // intermediate screen can flash. Starting a chat opens the
             // default folder (the auto-provisioned inbox); adding a folder
-            // stays optional.
+            // stays optional. A submitted first task navigates itself to
+            // its conversation before calling back here.
             setDismissed(true);
           }}
         />
