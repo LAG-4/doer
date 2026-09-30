@@ -133,7 +133,7 @@ afterEach(async () => {
 
 function button(label: string): HTMLButtonElement {
   const found = [...document.querySelectorAll("button")].find(
-    (element) => element.textContent?.trim() === label,
+    (element) => element.textContent?.includes(label) ?? false,
   );
   expect(found, `button ${label}`).toBeDefined();
   return found as HTMLButtonElement;
@@ -200,12 +200,15 @@ it("prevents duplicate tasks from repeated clicks", async () => {
   const onDone = vi.fn();
   await act(async () => root.render(<WelcomeWizard onDone={onDone} />));
   await click("Try a sample");
-  const first = click("Explain this report");
-  const second = click("Explain this report");
+  // Both clicks land in a single act() pass: the submitting guard drops the
+  // second, and separate act() calls must never overlap (React warns and
+  // discards queued work, which wedges every later render in this file).
+  await act(async () => {
+    button("Explain this report").click();
+    button("Explain this report").click();
+  });
   await act(async () => {
     release();
-    await first;
-    await second;
   });
   expect(mocks.submit).toHaveBeenCalledOnce();
 });

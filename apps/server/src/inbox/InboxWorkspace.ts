@@ -9,7 +9,7 @@
  */
 
 /** Folder name of the auto-provisioned inbox under `~/Documents`. */
-export const INBOX_DIR_NAME = "Doer";
+const INBOX_DIR_NAME = "Doer";
 /** Sidebar title of the auto-provisioned inbox project. */
 export const INBOX_PROJECT_TITLE = "My Stuff";
 

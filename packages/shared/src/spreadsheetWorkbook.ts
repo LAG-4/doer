@@ -245,7 +245,7 @@ function stripIllegalXmlChars(value: string): string {
   return out;
 }
 
-export function escapeSpreadsheetXml(value: string): string {
+function escapeSpreadsheetXml(value: string): string {
   return stripIllegalXmlChars(value)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -254,7 +254,7 @@ export function escapeSpreadsheetXml(value: string): string {
     .replace(/'/g, "&apos;");
 }
 
-export function unescapeSpreadsheetXml(value: string): string {
+function unescapeSpreadsheetXml(value: string): string {
   return value
     .replace(/&#(\d+);/g, (_match, digits: string) => String.fromCodePoint(Number(digits)))
     .replace(/&#x([0-9a-fA-F]+);/g, (_match, digits: string) =>

@@ -2,7 +2,7 @@ import type { ConfirmDialogResult, LocalApi } from "@t3tools/contracts";
 
 import { persistClientSettingsPatch } from "../hooks/useSettings";
 
-export const THREAD_DELETE_DONT_ASK_AGAIN_LABEL = "Don't ask again";
+const THREAD_DELETE_DONT_ASK_AGAIN_LABEL = "Don't ask again";
 
 export function threadDeleteConfirmationMessage(title: string): string {
   return [

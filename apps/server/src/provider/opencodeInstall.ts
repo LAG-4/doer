@@ -31,8 +31,8 @@
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
-export const DEFAULT_OPENCODE_BINARY = "opencode";
-export const OPENCODE_NPM_PACKAGE = "opencode-ai";
+const DEFAULT_OPENCODE_BINARY = "opencode";
+const OPENCODE_NPM_PACKAGE = "opencode-ai";
 export const OPENCODE_NPM_INSTALL_SPEC = `${OPENCODE_NPM_PACKAGE}@latest`;
 /**
  * v2 CLI distribution. Fresh automatic installs prefer this: `@opencode/cli`
@@ -41,14 +41,12 @@ export const OPENCODE_NPM_INSTALL_SPEC = `${OPENCODE_NPM_PACKAGE}@latest`;
  * download step. Falls back to {@link OPENCODE_NPM_INSTALL_SPEC} (v1) when
  * the v2 install fails; both are supported at runtime via version routing.
  */
-export const OPENCODE_NPM_PACKAGE_V2 = "@opencode/cli";
+const OPENCODE_NPM_PACKAGE_V2 = "@opencode/cli";
 export const OPENCODE_NPM_INSTALL_SPEC_V2 = `${OPENCODE_NPM_PACKAGE_V2}@latest`;
 /** Directory name below `<baseDir>/tools` holding the T3-managed install. */
-export const OPENCODE_MANAGED_TOOL_DIRNAME = "opencode";
-/** The official install script — the fallback install mirrors its platform mapping. */
-export const OPENCODE_INSTALL_SCRIPT_URL = "https://opencode.ai/install";
+const OPENCODE_MANAGED_TOOL_DIRNAME = "opencode";
 /** Release downloads live here; the script uses `.../latest/download/<filename>`. */
-export const OPENCODE_RELEASE_DOWNLOAD_BASE_URL =
+const OPENCODE_RELEASE_DOWNLOAD_BASE_URL =
   "https://github.com/anomalyco/opencode/releases/latest/download";
 
 /** True when the caller left the stock `"opencode"` command in place. */

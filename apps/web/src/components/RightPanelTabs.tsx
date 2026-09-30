@@ -194,12 +194,7 @@ const SURFACE_UNAVAILABLE_HINTS = {
  * Pull request, Linked pull requests). Keyed by shortcut so the empty-state
  * list and the "+" menu stay in sync.
  */
-export const SIMPLE_MODE_HIDDEN_SURFACE_SHORTCUTS: ReadonlySet<string> = new Set([
-  "T",
-  "D",
-  "P",
-  "L",
-]);
+const SIMPLE_MODE_HIDDEN_SURFACE_SHORTCUTS: ReadonlySet<string> = new Set(["T", "D", "P", "L"]);
 
 export function filterSimpleModeSurfaceActions<Action extends { shortcut: string }>(
   actions: readonly Action[],

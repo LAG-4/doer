@@ -124,7 +124,14 @@ export function WelcomeWizard({ onDone }: { readonly onDone: () => void }) {
   const selectedEntry = modelSelection
     ? entries.find((entry) => entry.instanceId === modelSelection.instanceId)
     : undefined;
-  const providerState = getOnboardingProviderState(selectedEntry?.snapshot);
+  // Nothing is selectable when every instance is errored or unavailable, but
+  // the failure still needs a face: surface the most relevant entry so its
+  // message and retry stay visible instead of a perpetual "getting ready".
+  const statusEntry =
+    selectedEntry ??
+    entries.find((entry) => entry.driverKind === "opencode" && entry.status === "error") ??
+    entries.find((entry) => entry.status === "error");
+  const providerState = getOnboardingProviderState(statusEntry?.snapshot);
   const catalogKnown = serverConfig !== null;
   const isFreeDefault = selectedEntry?.driverKind === "opencode";
   const isExplicitChoice =
@@ -357,9 +364,9 @@ export function WelcomeWizard({ onDone }: { readonly onDone: () => void }) {
               canSubmit={canSubmit}
               spaceReady={inboxRef !== null || isInboxCapable}
               providerState={providerState}
-              providerDisplayName={selectedEntry?.displayName ?? null}
+              providerDisplayName={statusEntry?.displayName ?? null}
               providerModel={modelSelection?.model ?? null}
-              providerMessage={selectedEntry?.snapshot.message ?? null}
+              providerMessage={statusEntry?.snapshot.message ?? null}
               isFreeDefault={isFreeDefault || selectedEntry === undefined}
               isAutoInstallDriver={
                 selectedEntry === undefined ||
