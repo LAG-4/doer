@@ -12,6 +12,7 @@ import type * as Scope from "effect/Scope";
 
 import { forkParked } from "../serverActivation.ts";
 import { isoMinusMs, planFiring } from "./AutomationSchedule.ts";
+import { buildAutomationRunPrompt } from "./AutomationRunPrompt.ts";
 import * as OrchestrationEngine from "./Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./Services/ProjectionSnapshotQuery.ts";
 
@@ -54,11 +55,14 @@ export const make = Effect.gen(function* () {
     const current = yield* snapshots.getAutomationById(automation.id);
     if (
       Option.isNone(current) ||
+      current.value.deletedAt !== null ||
       current.value.state !== "active" ||
       current.value.nextFireAt !== planned.occurrenceKey
     ) {
       return;
     }
+    // Prompt-only edits leave the slot unchanged; always fire the fresh row.
+    automation = current.value;
     const thread = yield* snapshots.getThreadShellById(automation.threadId);
     if (Option.isNone(thread)) {
       return yield* Effect.logWarning("scheduled automation skipped: thread is gone", {
@@ -81,6 +85,15 @@ export const make = Effect.gen(function* () {
         createdAt: now,
       });
     }
+    if (automation.dedicatedThread !== false && thread.value.interactionMode !== "default") {
+      yield* engine.dispatch({
+        type: "thread.interaction-mode.set",
+        commandId: CommandId.make(`${turnCommandId}:interaction`),
+        threadId: automation.threadId,
+        interactionMode: "default",
+        createdAt: now,
+      });
+    }
     yield* engine.dispatch({
       type: "thread.turn.start",
       commandId: turnCommandId,
@@ -88,11 +101,16 @@ export const make = Effect.gen(function* () {
       message: {
         messageId: MessageId.make(`automation:${automation.id}:${planned.occurrenceKey}`),
         role: "user",
-        text: automation.prompt,
+        text: buildAutomationRunPrompt({
+          automation,
+          firedAt: now,
+          occurrenceKey: planned.occurrenceKey,
+        }),
         attachments: [],
       },
-      runtimeMode: "full-access",
-      interactionMode: thread.value.interactionMode,
+      runtimeMode: automation.dedicatedThread !== false ? "full-access" : thread.value.runtimeMode,
+      interactionMode:
+        automation.dedicatedThread !== false ? "default" : thread.value.interactionMode,
       createdAt: now,
     });
     // The turn dispatch is idempotent on its command id, and the record

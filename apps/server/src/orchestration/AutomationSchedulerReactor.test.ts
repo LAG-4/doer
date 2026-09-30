@@ -189,7 +189,9 @@ describe("AutomationSchedulerReactor", () => {
           if (turnStart?.type === "thread.turn.start") {
             expect(turnStart.commandId).toBe(`server:automation:automation-1:${FRESH_SLOT}`);
             expect(turnStart.threadId).toBe("thread-for-automation-1");
-            expect(turnStart.message.text).toBe("Prompt for automation-1.");
+            expect(turnStart.message.text).toContain("Prompt for automation-1.");
+            expect(turnStart.message.text).toContain("Run the existing reminder");
+            expect(turnStart.message.text).toContain("do not create, duplicate, reschedule");
             // Scheduled runs resolve to full access even though the command
             // carries the thread's modes through.
             expect(turnStart.runtimeMode).toBe("full-access");
@@ -225,6 +227,62 @@ describe("AutomationSchedulerReactor", () => {
             expect(fired.occurrenceKey).toBe("2026-09-15T09:00:00.000Z");
             expect(fired.outcome).toBe("missed-then-ran");
           }
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
+
+  it.effect("uses a prompt edited after the due sweep and ignores a deleted row", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(Date.parse(NOW));
+        const original = makeAutomation("automation-edited", { nextFireAt: FRESH_SLOT });
+        const deleted = makeAutomation("automation-deleted", { nextFireAt: FRESH_SLOT });
+        const fixture = yield* makeHarness({
+          dueRows: [original, deleted],
+          automationsById: new Map([
+            [original.id, { ...original, prompt: "Read the updated bills folder." }],
+            [deleted.id, { ...deleted, deletedAt: NOW }],
+          ]),
+        });
+        yield* Effect.gen(function* () {
+          const reactor = yield* AutomationSchedulerReactor.AutomationSchedulerReactor;
+          yield* startHarness(reactor, fixture.activation, fixture.sweepReads);
+          const commands = yield* Ref.get(fixture.commands);
+          expect(commands).toHaveLength(2);
+          const turn = commands.find((command) => command.type === "thread.turn.start");
+          if (turn?.type !== "thread.turn.start") return assert.fail("no turn started");
+          expect(turn.message.text).toContain("Read the updated bills folder.");
+          expect(turn.message.text).not.toContain(original.prompt);
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
+
+  it.effect("executes a dedicated reminder even if its task was left in plan mode", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(Date.parse(NOW));
+        const automation = makeAutomation("automation-plan", { nextFireAt: FRESH_SLOT });
+        const fixture = yield* makeHarness({
+          dueRows: [automation],
+          threadShellsById: new Map([
+            [
+              automation.threadId,
+              makeThreadShell(automation.threadId, { interactionMode: "plan" }),
+            ],
+          ]),
+        });
+        yield* Effect.gen(function* () {
+          const reactor = yield* AutomationSchedulerReactor.AutomationSchedulerReactor;
+          yield* startHarness(reactor, fixture.activation, fixture.sweepReads);
+          const commands = yield* Ref.get(fixture.commands);
+          expect(commands.map((command) => command.type)).toEqual([
+            "thread.interaction-mode.set",
+            "thread.turn.start",
+            "automation.fired",
+          ]);
+          expect(commands[0]).toMatchObject({ interactionMode: "default" });
         }).pipe(Effect.provide(fixture.layer));
       }),
     ),
@@ -456,6 +514,11 @@ describe("AutomationSchedulerReactor", () => {
             (yield* Ref.get(fixture.commands)).map((command) => command.type),
             ["thread.turn.start", "automation.fired"],
           );
+          const turn = (yield* Ref.get(fixture.commands)).find(
+            (command) => command.type === "thread.turn.start",
+          );
+          if (turn?.type === "thread.turn.start")
+            expect(turn.runtimeMode).toBe("approval-required");
         }).pipe(Effect.provide(fixture.layer));
       }),
     ),

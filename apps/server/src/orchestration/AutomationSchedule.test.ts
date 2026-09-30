@@ -58,6 +58,26 @@ describe("AutomationSchedule", () => {
     ).toContain("not a valid IANA timezone");
   });
 
+  it("rejects malformed recurring times and weekdays without searching hundreds of dates", () => {
+    for (const time of ["25:00", "09:60", "9:00", "-1:00"]) {
+      const schedule = daily(time, "UTC");
+      expect(
+        validateAutomationSchedule({ schedule, nowIso: "2026-09-19T00:00:00.000Z" }),
+      ).toContain("HH:MM");
+      expect(computeNextFireAt(schedule, "2026-09-19T00:00:00.000Z")).toBeNull();
+    }
+    const weekly: AutomationSchedule = {
+      kind: "weekly",
+      time: "09:00",
+      weekday: 7,
+      timezone: "UTC",
+    };
+    expect(
+      validateAutomationSchedule({ schedule: weekly, nowIso: "2026-09-19T00:00:00.000Z" }),
+    ).toContain("weekday");
+    expect(computeNextFireAt(weekly, "2026-09-19T00:00:00.000Z")).toBeNull();
+  });
+
   it("computes the next daily firing in wall-clock time", () => {
     // 09:00 America/New_York on 2026-09-18 (EDT, UTC-4) is 13:00Z.
     expect(computeNextFireAt(daily("09:00", "America/New_York"), "2026-09-18T12:00:00.000Z")).toBe(

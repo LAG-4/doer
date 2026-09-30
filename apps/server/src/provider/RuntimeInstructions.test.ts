@@ -6,6 +6,15 @@ import {
 } from "./RuntimeInstructions.ts";
 
 describe("buildRuntimeInstructions", () => {
+  it("explains how to prepare and execute reminders without inventing timing or results", () => {
+    const instructions = buildRuntimeInstructions({ harness: "OpenCode" });
+    expect(instructions).toContain("First call list_scheduled_tasks to avoid duplicates");
+    expect(instructions).toContain("separate task does not inherit this conversation");
+    expect(instructions).toContain("rather than guessing from the server's timezone");
+    expect(instructions).toContain("do not promise email, push notifications");
+    expect(instructions).toContain("perform its saved work immediately");
+    expect(instructions).toContain("THIS task's Space");
+  });
   it("requires explicit registration of every PR and stack layer", () => {
     const instructions = buildRuntimeInstructions({ harness: "Codex" });
     expect(instructions).toContain("When the t3-code MCP server exposes link_pull_request");
