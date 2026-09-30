@@ -41,6 +41,7 @@ import { usePrimaryEnvironment } from "../../state/environments";
 import {
   primaryServerConfigAtom,
   primaryServerProvidersAtom,
+  primaryServerWelcomeAtom,
   serverEnvironment,
 } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -505,7 +506,7 @@ function ChoiceButton({
   readonly disabled: boolean;
   readonly onClick: () => void;
   readonly autoFocus?: boolean;
-  readonly id?: string;
+  readonly id?: string | undefined;
 }) {
   return (
     <button
