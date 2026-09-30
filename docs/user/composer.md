@@ -12,6 +12,20 @@ becomes an attachment when inserting it would exceed the message limit. On a
 hardware keyboard, use `Cmd+Shift+V` on Apple devices or `Ctrl+Shift+V` elsewhere
 to keep a large paste editable in the composer instead.
 
+## Start with a guided Task
+
+On web and desktop, choose a starter card in a new Task to find jobs, plan a
+trip, prepare a document, compare prices or reports, or get computer help.
+Share a few details, attach any relevant files, then review and edit what you
+want Doer to do. You can leave uncertain details blank. Comparing reports
+requires two files.
+
+Only the final Start action begins the work. Your existing draft and files are
+included, and the Task continues in the regular conversation. Cancel keeps
+your answers for this session; reopen the same card to continue. You can also
+skip the cards and type your own request. Sending applications, making
+purchases, and similar actions need a separate review.
+
 ## Attach files
 
 Attach up to 100 files per message. Each image can be up to 10 MiB, with at most

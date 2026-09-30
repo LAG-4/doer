@@ -171,7 +171,7 @@ export function DraftHeroHeadline({
             />
           }
         >
-          <span className="min-w-0 truncate">{activeProjectDisplayName ?? "Choose a project"}</span>
+          <span className="min-w-0 truncate">{activeProjectDisplayName ?? "Choose a Space"}</span>
         </TooltipTrigger>
         {activeProjectDisplayName ? (
           <TooltipPopup side="top">{activeProjectDisplayName}</TooltipPopup>
@@ -241,7 +241,7 @@ export function DraftHeroHeadline({
         <MenuSeparator />
         <MenuItem onClick={openAddProject}>
           <FolderPlusIcon />
-          New project
+          New Space
         </MenuItem>
       </MenuPopup>
     </Menu>
@@ -256,7 +256,7 @@ export function DraftHeroHeadline({
         ? "Setting up…"
         : isInboxCapable
           ? "Start chatting"
-          : (activeProjectTitle ?? "Add a project")}
+          : (activeProjectTitle ?? "Add a Space")}
     </button>
   );
 
@@ -265,10 +265,12 @@ export function DraftHeroHeadline({
   // in the h1; without an explicit label its widget state bleeds into the
   // announced phrase.
   const headingLabel = hasResolvedProject
-    ? `What should we build in ${activeProjectDisplayName}?`
+    ? isInboxProject
+      ? "What can Doer help you with?"
+      : `What would you like to do in ${activeProjectDisplayName}?`
     : canChooseProject
-      ? `${activeProjectDisplayName ?? "Choose a project"} to start`
-      : "Add a project to start";
+      ? `${activeProjectDisplayName ?? "Choose a Space"} to start`
+      : "Add a Space to start";
 
   return (
     <h1
@@ -277,16 +279,16 @@ export function DraftHeroHeadline({
     >
       {hasResolvedProject ? (
         isInboxProject ? (
-          <>What should we build?</>
+          <>What can Doer help you with?</>
         ) : (
-          <>What should we build in {projectSelector}?</>
+          <>What would you like to do in {projectSelector}?</>
         )
       ) : canChooseProject ? (
         <>{projectSelector} to start</>
       ) : isInboxCapable ? (
         <>{projectSelector} to start</>
       ) : (
-        <>Add a project to start</>
+        <>Add a Space to start</>
       )}
     </h1>
   );
