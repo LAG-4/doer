@@ -398,7 +398,7 @@ export function SpreadsheetSurface({
   return (
     <div ref={surfaceRef} className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="flex h-9 min-h-9 shrink-0 items-center gap-2 border-b border-border/60 px-3">
-        <span className="rounded-sm bg-accent px-1.5 py-0.5 text-[11px] font-medium">Sheet</span>
+        <span className="rounded-sm bg-accent px-1.5 py-0.5 text-2xs font-medium">Sheet</span>
         {document ? (
           <span className="truncate text-xs text-muted-foreground">
             {document.sheetName}
@@ -409,13 +409,13 @@ export function SpreadsheetSurface({
         ) : null}
         <span className="min-w-0 flex-1" />
         {dirty && !saveInFlight ? (
-          <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <span className="flex items-center gap-1.5 text-2xs text-muted-foreground">
             <span className="size-1.5 rounded-full bg-current" aria-hidden />
             Unsaved changes
           </span>
         ) : null}
         {saveInFlight ? (
-          <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <span className="flex items-center gap-1.5 text-2xs text-muted-foreground">
             <Spinner className="size-3" />
             Saving
           </span>

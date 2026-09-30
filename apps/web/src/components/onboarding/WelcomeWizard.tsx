@@ -135,10 +135,10 @@ export function WelcomeWizard({
               id={CONTINUE_BUTTON_ID}
               key={slide}
               autoFocus
-              size="lg"
+              size="tour"
               disabled={isFinishing}
               onClick={goNext}
-              className="h-12 w-full rounded-full text-base font-semibold"
+              className="w-full"
             >
               {isFinishing ? (
                 <>
@@ -185,7 +185,7 @@ function TourVisual({ slide }: { readonly slide: number }) {
           alt=""
           width={76}
           height={76}
-          className="size-[76px] rounded-[22%] shadow-lg ring-1 ring-black/10"
+          className="size-[76px] rounded-app-icon shadow-lg ring-1 ring-black/10"
           draggable={false}
         />
       ) : slide === 1 ? (
@@ -203,21 +203,21 @@ function TourVisual({ slide }: { readonly slide: number }) {
                 <span className="size-2 rounded-full bg-muted-foreground/30" />
                 <span className="size-2 rounded-full bg-muted-foreground/30" />
               </span>
-              <span className="flex min-w-0 flex-1 items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-[10px] text-muted-foreground">
+              <span className="flex min-w-0 flex-1 items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-3xs text-muted-foreground">
                 <GlobeIcon className="size-3 shrink-0" />
                 <span className="truncate">travel · goa flights</span>
               </span>
             </div>
-            <ul className="space-y-1 px-3 py-2.5 text-[11px]">
+            <ul className="space-y-1 px-3 py-2.5 text-2xs">
               <li className="flex items-center gap-2">
-                <PlaneIcon className="size-3.5 shrink-0 text-sky-500 dark:text-sky-300" />
+                <PlaneIcon className="size-3.5 shrink-0 text-tour-accent dark:text-tour-accent-dark" />
                 <span className="min-w-0 flex-1 truncate text-foreground">
                   Dec 12 · Nonstop · 2h 10m
                 </span>
                 <span className="shrink-0 font-semibold text-foreground">₹4,999</span>
               </li>
               <li className="flex items-center gap-2">
-                <PlaneIcon className="size-3.5 shrink-0 text-sky-500 dark:text-sky-300" />
+                <PlaneIcon className="size-3.5 shrink-0 text-tour-accent dark:text-tour-accent-dark" />
                 <span className="min-w-0 flex-1 truncate text-foreground">
                   Dec 13 · 1 stop · 4h 05m
                 </span>
@@ -225,18 +225,18 @@ function TourVisual({ slide }: { readonly slide: number }) {
               </li>
             </ul>
           </div>
-          <span className="mt-2.5 inline-flex rounded-full bg-primary px-3 py-1 text-[11px] font-semibold text-primary-foreground">
+          <span className="mt-2.5 inline-flex rounded-full bg-primary px-3 py-1 text-2xs font-semibold text-primary-foreground">
             Approve to book
           </span>
         </div>
       ) : (
         <div className="flex flex-wrap items-center justify-center gap-2" aria-hidden>
           <span className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-card/80 px-3 py-1.5 text-xs font-medium text-foreground shadow-sm">
-            <span className="size-1.5 rounded-full bg-emerald-500" />
+            <span className="size-1.5 rounded-full bg-tour-ready" />
             This computer · Ready
           </span>
           <span className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-card/80 px-3 py-1.5 text-xs font-medium text-foreground shadow-sm">
-            <SparklesIcon className="size-3.5 text-sky-500 dark:text-sky-300" />
+            <SparklesIcon className="size-3.5 text-tour-accent dark:text-tour-accent-dark" />
             Free models · On
           </span>
         </div>
@@ -258,17 +258,19 @@ function TourBody({ slide }: { readonly slide: number }) {
         </p>
         <ul className="mx-auto mt-6 max-w-md space-y-5 text-left">
           <TourFeature
-            icon={<MessageCircleIcon className="size-5 text-sky-500 dark:text-sky-300" />}
+            icon={
+              <MessageCircleIcon className="size-5 text-tour-accent dark:text-tour-accent-dark" />
+            }
             title="Tell it"
             description="Ask in plain words — like finding the cheapest flight."
           />
           <TourFeature
-            icon={<GlobeIcon className="size-5 text-sky-500 dark:text-sky-300" />}
+            icon={<GlobeIcon className="size-5 text-tour-accent dark:text-tour-accent-dark" />}
             title="Watch it browse"
             description="Doer searches pages and compares options for you."
           />
           <TourFeature
-            icon={<HistoryIcon className="size-5 text-sky-500 dark:text-sky-300" />}
+            icon={<HistoryIcon className="size-5 text-tour-accent dark:text-tour-accent-dark" />}
             title="Approve, then undo anytime"
             description="It acts only when you approve. Undo any step in History."
           />
@@ -296,22 +298,22 @@ function TourBody({ slide }: { readonly slide: number }) {
       </p>
       <ul className="mx-auto mt-6 max-w-md space-y-5 text-left">
         <TourFeature
-          icon={<SparklesIcon className="size-5 text-sky-500 dark:text-sky-300" />}
+          icon={<SparklesIcon className="size-5 text-tour-accent dark:text-tour-accent-dark" />}
           title="Do everyday tasks"
           description="Errands, writing, paperwork, schedules — describe it and Doer does the steps."
         />
         <TourFeature
-          icon={<FolderOpenIcon className="size-5 text-sky-500 dark:text-sky-300" />}
+          icon={<FolderOpenIcon className="size-5 text-tour-accent dark:text-tour-accent-dark" />}
           title="Work in your spaces"
           description="Point Doer at the folders it may use. Free models are already on."
         />
         <TourFeature
-          icon={<SendIcon className="size-5 text-sky-500 dark:text-sky-300" />}
+          icon={<SendIcon className="size-5 text-tour-accent dark:text-tour-accent-dark" />}
           title="Just ask"
           description="If you can describe it, Doer can probably do it. Detailed, creative prompts get the best results."
         />
         <TourFeature
-          icon={<GlobeIcon className="size-5 text-sky-500 dark:text-sky-300" />}
+          icon={<GlobeIcon className="size-5 text-tour-accent dark:text-tour-accent-dark" />}
           title="Files, pages and outputs"
           description="Attach files, mention them with @, and get pages you can share."
         />

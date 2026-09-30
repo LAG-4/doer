@@ -44,14 +44,14 @@ export function SpreadsheetGridEditor({
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {showFormulaBar ? (
         <div className="flex h-9 min-h-9 shrink-0 items-center gap-2 border-b border-border/60 px-3">
-          <span className="shrink-0 text-[11px] font-medium text-muted-foreground">fx</span>
+          <span className="shrink-0 text-2xs font-medium text-muted-foreground">fx</span>
           {selected === null ? (
             <span className="truncate text-xs text-muted-foreground">
               Select a cell to see its formula
             </span>
           ) : (
             <>
-              <span className="shrink-0 text-[11px] text-muted-foreground">{selectedRef}</span>
+              <span className="shrink-0 text-2xs text-muted-foreground">{selectedRef}</span>
               <input
                 value={selectedRaw}
                 onChange={(event) => onCellChange?.(selected.row, selected.col, event.target.value)}
@@ -69,14 +69,14 @@ export function SpreadsheetGridEditor({
             <tr>
               {/* Sticky headers need an opaque background: the theme's muted
                   tint is translucent, so scrolled data bleeds through it. */}
-              <th className="sticky left-0 w-10 min-w-10 border-r border-b border-border/60 bg-background px-1 py-1 text-center text-[11px] font-medium text-muted-foreground">
+              <th className="sticky left-0 w-10 min-w-10 border-r border-b border-border/60 bg-background px-1 py-1 text-center text-2xs font-medium text-muted-foreground">
                 <span className="sr-only">Row</span>
               </th>
               {columns.map((colIndex) => (
                 <th
                   key={columnIndexToLetters(colIndex)}
                   scope="col"
-                  className="min-w-28 border-r border-b border-border/60 bg-background px-2 py-1 text-center text-[11px] font-medium text-muted-foreground"
+                  className="min-w-28 border-r border-b border-border/60 bg-background px-2 py-1 text-center text-2xs font-medium text-muted-foreground"
                 >
                   {columnIndexToLetters(colIndex)}
                 </th>
@@ -93,7 +93,7 @@ export function SpreadsheetGridEditor({
               <tr key={rowIndex} className="group/row">
                 <th
                   scope="row"
-                  className="sticky left-0 border-r border-b border-border/60 bg-background px-1 py-0.5 text-center text-[11px] font-medium text-muted-foreground"
+                  className="sticky left-0 border-r border-b border-border/60 bg-background px-1 py-0.5 text-center text-2xs font-medium text-muted-foreground"
                 >
                   {rowIndex + 1}
                 </th>

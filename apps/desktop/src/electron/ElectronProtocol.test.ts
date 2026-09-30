@@ -45,7 +45,7 @@ describe("ElectronProtocol", () => {
         clerkFrontendApiHostname: undefined,
       });
       const request = (pathname: string, init?: RequestInit) =>
-        Effect.promise(() => handler!(new Request(`t3code://app${pathname}`, init)));
+        Effect.promise(() => handler!(new Request(`doer://app${pathname}`, init)));
 
       // SPA routes fall back to index.html, including ones containing dots.
       const page = yield* request("/settings/connections");
@@ -88,11 +88,11 @@ describe("ElectronProtocol", () => {
 
           const response = yield* Effect.promise(() =>
             handler!(
-              new Request("t3code-dev://app/api/health?verbose=1", {
+              new Request("doer-dev://app/api/health?verbose=1", {
                 headers: {
                   accept: "application/json",
-                  origin: "t3code-dev://app",
-                  referer: "t3code-dev://app/",
+                  origin: "doer-dev://app",
+                  referer: "doer-dev://app/",
                   "sec-fetch-site": "same-origin",
                 },
               }),
@@ -105,7 +105,7 @@ describe("ElectronProtocol", () => {
           );
           assert.include(
             response.headers.get("content-security-policy") ?? "",
-            "connect-src 'self' http: https: ws: wss:",
+            "connect-src 'self' blob: http: https: ws: wss:",
           );
           assert.include(
             response.headers.get("content-security-policy") ?? "",
@@ -147,7 +147,7 @@ describe("ElectronProtocol", () => {
             targetOrigin: new URL("http://127.0.0.1:3773/"),
             clerkFrontendApiHostname: undefined,
           });
-          return yield* Effect.promise(() => handler!(new Request("t3code://other/")));
+          return yield* Effect.promise(() => handler!(new Request("doer://other/")));
         }),
       );
 
@@ -174,7 +174,7 @@ describe("ElectronProtocol", () => {
             targetOrigin: new URL("http://127.0.0.1:5733/"),
             clerkFrontendApiHostname: undefined,
           });
-          return yield* Effect.promise(() => handler!(new Request("t3code-dev://app/")));
+          return yield* Effect.promise(() => handler!(new Request("doer-dev://app/")));
         }),
       );
 
@@ -255,7 +255,14 @@ describe("ElectronProtocol", () => {
       "https://clerk.t3.codes",
       "https://challenges.cloudflare.com",
     ]);
-    assert.deepEqual(directives["connect-src"], ["'self'", "http:", "https:", "ws:", "wss:"]);
+    assert.deepEqual(directives["connect-src"], [
+      "'self'",
+      "blob:",
+      "http:",
+      "https:",
+      "ws:",
+      "wss:",
+    ]);
     assert.deepEqual(directives["img-src"], [
       "'self'",
       "t3code:",

@@ -133,7 +133,6 @@ export function resolveOpenCodeServerPassword(
     : input.environment.OPENCODE_SERVER_PASSWORD;
 }
 
-const OPENCODE_SERVER_READY_PREFIXES = ["opencode server listening", "server listening"];
 const OPENCODE_SERVER_PASSWORD_PREFIX = "server password";
 const DEFAULT_OPENCODE_SERVER_TIMEOUT_MS = 30_000;
 const DEFAULT_HOSTNAME = "127.0.0.1";
@@ -773,13 +772,8 @@ export interface OpenCodeRuntimeShape {
 /** @internal */
 export function parseServerUrlFromOutput(output: string): string | null {
   for (const line of output.split("\n")) {
-    // v1 prints `opencode server listening on <url>`; v2 prints
-    // `server listening on <url>`. Accept either.
-    if (!OPENCODE_SERVER_READY_PREFIXES.some((prefix) => line.startsWith(prefix))) {
-      continue;
-    }
-    const match = line.match(/on\s+(https?:\/\/[^\s]+)/);
-    return match?.[1] ?? null;
+    const match = line.match(/server listening on\s+(https?:\/\/[^\s]+)/i);
+    if (match?.[1]) return match[1];
   }
   return null;
 }

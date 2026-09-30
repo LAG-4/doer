@@ -143,7 +143,7 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
           </span>
         </button>
         {(paused || done) && (
-          <span className="shrink-0 rounded border border-sidebar-border px-1 text-[10px] text-sidebar-muted-foreground">
+          <span className="shrink-0 rounded border border-sidebar-border px-1 text-3xs text-sidebar-muted-foreground">
             {done ? "Done" : "Paused"}
           </span>
         )}
@@ -228,7 +228,7 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
           </button>
         </span>
       </div>
-      <div className="flex items-center gap-2 pl-0.5 pt-0.5 text-[11px] text-sidebar-muted-foreground/70">
+      <div className="flex items-center gap-2 pl-0.5 pt-0.5 text-2xs text-sidebar-muted-foreground/70">
         {nextFire !== null && !done ? (
           <span>Next {nextFire}</span>
         ) : done ? (
@@ -254,7 +254,7 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
       {historyExpanded && runs.length > 0 && (
         <ul className="mt-1 flex flex-col gap-0.5 border-l border-sidebar-border pl-2">
           {runs.slice(0, 5).map((run) => (
-            <li key={run.occurrenceKey} className="flex items-center gap-2 text-[11px]">
+            <li key={run.occurrenceKey} className="flex items-center gap-2 text-2xs">
               <span className="text-sidebar-muted-foreground">
                 {describeRunOutcome(run)} ·{" "}
                 {new Date(run.firedAt).toLocaleString(undefined, {
@@ -343,7 +343,7 @@ export function ScheduledTasksSection() {
             </button>
           </div>
           <div className="flex flex-col gap-1.5 px-2 py-1">
-            <p className="text-[11px] leading-snug text-sidebar-muted-foreground/70">
+            <p className="text-2xs leading-snug text-sidebar-muted-foreground/70">
               No reminders yet — e.g. every Monday 9am: send me my bills summary.
             </p>
             <div className="flex flex-wrap gap-1">
@@ -352,7 +352,7 @@ export function ScheduledTasksSection() {
                   key={starter.label}
                   type="button"
                   onClick={() => startReminderFromChat(starter.text)}
-                  className="cursor-pointer rounded-full border border-sidebar-border px-2 py-0.5 text-[11px] text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                  className="cursor-pointer rounded-full border border-sidebar-border px-2 py-0.5 text-2xs text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
                 >
                   {starter.label}
                 </button>

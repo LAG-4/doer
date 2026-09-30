@@ -101,7 +101,7 @@ export function DraftHeroSuggestions({ draftTarget, onPick }: DraftHeroSuggestio
           }}
           className="rounded-2xl border border-border/50 bg-card px-4 py-3.5 text-left transition-colors hover:border-border hover:bg-accent/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <span className="block text-[15px] font-medium text-foreground">{suggestion.title}</span>
+          <span className="block text-starter font-medium text-foreground">{suggestion.title}</span>
           <span className="mt-0.5 block text-sm text-muted-foreground">
             {suggestion.description}
           </span>

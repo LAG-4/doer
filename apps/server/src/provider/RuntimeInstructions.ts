@@ -26,6 +26,7 @@ When you do multi-step work with tools, narrate as you go in simple everyday wor
 export function buildRuntimeInstructions(runtime: {
   readonly harness: string;
   readonly model?: string | undefined;
+  readonly modelName?: string | undefined;
   readonly reasoningEffort?: string | undefined;
   /**
    * Which t3-code tool families this turn actually has. Each block is omitted
@@ -37,8 +38,11 @@ export function buildRuntimeInstructions(runtime: {
 }): string {
   const harness = toSingleLine(runtime.harness);
   const model = toSingleLine(runtime.model ?? "");
+  const modelName = toSingleLine(runtime.modelName ?? "");
   const effort = toSingleLine(runtime.reasoningEffort ?? "");
-  const modelInfo = model && model !== "auto" && model !== "default" ? `, as ${model}` : "";
+  const modelLabel =
+    modelName && modelName !== model ? `${modelName} (model slug: ${model})` : model;
+  const modelInfo = model && model !== "auto" && model !== "default" ? `, as ${modelLabel}` : "";
   const effortInfo = effort ? ` with ${effort} reasoning effort` : "";
   const tools = buildT3ToolInstructions(
     runtime.t3Tools ?? { browser: false, device: false, computer: false },

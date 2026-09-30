@@ -17,7 +17,6 @@ const workspaceFiles = [
   "apps/desktop/package.json",
   "apps/web/package.json",
   "apps/mobile/package.json",
-  "apps/mobile/deps/react-native-nitro-markdown-0.5.0.tgz",
   "apps/mobile/modules/t3-markdown-text/package.json",
   "apps/mobile/modules/t3-review-diff/package.json",
   "apps/mobile/modules/t3-terminal/package.json",
@@ -190,7 +189,7 @@ const tempRoot = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-release-s
 try {
   NodeChildProcess.execFileSync(
     process.execPath,
-    ["--test", NodePath.resolve(repoRoot, ".github/scripts/relay-state-output.test.cjs")],
+    ["--test", NodePath.resolve(repoRoot, ".github/scripts/doer-release-workflow.test.cjs")],
     { stdio: "inherit" },
   );
 

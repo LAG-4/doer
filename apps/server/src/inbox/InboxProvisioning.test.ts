@@ -35,6 +35,7 @@ const unusedProjection = {
   getImportedAgentSessionSources: () => Effect.die("unused"),
   getThreadCheckpointContext: () => Effect.succeed(Option.none()),
   getFullThreadDiffContext: () => Effect.succeed(Option.none()),
+  listThreadsWithPullRequests: () => Effect.succeed([]),
   listActivitiesByKind: () => Effect.succeed([]),
   getThreadRuntimeContext: () => Effect.die("unused"),
   getTurnStartMessage: () => Effect.die("unused"),

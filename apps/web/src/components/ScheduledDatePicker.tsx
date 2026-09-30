@@ -131,18 +131,18 @@ export function ScheduledDatePicker(props: {
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         render={
-          <Button
-            id={props.id}
-            type="button"
-            variant="outline"
-            className="w-full justify-start font-normal"
-          >
+          <Button id={props.id} type="button" variant="outline" className="w-full justify-start">
             <span className="flex-1 truncate text-left">{formatTrigger(parts)}</span>
             <ChevronDownIcon className="size-4 opacity-60" />
           </Button>
         }
       />
-      <PopoverPopup side="bottom" align="start" className="w-[min(21rem,calc(100vw-1.5rem))] p-3">
+      <PopoverPopup
+        side="bottom"
+        align="start"
+        padding="compact"
+        className="w-[min(21rem,calc(100vw-1.5rem))]"
+      >
         <div className="flex items-center justify-between pb-2">
           <Button
             type="button"
