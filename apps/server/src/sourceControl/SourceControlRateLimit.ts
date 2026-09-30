@@ -13,9 +13,12 @@ import {
 const FALLBACK_COOLDOWN = Duration.seconds(30);
 const MAX_FALLBACK_COOLDOWN = Duration.minutes(15);
 
-export const CredentialScope = Context.Reference<string>("@lag4/doer-cli/sourceControl/CredentialScope", {
-  defaultValue: () => "",
-});
+export const CredentialScope = Context.Reference<string>(
+  "@lag4/doer-cli/sourceControl/CredentialScope",
+  {
+    defaultValue: () => "",
+  },
+);
 
 interface RateLimitKey {
   readonly provider: SourceControlProviderKind;
