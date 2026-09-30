@@ -451,7 +451,10 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
         version,
         status: "error",
         auth: { status: "unknown" },
-        message: failure.message,
+        message:
+          installHint !== undefined && managedDir !== undefined
+            ? "OpenCode setup could not finish. Check your internet connection, then try setup again in AI settings."
+            : failure.message,
       },
     });
   };

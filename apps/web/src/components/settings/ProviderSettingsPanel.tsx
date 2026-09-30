@@ -85,6 +85,7 @@ import { ProviderInstanceCard } from "./ProviderInstanceCard";
 import { UsageProviderSettings } from "./UsageProviderSettings";
 import { ProviderSetupSection, readAntigravityAuthMethod } from "./ProviderSetupSection";
 import { CodexSetupSection, CodexManagedRuntimeFields } from "./CodexSetupSection";
+import { CliSetupSection } from "./CliSetupSection";
 import { readCodexSetupMode } from "./CodexSetupSection.logic";
 import { DRIVER_OPTIONS, getDriverOption } from "./providerDriverMeta";
 import { searchableSetting } from "./settingsSearch";
@@ -963,9 +964,7 @@ export function EnvironmentProviderSettings({
               readOnly={readOnly}
               onEnable={() => updateProviderInstance(row, { ...row.instance, enabled: true })}
             />
-          ) : mode === "editor" &&
-            row.driver === "codex" &&
-            readCodexSetupMode(row.instance.config) === "managed" ? (
+          ) : mode === "editor" && row.driver === "codex" ? (
             <CodexSetupSection
               environmentId={environmentId}
               instanceId={row.instanceId}
@@ -986,6 +985,17 @@ export function EnvironmentProviderSettings({
                   },
                 })
               }
+            />
+          ) : mode === "editor" &&
+            ["opencode", "claudeAgent", "cursor", "grok"].includes(row.driver) ? (
+            <CliSetupSection
+              environmentId={environmentId}
+              environmentLabel={environmentLabel}
+              instanceId={row.instanceId}
+              provider={liveProvider}
+              displayName={liveProvider?.displayName ?? driverOption?.label ?? row.driver}
+              enabled={resolveProviderInstanceEnabled(row.instance)}
+              readOnly={readOnly}
             />
           ) : null
         }

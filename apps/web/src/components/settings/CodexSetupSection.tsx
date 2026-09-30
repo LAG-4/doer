@@ -122,7 +122,26 @@ export function CodexSetupSection(props: CodexSetupSectionProps) {
           ) : null
         }
       />
-    ) : props.mode === "existing" ? null : props.provider?.setup === undefined ? (
+    ) : props.mode === "existing" ? (
+      !props.provider?.installed ? (
+        <SettingsRow
+          title="ChatGPT setup"
+          description="Doer can install Codex and connect your ChatGPT account."
+          control={
+            <ChatGptConnectionButton
+              size="sm"
+              disabled={props.readOnly}
+              onClick={() => {
+                setRequested(true);
+                props.onModeChange("managed");
+              }}
+            >
+              Set up with ChatGPT
+            </ChatGptConnectionButton>
+          }
+        />
+      ) : null
+    ) : props.provider?.setup === undefined ? (
       props.presentation === "onboarding" ? (
         <CodexWelcomeCard
           title={props.displayName || props.provider?.displayName || "Codex"}

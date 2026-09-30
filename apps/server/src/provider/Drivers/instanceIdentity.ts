@@ -22,6 +22,9 @@ export const withInstanceIdentity =
     ...snapshot,
     instanceId: input.instanceId,
     driver: input.driverKind,
+    ...(["opencode", "claudeAgent", "cursor", "grok"].includes(input.driverKind)
+      ? { setup: { canAuthenticate: false, canInstall: true } }
+      : {}),
     ...(input.displayName ? { displayName: input.displayName } : {}),
     ...(input.accentColor ? { accentColor: input.accentColor } : {}),
     continuation: { groupKey: input.continuationGroupKey },
