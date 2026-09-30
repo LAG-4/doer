@@ -23,6 +23,7 @@ import { useClientSettings } from "../hooks/useSettings";
 import { cn, newAutomationId, newThreadId } from "../lib/utils";
 import { findInboxProjectRef } from "../inboxProject.logic";
 import { useComposerHandleContext } from "../composerHandleContext";
+import { buildReminderSchedule, reminderTimezone } from "../scheduledTaskForm";
 import { getCustomModelOptionsByInstance } from "../modelSelection";
 import {
   applyProviderInstanceSettings,
@@ -88,14 +89,6 @@ const SCHEDULE_KINDS: ReadonlyArray<{ value: ScheduleKind; label: string }> = [
 
 type ScheduleKind = "once" | "daily" | "weekly";
 
-function localZone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone;
-  } catch {
-    return "UTC";
-  }
-}
-
 function toLocalDateTimeInputValue(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
@@ -106,49 +99,6 @@ function defaultOnceAt(): string {
   const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
   tomorrow.setHours(9, 0, 0, 0);
   return tomorrow.toISOString();
-}
-
-function isValidTimezone(timezone: string): boolean {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format(new Date(0));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function buildSchedule(input: {
-  kind: ScheduleKind;
-  onceAt: string;
-  time: string;
-  weekday: number;
-  timezone: string;
-}): { schedule: AutomationSchedule | null; error: string | null } {
-  const timezone = input.timezone.trim();
-  if (timezone.length === 0) return { schedule: null, error: "Timezone is required." };
-  if (!isValidTimezone(timezone)) {
-    return { schedule: null, error: `Timezone '${input.timezone}' is not a valid IANA timezone.` };
-  }
-  if (input.kind === "once") {
-    if (input.onceAt.length === 0) return { schedule: null, error: "Pick a date and time." };
-    const parsed = Date.parse(input.onceAt);
-    if (!Number.isFinite(parsed)) return { schedule: null, error: "Pick a valid date and time." };
-    const at = new Date(parsed).toISOString();
-    if (!(parsed > Date.now())) {
-      return { schedule: null, error: "A one-off task must run in the future." };
-    }
-    return { schedule: { kind: "once", at }, error: null };
-  }
-  if (!/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(input.time)) {
-    return { schedule: null, error: "Pick a valid time (HH:MM)." };
-  }
-  if (input.kind === "daily") {
-    return { schedule: { kind: "daily", time: input.time, timezone }, error: null };
-  }
-  return {
-    schedule: { kind: "weekly", time: input.time, weekday: input.weekday, timezone },
-    error: null,
-  };
 }
 
 export function ScheduledTaskEditor(props: {
@@ -219,7 +169,7 @@ function ScheduledTaskDescribeForm(props: { readonly close: () => void }) {
     const base = /remind\s+me/i.test(description)
       ? description
       : `I want a reminder: ${description}`;
-    const request = `${base}\n\nShow me what you'll set up and confirm with me before creating it.`;
+    const request = `${base}\n\nMy local timezone is ${reminderTimezone()}; use it unless I specified another timezone. Show me what you'll set up and confirm with me before creating it.`;
     const handle = composerHandleRef?.current;
     if (!handle) {
       showManualForm();
@@ -231,11 +181,9 @@ function ScheduledTaskDescribeForm(props: { readonly close: () => void }) {
     }
     setDescribeText("");
     close();
-    // Send straight away — no extra tap. On failure (busy, validation) the
-    // text stays in the composer for the user to send by hand.
-    if (!handle.submit()) {
-      handle.focusAtEnd();
-    }
+    // Review in chat before sending: appending must never submit an existing
+    // draft or its attachments without the user seeing the combined message.
+    handle.focusAtEnd();
   };
 
   return (
@@ -243,8 +191,8 @@ function ScheduledTaskDescribeForm(props: { readonly close: () => void }) {
       <DialogHeader>
         <DialogTitle>New reminder</DialogTitle>
         <DialogDescription>
-          Describe what you want in plain words. I&apos;ll set it up and show you before creating
-          anything.
+          Describe what you want, then continue in chat. Send the request there to review the timing
+          with your assistant before it creates anything.
         </DialogDescription>
       </DialogHeader>
       <div className="flex flex-col gap-4 px-4 py-2">
@@ -267,7 +215,7 @@ function ScheduledTaskDescribeForm(props: { readonly close: () => void }) {
           Cancel
         </Button>
         <Button onClick={continueWithAi} disabled={!canContinue}>
-          Continue
+          Continue in chat
         </Button>
       </DialogFooter>
     </>
@@ -294,7 +242,7 @@ function initialFormState(
       onceAt: defaultOnceAt(),
       time: "09:00",
       weekday: 1,
-      timezone: localZone(),
+      timezone: reminderTimezone(),
     };
   }
   const schedule = editingAutomation.schedule;
@@ -305,7 +253,7 @@ function initialFormState(
     onceAt: schedule.kind === "once" ? toLocalDateTimeInputValue(schedule.at) : defaultOnceAt(),
     time: schedule.kind === "once" ? "09:00" : schedule.time,
     weekday: schedule.kind === "weekly" ? schedule.weekday : 1,
-    timezone: schedule.kind === "once" ? localZone() : schedule.timezone,
+    timezone: schedule.kind === "once" ? reminderTimezone() : schedule.timezone,
   };
 }
 
@@ -409,6 +357,17 @@ function ScheduledTaskEditorForm(props: {
 
   const save = async () => {
     if (saving) return;
+    if (
+      editing !== null &&
+      (editingAutomation === null ||
+        editingAutomation.deletedAt !== null ||
+        editingAutomation.state === "completed")
+    ) {
+      setFormError(
+        "This reminder is no longer available to edit. Close this window and check the Reminders list.",
+      );
+      return;
+    }
     const trimmedTitle = title.trim();
     const trimmedPrompt = prompt.trim();
     if (trimmedTitle.length === 0) {
@@ -419,7 +378,15 @@ function ScheduledTaskEditorForm(props: {
       setFormError("Say what it should do each time.");
       return;
     }
-    const { schedule, error } = buildSchedule({ kind, onceAt, time, weekday, timezone });
+    const { schedule, error } = buildReminderSchedule({
+      kind,
+      onceAt,
+      time,
+      weekday,
+      timezone,
+      now: Date.now(),
+      previousSchedule: editingAutomation?.schedule,
+    });
     if (error !== null || schedule === null) {
       setFormError(error ?? "Pick a valid schedule.");
       return;
@@ -507,8 +474,9 @@ function ScheduledTaskEditorForm(props: {
       <DialogHeader>
         <DialogTitle>{editing !== null ? "Edit reminder" : "New reminder"}</DialogTitle>
         <DialogDescription>
-          Say what you want in plain words. It runs by itself — past results stay in History, and
-          you can undo anytime.
+          {editingAutomation?.dedicatedThread === false
+            ? "Runs in its existing task with that task's permissions. It may wait for your approval."
+            : "Runs in a separate task with permission to work without waiting for you. Results stay in that task."}
         </DialogDescription>
       </DialogHeader>
       <div className="flex flex-col gap-4 px-4 py-2">
@@ -530,6 +498,10 @@ function ScheduledTaskEditorForm(props: {
             placeholder="e.g. Look in this Space and list unpaid bills…"
             rows={4}
           />
+          <p className="text-xs text-muted-foreground">
+            Include the files or sources to use and the result you want. A separate task starts
+            without this conversation.
+          </p>
         </div>
         <div className="flex flex-col gap-1.5">
           <Label id="scheduled-task-repeats-label">Repeats</Label>
@@ -607,12 +579,16 @@ function ScheduledTaskEditorForm(props: {
               />
             </div>
             <p className="text-xs text-muted-foreground">
-              {time} your time ({timezoneCity}) — daylight saving included.
+              {time} in {timezoneCity} ({timezone}) — daylight saving included.
             </p>
           </div>
         )}
         <p className="text-xs text-muted-foreground">
-          Runs on: This computer — it needs to be on at that time.
+          {editing !== null && editing.environmentId !== primaryEnvironmentId
+            ? "Runs on the computer hosting this task."
+            : "Runs on: This computer."}{" "}
+          Keep it on with Doer running. After downtime, a missed reminder runs once when Doer starts
+          again.
         </p>
         {editing === null || kind !== "once" ? (
           <details className="text-xs text-muted-foreground">

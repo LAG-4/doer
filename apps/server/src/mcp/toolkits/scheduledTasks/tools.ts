@@ -3,9 +3,13 @@ import {
   AutomationRunOutcome,
   AutomationSchedule,
   AutomationState,
+  AutomationTimeOfDay,
+  AutomationTimezone,
+  AutomationWeekday,
   IsoDateTime,
   McpCapabilityUnavailableError,
   ProjectId,
+  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   ThreadId,
   TrimmedNonEmptyString,
 } from "@t3tools/contracts";
@@ -133,23 +137,23 @@ const ScheduledTaskScheduleInput = Schema.Union([
   }),
   Schema.Struct({
     kind: Schema.Literal("daily"),
-    time: TrimmedNonEmptyString.annotate({
+    time: AutomationTimeOfDay.annotate({
       description: "Wall-clock time as HH:MM (24h), for example 09:00.",
     }),
-    timezone: TrimmedNonEmptyString.annotate({
+    timezone: AutomationTimezone.annotate({
       description:
         "IANA timezone, for example America/New_York. The task fires at that wall-clock time, daylight saving included.",
     }),
   }),
   Schema.Struct({
     kind: Schema.Literal("weekly"),
-    time: TrimmedNonEmptyString.annotate({
+    time: AutomationTimeOfDay.annotate({
       description: "Wall-clock time as HH:MM (24h), for example 09:00.",
     }),
-    weekday: Schema.Int.annotate({
+    weekday: AutomationWeekday.annotate({
       description: "Weekday, 0=Sunday through 6=Saturday.",
     }),
-    timezone: TrimmedNonEmptyString.annotate({
+    timezone: AutomationTimezone.annotate({
       description: "IANA timezone, for example America/New_York.",
     }),
   }),
@@ -159,15 +163,17 @@ const CreateScheduledTaskInput = Schema.Struct({
   title: TrimmedNonEmptyString.annotate({
     description: "Short title shown in the Reminders list, for example 'Morning brief'.",
   }),
-  prompt: TrimmedNonEmptyString.annotate({
+  prompt: TrimmedNonEmptyString.check(
+    Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_INPUT_CHARS),
+  ).annotate({
     description:
-      "What the agent does on every firing, written self-contained: the run starts a fresh turn with no memory beyond the task history.",
+      "Self-contained instructions for the work to do now on each run. Include the relevant folder/file paths, sources, output and success criteria. A separate task does not inherit this conversation. Do not store only 'remind me' or a request to create a schedule.",
   }),
   schedule: ScheduledTaskScheduleInput,
   projectId: Schema.optional(
     ProjectId.annotate({
       description:
-        "Folder the reminder lives in. Leave unset for general reminders — they live in the default folder. Pass a specific id only when the reminder belongs to a particular folder; find that folder first.",
+        "Space the reminder lives in. Omit to use this task's Space. Another Space requires thread:'new'; find the Space first.",
     }),
   ),
   thread: Schema.optional(
@@ -183,7 +189,9 @@ const UpdateScheduledTaskInput = Schema.Struct({
     description: "Task id from list_scheduled_tasks or create_scheduled_task.",
   }),
   title: Schema.optional(TrimmedNonEmptyString),
-  prompt: Schema.optional(TrimmedNonEmptyString),
+  prompt: Schema.optional(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_INPUT_CHARS)),
+  ),
   schedule: Schema.optional(ScheduledTaskScheduleInput),
 });
 
@@ -198,6 +206,8 @@ const ScheduledTaskSummary = Schema.Struct({
   projectId: ProjectId,
   threadId: ThreadId,
   title: TrimmedNonEmptyString,
+  prompt: TrimmedNonEmptyString,
+  dedicatedThread: Schema.Boolean,
   state: AutomationState,
   schedule: AutomationSchedule,
   nextFireAt: Schema.NullOr(IsoDateTime),
@@ -223,8 +233,8 @@ const CreateScheduledTaskTool = Tool.make("create_scheduled_task", {
 
 const ListScheduledTasksTool = Tool.make("list_scheduled_tasks", {
   description:
-    "List this task's Space's reminders with their state, schedule, next run, and run counts. Call it before pausing, resuming, editing, stopping, or running a reminder you did not just create, so you use a live id.",
-  success: Schema.Struct({ tasks: Schema.Array(ScheduledTaskSummary) }),
+    "List this task's Space's reminders with their saved prompts, state, schedule, next run, and recent run counts. Includes the current UTC instant for relative times; it does not identify the user's timezone. Call it before creating a potentially duplicate reminder or managing an existing one. Run history records starts, not successful completion; open the task to check results.",
+  success: Schema.Struct({ currentTime: IsoDateTime, tasks: Schema.Array(ScheduledTaskSummary) }),
   failure: ScheduledTaskToolError,
   dependencies,
 })

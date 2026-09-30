@@ -12,7 +12,7 @@ import {
   PauseIcon,
   Trash2Icon,
 } from "lucide-react";
-import { memo, useMemo, useState } from "react";
+import { memo, useMemo, useRef, useState } from "react";
 import { useRouter } from "@tanstack/react-router";
 
 import { useLocalStorage } from "../hooks/useLocalStorage";
@@ -20,6 +20,8 @@ import { useComposerHandleContext } from "../composerHandleContext";
 import { cn } from "../lib/utils";
 import { buildThreadRouteParams } from "../threadRoutes";
 import { automationEnvironment } from "../state/automations";
+import { describeReminderSchedule, reminderTimezone } from "../scheduledTaskForm";
+import { requestConfirmDialog } from "../confirmDialog";
 import { useAutomations } from "../state/automations";
 import { useProjects } from "../state/entities";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -27,8 +29,6 @@ import { toastManager } from "./ui/toast";
 import { ScheduledTaskEditor, useScheduledTaskEditorStore } from "./ScheduledTaskEditor";
 
 const SECTION_EXPANDED_KEY = "t3code:sidebar:scheduled-expanded";
-
-const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 /**
  * One-tap starters for the empty state. They write plain words into the chat
@@ -51,16 +51,7 @@ const REMINDER_STARTERS: ReadonlyArray<{ label: string; text: string }> = [
 ];
 
 export function describeAutomationSchedule(schedule: AutomationSchedule): string {
-  if (schedule.kind === "once") {
-    const date = new Date(schedule.at);
-    return Number.isNaN(date.getTime())
-      ? "Once"
-      : `Once · ${date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`;
-  }
-  if (schedule.kind === "daily") {
-    return `Daily · ${schedule.time}`;
-  }
-  return `${WEEKDAY_SHORT[schedule.weekday] ?? ""} · ${schedule.time}`;
+  return describeReminderSchedule(schedule);
 }
 
 function describeNextFire(automation: Automation): string | null {
@@ -76,9 +67,9 @@ function describeNextFire(automation: Automation): string | null {
 }
 
 function describeRunOutcome(run: AutomationRun): string {
-  if (run.outcome === "manual") return "Manual run";
-  if (run.outcome === "missed-then-ran") return "Ran late";
-  return "Ran";
+  if (run.outcome === "manual") return "Requested manually";
+  if (run.outcome === "missed-then-ran") return "Requested late";
+  return "Run requested";
 }
 
 const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
@@ -94,25 +85,35 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
   const runAutomationNow = useAtomCommand(automationEnvironment.runNow, { reportFailure: false });
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
+  const pending = useRef(false);
 
   const nextFire = describeNextFire(automation);
   const runs = useMemo(() => [...automation.runs].toReversed(), [automation.runs]);
 
   const runCommand = async (
     label: string,
-    effect: Promise<AtomCommandResult<unknown, unknown>>,
+    effect: () => Promise<AtomCommandResult<unknown, unknown>>,
     successTitle: string,
+    confirmMessage?: string,
   ) => {
-    if (busy) return;
+    if (pending.current) return;
+    pending.current = true;
     setBusy(true);
     try {
-      const result = await effect;
+      if (confirmMessage && !(await requestConfirmDialog(confirmMessage))) return;
+      const result = await effect();
       if (result._tag === "Failure") {
         toastManager.add({ type: "error", title: `${label} failed.` });
         return;
       }
       toastManager.add({ type: "success", title: successTitle });
+    } catch {
+      toastManager.add({
+        type: "error",
+        title: `${label} failed. Check the connection and try again.`,
+      });
     } finally {
+      pending.current = false;
       setBusy(false);
     }
   };
@@ -144,7 +145,7 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
         </button>
         {(paused || done) && (
           <span className="shrink-0 rounded border border-sidebar-border px-1 text-3xs text-sidebar-muted-foreground">
-            {done ? "Done" : "Paused"}
+            {done ? "No more runs" : "Paused"}
           </span>
         )}
         <span className="flex shrink-0 items-center gap-0.5">
@@ -156,15 +157,16 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
               onClick={() =>
                 runCommand(
                   paused ? "Resume" : "Pause",
-                  paused
-                    ? resumeAutomation({
-                        environmentId: automation.environmentId,
-                        input: { automationId: automation.id },
-                      })
-                    : pauseAutomation({
-                        environmentId: automation.environmentId,
-                        input: { automationId: automation.id },
-                      }),
+                  () =>
+                    paused
+                      ? resumeAutomation({
+                          environmentId: automation.environmentId,
+                          input: { automationId: automation.id },
+                        })
+                      : pauseAutomation({
+                          environmentId: automation.environmentId,
+                          input: { automationId: automation.id },
+                        }),
                   paused ? "Reminder resumed." : "Reminder paused.",
                 )
               }
@@ -181,11 +183,12 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
               onClick={() =>
                 runCommand(
                   "Run now",
-                  runAutomationNow({
-                    environmentId: automation.environmentId,
-                    input: { automationId: automation.id },
-                  }),
-                  "Running now. Results land in the task.",
+                  () =>
+                    runAutomationNow({
+                      environmentId: automation.environmentId,
+                      input: { automationId: automation.id },
+                    }),
+                  "Run requested. Open the task to follow its progress.",
                 )
               }
               className="cursor-pointer rounded p-1 text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground disabled:opacity-50"
@@ -197,6 +200,7 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
             <button
               type="button"
               aria-label={`Edit ${automation.title}`}
+              disabled={busy}
               onClick={() =>
                 openEdit({
                   environmentId: automation.environmentId,
@@ -215,11 +219,13 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
             onClick={() =>
               runCommand(
                 "Delete",
-                deleteAutomation({
-                  environmentId: automation.environmentId,
-                  input: { automationId: automation.id },
-                }),
-                "Reminder stopped. Past results stay in History.",
+                () =>
+                  deleteAutomation({
+                    environmentId: automation.environmentId,
+                    input: { automationId: automation.id },
+                  }),
+                "Reminder stopped. Its task and past results are kept.",
+                `Stop "${automation.title}"? It will not run again. Its task and past results will be kept. Work already started will continue.`,
               )
             }
             className="cursor-pointer rounded p-1 text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-destructive disabled:opacity-50"
@@ -232,7 +238,7 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
         {nextFire !== null && !done ? (
           <span>Next {nextFire}</span>
         ) : done ? (
-          <span>Finished its one run</span>
+          <span>One-time run requested · open task for results</span>
         ) : (
           <span>Not scheduled</span>
         )}
@@ -243,7 +249,7 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
             aria-expanded={historyExpanded}
             className="inline-flex cursor-pointer items-center gap-0.5 hover:text-sidebar-foreground"
           >
-            {runs.length} result{runs.length === 1 ? "" : "s"}
+            {runs.length} recent run{runs.length === 1 ? "" : "s"}
             <ChevronDownIcon
               aria-hidden
               className={cn("size-3 transition-transform", historyExpanded && "rotate-180")}
@@ -291,7 +297,10 @@ export function ScheduledTasksSection() {
   // is mounted to receive the text.
   const startReminderFromChat = (text: string) => {
     const inserted =
-      composerHandleRef?.current?.insertTextAtEnd(text, { ensureLeadingBoundary: true }) ?? false;
+      composerHandleRef?.current?.insertTextAtEnd(
+        `${text}\nMy local timezone is ${reminderTimezone()}.`,
+        { ensureLeadingBoundary: true },
+      ) ?? false;
     if (inserted) {
       composerHandleRef?.current?.focusAtEnd();
     } else {

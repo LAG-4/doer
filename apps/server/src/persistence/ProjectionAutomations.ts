@@ -116,8 +116,8 @@ export class ProjectionAutomationRepository extends Context.Service<
       input: ListDueProjectionAutomationsInput,
     ) => Effect.Effect<ReadonlyArray<ProjectionAutomation>, ProjectionRepositoryError>;
     /**
-     * Active rows with a recorded firing at or before the cutoff, oldest
-     * firing first. The scheduler sweep settles the ones whose run finished.
+     * Live dedicated reminders with a recorded firing before the cutoff.
+     * Includes finished one-offs and paused reminders whose run is still finishing.
      */
     readonly listSettleCandidates: (
       input: ListSettleCandidateProjectionAutomationsInput,
@@ -279,6 +279,7 @@ export const make = Effect.gen(function* () {
         deleted_at AS "deletedAt"
       FROM projection_automations
       WHERE state = 'active'
+        AND deleted_at IS NULL
         AND next_fire_at IS NOT NULL
         AND next_fire_at <= ${nowIso}
       ORDER BY next_fire_at ASC, automation_id ASC
@@ -306,9 +307,15 @@ export const make = Effect.gen(function* () {
         updated_at AS "updatedAt",
         deleted_at AS "deletedAt"
       FROM projection_automations
-      WHERE state = 'active'
+      WHERE deleted_at IS NULL
+        AND dedicated_thread = 1
         AND last_fired_at IS NOT NULL
         AND last_fired_at <= ${firedBeforeIso}
+        AND NOT EXISTS (
+          SELECT 1 FROM projection_threads AS thread
+          WHERE thread.thread_id = projection_automations.thread_id
+            AND (thread.deleted_at IS NOT NULL OR thread.settled_override = 'settled')
+        )
       ORDER BY last_fired_at ASC, automation_id ASC
       LIMIT ${limit}
     `,

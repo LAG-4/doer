@@ -121,6 +121,8 @@ export function ScheduledDatePicker(props: {
     props.onChange(
       toIso({ ...parts, year: date.getFullYear(), month: date.getMonth(), day: date.getDate() }),
     );
+    setViewYear(date.getFullYear());
+    setViewMonth(date.getMonth());
   };
 
   const setTime = (hour24: number, minute: number) => {
@@ -185,6 +187,13 @@ export function ScheduledDatePicker(props: {
                 key={`${viewYear}-${viewMonth}-${cell.monthOffset}-${cell.day}`}
                 type="button"
                 disabled={disabled}
+                aria-label={date.toLocaleDateString(undefined, {
+                  weekday: "long",
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                })}
+                aria-pressed={selected}
                 onClick={() => pickDay(cell.day, cell.monthOffset)}
                 className={cn(
                   "cursor-pointer rounded-md py-1.5 text-sm hover:bg-accent disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent",

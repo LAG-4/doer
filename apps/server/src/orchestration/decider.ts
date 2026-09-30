@@ -50,6 +50,7 @@ import {
 import { projectEvent } from "./projector.ts";
 import { threadHasQueuedTurnStart } from "./ThreadSettlementPolicy.ts";
 import { computeNextFireAt, validateAutomationSchedule } from "./AutomationSchedule.ts";
+import { buildAutomationRunPrompt } from "./AutomationRunPrompt.ts";
 
 const monogramSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
@@ -1684,6 +1685,28 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       return yield* decideCommandSequence({
         readModel,
         commands: [
+          ...(automation.dedicatedThread !== false && runThread.runtimeMode !== "full-access"
+            ? [
+                {
+                  type: "thread.runtime-mode.set" as const,
+                  commandId: command.commandId,
+                  threadId: automation.threadId,
+                  runtimeMode: "full-access" as const,
+                  createdAt: occurredAt,
+                },
+              ]
+            : []),
+          ...(automation.dedicatedThread !== false && runThread.interactionMode !== "default"
+            ? [
+                {
+                  type: "thread.interaction-mode.set" as const,
+                  commandId: command.commandId,
+                  threadId: automation.threadId,
+                  interactionMode: "default" as const,
+                  createdAt: occurredAt,
+                },
+              ]
+            : []),
           {
             type: "thread.turn.start",
             commandId: command.commandId,
@@ -1691,7 +1714,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             message: {
               messageId: MessageId.make(`automation-run:${command.commandId}`),
               role: "user",
-              text: automation.prompt,
+              text: buildAutomationRunPrompt({
+                automation,
+                firedAt: occurredAt,
+                occurrenceKey: `manual:${command.commandId}`,
+                manual: true,
+              }),
               attachments: [],
             },
             runtimeMode: runThread.runtimeMode,

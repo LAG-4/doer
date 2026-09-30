@@ -92,6 +92,7 @@ function makeAutomation(id: string, projectId: ProjectId = PROJECT_ID): Automati
 }
 
 interface HarnessOptions {
+  readonly thread?: Partial<OrchestrationThreadShell>;
   readonly automations?: ReadonlyArray<Automation>;
   readonly reject?: (command: OrchestrationCommand) => OrchestrationCommandInvariantError | null;
 }
@@ -101,7 +102,7 @@ const makeHarness = Effect.fn("makeScheduledTasksToolkitHarness")(function* (
 ) {
   const commands = yield* Ref.make<ReadonlyArray<OrchestrationCommand>>([]);
   const automations = new Map((options.automations ?? []).map((row) => [row.id, row]));
-  const thread = makeThread();
+  const thread = { ...makeThread(), ...options.thread };
   const dispatch: OrchestrationEngineShape["dispatch"] = (command) =>
     Effect.gen(function* () {
       const rejection = options.reject?.(command) ?? null;
@@ -115,6 +116,7 @@ const makeHarness = Effect.fn("makeScheduledTasksToolkitHarness")(function* (
           title: command.title,
           prompt: command.prompt,
           schedule: command.schedule,
+          dedicatedThread: command.dedicatedThread ?? true,
         });
       }
       return { sequence: 1 };
@@ -177,7 +179,7 @@ describe("scheduled tasks toolkit handlers", () => {
 
   it.effect("creates inside the calling thread by default, with no extra chat", () =>
     Effect.gen(function* () {
-      const harness = yield* makeHarness();
+      const harness = yield* makeHarness({ thread: { interactionMode: "plan" } });
       const summary = yield* harness.call("create_scheduled_task", {
         title: "Morning brief",
         prompt: "Summarize overnight activity.",
@@ -201,7 +203,7 @@ describe("scheduled tasks toolkit handlers", () => {
 
   it.effect("mints a full-access thread when asked for a new one", () =>
     Effect.gen(function* () {
-      const harness = yield* makeHarness();
+      const harness = yield* makeHarness({ thread: { interactionMode: "plan" } });
       const summary = yield* harness.call("create_scheduled_task", {
         title: "Morning brief",
         prompt: "Summarize overnight activity.",
@@ -217,6 +219,7 @@ describe("scheduled tasks toolkit handlers", () => {
       const create = dispatched[0];
       if (create?.type === "thread.create") {
         expect(create.runtimeMode).toBe("full-access");
+        expect(create.interactionMode).toBe("default");
       } else {
         expect.unreachable("expected thread.create first");
       }
@@ -239,6 +242,29 @@ describe("scheduled tasks toolkit handlers", () => {
       });
       const result = yield* harness.call("list_scheduled_tasks", {});
       expect(result.tasks.map((task) => task.automationId)).toEqual(["automation-1"]);
+      expect(result.tasks[0]?.prompt).toBe("Do the thing.");
+      expect(result.currentTime).toBe("1970-01-01T00:00:00.000Z");
+    }),
+  );
+
+  it.effect("rejects invalid schedules before creating an empty dedicated task", () =>
+    Effect.gen(function* () {
+      for (const schedule of [
+        { kind: "daily" as const, time: "09:00", timezone: "Not/AZone" },
+        { kind: "once" as const, at: "1969-12-31T09:00:00.000Z" },
+      ]) {
+        const harness = yield* makeHarness();
+        const error = yield* harness
+          .call("create_scheduled_task", {
+            title: "Invalid reminder",
+            prompt: "Read my bills.",
+            schedule,
+            thread: "new",
+          })
+          .pipe(Effect.flip);
+        expect(error._tag).toBe("ScheduledTaskCreateFailedError");
+        expect(yield* Ref.get(harness.commands)).toEqual([]);
+      }
     }),
   );
 

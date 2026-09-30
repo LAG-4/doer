@@ -165,7 +165,12 @@ export function computeNextFireAt(schedule: AutomationSchedule, afterIso: string
 
   if (!isValidAutomationTimezone(schedule.timezone)) return null;
   const { hour, minute } = parseTimeOfDay(schedule.time);
-  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return null;
+  if (!/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(schedule.time)) return null;
+  if (
+    schedule.kind === "weekly" &&
+    (!Number.isInteger(schedule.weekday) || schedule.weekday < 0 || schedule.weekday > 6)
+  )
+    return null;
 
   const start = localDateTime(afterMs, schedule.timezone);
   for (let offset = 0; offset < 370; offset += 1) {
@@ -196,6 +201,15 @@ export function validateAutomationSchedule(input: {
   }
   if (!isValidAutomationTimezone(schedule.timezone)) {
     return `automation timezone '${schedule.timezone}' is not a valid IANA timezone`;
+  }
+  if (!/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(schedule.time)) {
+    return "automation time must be HH:MM in 24-hour time";
+  }
+  if (
+    schedule.kind === "weekly" &&
+    (!Number.isInteger(schedule.weekday) || schedule.weekday < 0 || schedule.weekday > 6)
+  ) {
+    return "automation weekday must be 0 (Sunday) through 6 (Saturday)";
   }
   return null;
 }
