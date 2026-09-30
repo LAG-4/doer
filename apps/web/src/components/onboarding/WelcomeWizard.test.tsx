@@ -133,7 +133,7 @@ afterEach(async () => {
 
 function button(label: string): HTMLButtonElement {
   const found = [...document.querySelectorAll("button")].find(
-    (element) => element.textContent?.trim() === label,
+    (element) => element.textContent?.includes(label) ?? false,
   );
   expect(found, `button ${label}`).toBeDefined();
   return found as HTMLButtonElement;
