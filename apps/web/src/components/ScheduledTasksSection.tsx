@@ -50,7 +50,7 @@ const REMINDER_STARTERS: ReadonlyArray<{ label: string; text: string }> = [
   },
 ];
 
-export function describeAutomationSchedule(schedule: AutomationSchedule): string {
+function describeAutomationSchedule(schedule: AutomationSchedule): string {
   return describeReminderSchedule(schedule);
 }
 

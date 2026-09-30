@@ -659,7 +659,7 @@ export const PullRequestsToolkitRegistrationLive = McpServer.toolkit(PullRequest
   Layer.provide(PullRequestsToolkitHandlersLive),
 );
 
-export const ScheduledTasksToolkitRegistrationLive = McpServer.toolkit(ScheduledTasksToolkit).pipe(
+const ScheduledTasksToolkitRegistrationLive = McpServer.toolkit(ScheduledTasksToolkit).pipe(
   Layer.provide(ScheduledTasksToolkitHandlersLive),
 );
 

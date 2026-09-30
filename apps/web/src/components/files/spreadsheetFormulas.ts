@@ -34,8 +34,8 @@ export function collectSpreadsheetFormulas(
 // dedicated error instead of whatever each function would do.
 const BLOCKED_FUNCTIONS = ["WEBSERVICE", "FILTERXML", "RTD"] as const;
 
-export const SPREADSHEET_CYCLE_ERROR = "#CYCLE!";
-export const SPREADSHEET_BLOCKED_ERROR = "#BLOCKED!";
+const SPREADSHEET_CYCLE_ERROR = "#CYCLE!";
+const SPREADSHEET_BLOCKED_ERROR = "#BLOCKED!";
 
 /** Display text for a computed formula value. */
 export function formatSpreadsheetComputedValue(value: unknown): string {

@@ -26,7 +26,7 @@ type PendingConfirmation = {
   readonly resolve: (result: ConfirmDialogResult) => void;
 };
 
-export const DEFAULT_DONT_ASK_AGAIN_LABEL = "Don't ask again";
+const DEFAULT_DONT_ASK_AGAIN_LABEL = "Don't ask again";
 
 function resolveDontAskAgainLabel(options?: ConfirmDialogOptions): string | null {
   if (!options?.dontAskAgain) return null;

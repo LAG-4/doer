@@ -69,7 +69,7 @@ export function getProjectFileQueryAtom(
  * module is deliberately untouched so binary payloads can never read as text
  * elsewhere (mentions, defaults, text preview).
  */
-export function getProjectBinaryFileQueryAtom(
+function getProjectBinaryFileQueryAtom(
   environmentId: EnvironmentId,
   cwd: string,
   relativePath: string | null,

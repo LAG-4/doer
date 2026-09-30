@@ -338,7 +338,7 @@ function openCodeHttpStatusOf(cause: unknown): number | undefined {
   return undefined;
 }
 
-export const verifyOpenCodeServerVersionV2 = Effect.fn("verifyOpenCodeServerVersionV2")(function* (
+const verifyOpenCodeServerVersionV2 = Effect.fn("verifyOpenCodeServerVersionV2")(function* (
   client: OpenCodeV2Client,
 ) {
   const infoOption = yield* runOpenCodeSdk("server.info", (signal) =>
@@ -384,7 +384,7 @@ export const verifyOpenCodeServerVersionV2 = Effect.fn("verifyOpenCodeServerVers
  * v1 server, and a v1 server is found even when the v2 probe fails oddly
  * (proxies, HTML error pages, content-type quirks).
  */
-export const verifyOpenCodeServerVersionRouted = Effect.fn("verifyOpenCodeServerVersionRouted")(
+const verifyOpenCodeServerVersionRouted = Effect.fn("verifyOpenCodeServerVersionRouted")(
   function* (input: { readonly v1: OpencodeClient; readonly v2: OpenCodeV2Client }) {
     const [v2Exit, v1Exit] = yield* Effect.all(
       [
