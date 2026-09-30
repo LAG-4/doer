@@ -3683,6 +3683,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     packageManager: rootPackageJson.packageManager,
     description: "Doer desktop build",
     author: "T3 Tools",
+    homepage: "https://doer.lagaryan.click",
     main: "apps/desktop/dist-electron/boot.cjs",
     build: yield* createBuildConfig(
       options.platform,
