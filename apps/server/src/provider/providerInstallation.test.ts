@@ -14,6 +14,7 @@ import * as Stream from "effect/Stream";
 
 import { layerTest as settingsLayerTest } from "../serverSettings.ts";
 import { CodexInstallation } from "./CodexInstallation.ts";
+import { ProviderCliInstallation } from "./ProviderCliInstallation.ts";
 import { AntigravityInstallation } from "./AntigravityInstallation.ts";
 import type { ProviderInstance } from "./ProviderDriver.ts";
 import { makeProviderInstallation } from "./providerInstallation.ts";
@@ -66,6 +67,19 @@ const makeHarness = Effect.fn("providerInstallation.test.makeHarness")(function*
     Effect.provide(
       Layer.mergeAll(
         settingsLayerTest(input.settings),
+        Layer.mock(ProviderCliInstallation)({
+          start: (_id, kind) =>
+            Effect.sync(() => {
+              calls.push("cli-start");
+              return { ...state, driver: kind };
+            }),
+          cancel: () =>
+            Effect.sync(() => {
+              calls.push("cli-cancel");
+              return state;
+            }),
+          changes: (_id, kind) => Stream.succeed({ ...state, driver: kind }),
+        }),
         Layer.mock(ProviderInstanceRegistry)({
           getInstance: (id) =>
             Effect.succeed(id === configured.instanceId ? configured : undefined),
@@ -123,6 +137,24 @@ const makeHarness = Effect.fn("providerInstallation.test.makeHarness")(function*
 });
 
 describe("provider installation routing", () => {
+  it.effect.each(["opencode", "claudeAgent", "cursor", "grok"])(
+    "routes %s installation, cancellation, and progress to the selected instance",
+    (kind) =>
+      Effect.gen(function* () {
+        const cliId = ProviderInstanceId.make(kind);
+        const cliDriver = ProviderDriverKind.make(kind);
+        const harness = yield* makeHarness({ instance: instance(cliDriver, cliId) });
+        assert.equal((yield* harness.router.start({ instanceId: cliId })).driver, kind);
+        yield* harness.router.cancel({ instanceId: cliId, operationId: "operation" });
+        const observed = yield* Stream.runCollect(harness.router.subscribe({ instanceId: cliId }));
+        assert.equal(Array.from(observed)[0]?.driver, kind);
+        assert.deepEqual(harness.calls, ["cli-start", "cli-cancel"]);
+        assert.equal(
+          (yield* harness.router.remove({ instanceId: cliId }).pipe(Effect.flip))._tag,
+          "ProviderSetupError",
+        );
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
   it.effect("allows explicit installation while the provider is disabled", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness();

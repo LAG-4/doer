@@ -21,6 +21,7 @@ import {
   openCodeNativeBinaryPath,
   openCodeNpmInstallArgs,
   openCodeNpmPackageFromSpec,
+  openCodePowerShellDownloadArgs,
   powershellSingleQuoted,
   resolveOpenCodeHome,
 } from "./opencodeInstall.ts";
@@ -85,8 +86,8 @@ describe("opencodeInstall", () => {
     ).toEqual([
       "opencode",
       NodePath.join("/home/amy", ".opencode", "bin", "opencode"),
-      NodePath.join("/t3home", "tools", "opencode", "node_modules", ".bin", "opencode"),
       NodePath.join("/t3home", "tools", "opencode", "bin", "opencode"),
+      NodePath.join("/t3home", "tools", "opencode", "node_modules", ".bin", "opencode"),
     ]);
   });
 
@@ -171,11 +172,31 @@ describe("opencodeInstall", () => {
   it("builds a failing-loudly curl download command", () => {
     expect(openCodeCurlDownloadArgs("https://example.com/a.zip", "/tmp/a.zip")).toEqual([
       "-fsSL",
-      "-L",
+      "--retry",
+      "3",
+      "--retry-delay",
+      "1",
+      "--retry-max-time",
+      "120",
+      "--connect-timeout",
+      "15",
+      "--max-time",
+      "120",
       "-o",
       "/tmp/a.zip",
       "https://example.com/a.zip",
     ]);
+  });
+
+  it("quotes apostrophes and spaces for the Windows download fallback", () => {
+    const args = openCodePowerShellDownloadArgs(
+      "https://github.com/anomalyco/opencode/releases/latest/download/opencode-windows-x64.zip",
+      "C:\\Users\\O'Brien\\My files\\opencode.zip",
+    );
+    expect(args.slice(0, 3)).toEqual(["-NoProfile", "-NonInteractive", "-Command"]);
+    expect(args[3]).toContain("-OutFile 'C:\\Users\\O''Brien\\My files\\opencode.zip'");
+    expect(args[3]).toContain("-TimeoutSec 120");
+    expect(args[3]).toContain("$ErrorActionPreference = 'Stop'");
   });
 
   it("picks a preinstalled extractor per platform", () => {

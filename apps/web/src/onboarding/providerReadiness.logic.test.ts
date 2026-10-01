@@ -78,6 +78,26 @@ describe("getOnboardingProviderState", () => {
     );
   });
 
+  it("offers recovery after automatic OpenCode installation fails", () => {
+    expect(
+      getOnboardingProviderState({
+        ...readyCodex,
+        driver: ProviderDriverKind.make("opencode"),
+        installed: false,
+        status: "error",
+        message: "Automatic install failed: could not download the release archive",
+      }),
+    ).toBe("attention");
+    expect(
+      getOnboardingProviderState({
+        ...readyCodex,
+        driver: ProviderDriverKind.make("opencode"),
+        installed: false,
+        status: "warning",
+      }),
+    ).toBe("checking");
+  });
+
   it("waits for a provider snapshot before offering an action", () => {
     expect(getOnboardingProviderState(undefined)).toBe("checking");
   });
