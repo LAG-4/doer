@@ -1660,12 +1660,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         automationId: command.automationId,
       });
-      if (automation.state === "completed") {
-        return yield* new OrchestrationCommandInvariantError({
-          commandType: command.type,
-          detail: `Automation '${command.automationId}' already ran to completion and cannot be run.`,
-        });
-      }
       const runThread = yield* requireThread({
         readModel,
         command,
@@ -1758,12 +1752,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       }
       const occurredAt = yield* nowIso;
       if (command.outcome === "manual") {
-        if (automation.state === "completed") {
-          return yield* new OrchestrationCommandInvariantError({
-            commandType: command.type,
-            detail: `Automation '${command.automationId}' already ran to completion and cannot be run.`,
-          });
-        }
         return {
           ...(yield* withEventBase({
             aggregateKind: "automation",

@@ -1,3 +1,4 @@
+import * as MicrosoftConnection from "./connectedApps/MicrosoftConnection.ts";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -1258,7 +1259,12 @@ const buildAppUnderTest = (options?: {
         };
       }),
       Layer.provideMerge(makeAuthTestLayer()),
-      Layer.provideMerge(ServerSecretStore.layer),
+      Layer.provideMerge(
+        Layer.merge(
+          MicrosoftConnection.layer.pipe(Layer.provide(ServerSecretStore.layer)),
+          ServerSecretStore.layer,
+        ),
+      ),
       Layer.provide(workspaceAndProjectServicesLayer),
       // The inbox resolves the home directory through this reference so
       // full-stack tests provision scratch space under the temp base dir

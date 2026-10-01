@@ -1,3 +1,7 @@
+import { ConnectedAppsToolkit } from "./toolkits/connectedApps/tools.ts";
+import { ConnectedAppsToolkitHandlersLive } from "./toolkits/connectedApps/handlers.ts";
+import { OutputsToolkit } from "./toolkits/outputs/tools.ts";
+import { OutputsToolkitHandlersLive } from "./toolkits/outputs/handlers.ts";
 import * as NodeCrypto from "node:crypto";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
@@ -714,6 +718,8 @@ const McpTransportLive = McpServer.layerHttp({
 export const layer = Layer.mergeAll(
   PreviewToolkitRegistrationLive,
   PullRequestsToolkitRegistrationLive,
+  McpServer.toolkit(OutputsToolkit).pipe(Layer.provide(OutputsToolkitHandlersLive)),
+  McpServer.toolkit(ConnectedAppsToolkit).pipe(Layer.provide(ConnectedAppsToolkitHandlersLive)),
   ScheduledTasksToolkitRegistrationLive,
   DeviceToolkitRegistrationLive,
   ComputerToolkitRegistrationLive,

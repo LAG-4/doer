@@ -109,7 +109,7 @@ export function getDefaultServerModel(
   if (provider === OPENCODE_DRIVER_KIND) {
     // Prefer the free-tier default (Big Pickle, else any `*-free` Zen model)
     // even when the snapshot carries no `isDefault` (stale cache, custom
-    // server). Falls through to the generic isDefault-first order below.
+    // server). Never silently move a free user to a paid model.
     const slugs = models.filter((model) => !model.isCustom).map((model) => model.slug);
     for (const preferred of PREFERRED_DEFAULT_OPENCODE_MODELS) {
       if (slugs.includes(preferred)) {
@@ -117,9 +117,12 @@ export function getDefaultServerModel(
       }
     }
     const free = slugs.filter((slug) => isOpenCodeFreeModelSlug(slug)).toSorted()[0];
-    if (free) {
-      return free;
-    }
+    return (
+      free ??
+      PREFERRED_DEFAULT_OPENCODE_MODELS[0] ??
+      DEFAULT_MODEL_BY_PROVIDER[OPENCODE_DRIVER_KIND] ??
+      DEFAULT_MODEL
+    );
   }
   return (
     models.find((model) => model.isDefault && !model.isCustom)?.slug ??

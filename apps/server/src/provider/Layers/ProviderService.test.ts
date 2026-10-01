@@ -2113,6 +2113,38 @@ routing.layer("ProviderServiceLive routing", (it) => {
     }),
   );
 
+  it.effect("uses editable Space context for ordinary turns and keeps native commands exact", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-space-context");
+      const cwd = fixtureCwd("saved-context");
+      const contextFile = NodePath.join(cwd, ".doer-context.json");
+      NodeFS.writeFileSync(
+        contextFile,
+        '{"about":"Practice reports","preferences":"Use rupees","remembered":"West region"}',
+      );
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        cwd,
+        runtimeMode: "full-access",
+      });
+      yield* provider.sendTurn({ threadId, input: "Explain my report" });
+      assert.include(routing.codex.sendTurn.mock.calls.at(-1)![0].input!, "Use rupees");
+      NodeFS.writeFileSync(contextFile, '{"about":"","preferences":"","remembered":""}');
+      yield* provider.sendTurn({ threadId, input: "Explain again" });
+      assert.notInclude(routing.codex.sendTurn.mock.calls.at(-1)![0].input!, "West region");
+      NodeFS.writeFileSync(
+        contextFile,
+        '{"about":"Practice reports","preferences":"Use rupees","remembered":"West region"}',
+      );
+      yield* provider.sendTurn({ threadId, input: "/compact" });
+      assert.equal(routing.codex.sendTurn.mock.calls.at(-1)![0].input!, "/compact");
+      yield* provider.stopSession({ threadId });
+    }),
+  );
+
   it.effect("times out fallback compaction when its turn never settles", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;

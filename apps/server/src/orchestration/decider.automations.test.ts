@@ -424,6 +424,29 @@ it.layer(NodeServices.layer)("automation decider", (it) => {
     }),
   );
 
+  it.effect("retries completed one-off work without reactivating its schedule", () =>
+    Effect.gen(function* () {
+      const result = yield* decideOrchestrationCommand({
+        command: {
+          type: "automation.run-now",
+          commandId: CommandId.make("retry"),
+          automationId: AutomationId.make("automation-1"),
+        },
+        readModel: makeReadModel({
+          automations: [makeAutomation({ state: "completed", nextFireAt: null })],
+        }),
+      });
+      const events = Array.isArray(result) ? result : [result];
+      expect(events.some((event) => event.type === "thread.turn-start-requested")).toBe(true);
+      const fired = events.find((event) => event.type === "automation.fired");
+      expect(fired?.payload).toMatchObject({
+        state: "completed",
+        nextFireAt: null,
+        run: { outcome: "manual" },
+      });
+    }),
+  );
+
   it.effect("rejects run-now on a deleted automation or a deleted thread", () =>
     Effect.gen(function* () {
       const deleted = yield* decideOrchestrationCommand({

@@ -1,3 +1,4 @@
+import { useClientSettings } from "~/hooks/useSettings";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { Spinner } from "~/components/ui/spinner";
 import { pullRequestHostOf, resolveEnvironmentMachineKind } from "@t3tools/contracts";
@@ -337,7 +338,7 @@ export const Route = createFileRoute("/_chat/pull-requests")({
       : {}),
     ...pullRequestSearchLabels(raw.labels),
   }),
-  component: PullRequestsRouteView,
+  component: SimpleModePullRequestsRoute,
 });
 
 function PullRequestsRouteView() {
@@ -2592,5 +2593,17 @@ function PullRequestRefreshControl({
     >
       <RefreshIcon size="md" refreshing={refreshing} />
     </Button>
+  );
+}
+
+function SimpleModePullRequestsRoute() {
+  const simple = useClientSettings((settings) => settings.simpleModeEnabled);
+  return simple ? (
+    <div className="p-6 text-sm text-muted-foreground">
+      Source control is available in Advanced mode. Turn off Simple mode in General settings to use
+      it.
+    </div>
+  ) : (
+    <PullRequestsRouteView />
   );
 }

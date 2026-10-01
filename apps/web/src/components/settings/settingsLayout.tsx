@@ -1,3 +1,5 @@
+import { useClientSettings } from "~/hooks/useSettings";
+import { isAdvancedSettingId } from "~/simpleMode";
 import { SettingsGroup } from "./SettingsGroup";
 import { InfoIcon, Undo2Icon } from "lucide-react";
 import { DEFAULT_SERVER_SETTINGS, type ServerSettings } from "@t3tools/contracts";
@@ -185,7 +187,9 @@ export function SettingsSection({
   variant?: "grouped" | "plain";
   children: ReactNode;
 }) {
+  const simpleMode = useClientSettings((settings) => settings.simpleModeEnabled);
   const targetRef = useSettingsSearchTarget<HTMLElement>(sectionProps.id);
+  if (simpleMode && isAdvancedSettingId(sectionProps.id)) return null;
 
   return (
     <section
@@ -278,6 +282,7 @@ export function SettingsRow({
   mixed?: boolean;
   children?: ReactNode;
 }) {
+  const simpleMode = useClientSettings((settings) => settings.simpleModeEnabled);
   const targetRef = useSettingsSearchTarget<HTMLDivElement>(rowProps.id);
   const primarySettingsAvailable = usePrimarySettingsAvailable();
   const context = useOptionalSettingsScope();
@@ -419,6 +424,7 @@ export function SettingsRow({
       />
     ) : null;
   const renderedStatus = status;
+  if (simpleMode && isAdvancedSettingId(rowProps.id)) return null;
 
   return (
     <div

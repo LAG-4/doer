@@ -1,3 +1,5 @@
+import * as MicrosoftConnection from "./connectedApps/MicrosoftConnection.ts";
+import { routeLayer as microsoftRouteLayer } from "./connectedApps/http.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeHttp from "node:http";
 
@@ -571,6 +573,7 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   // keeps a single Live for all opencode consumers.
   Layer.provideMerge(OpenCodeRuntime.OpenCodeRuntimeLive),
   Layer.provideMerge(WorkspaceLayerLive),
+  Layer.provideMerge(MicrosoftConnection.layer.pipe(Layer.provide(ServerSecretStore.layer))),
   Layer.provideMerge(Layer.mergeAll(NativeAppIconResolver.layer, ProjectFaviconResolverLayerLive)),
   Layer.provideMerge(RepositoryIdentityResolverLayerLive),
   Layer.provideMerge(ServerEnvironmentLayerLive),
@@ -618,6 +621,7 @@ export const makeRoutesLayer = Layer.mergeAll(
       Layer.provide(serverEnvironmentHttpApiLayer),
       Layer.provide(environmentAuthenticatedAuthLayer),
     ),
+    microsoftRouteLayer,
     otlpTracesProxyRouteLayer,
     telemetryConfigRouteLayer,
     assetRouteLayer,

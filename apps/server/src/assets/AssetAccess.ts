@@ -70,6 +70,7 @@ const INLINE_PREVIEW_MIME_TYPES: Record<string, string> = {
 };
 const inlinePreviewMimeTypeForExtension = (extension: string) =>
   INLINE_PREVIEW_MIME_TYPES[extension] ?? audioMimeTypeFromExtension(`.${extension}`) ?? undefined;
+const OUTPUT_DOWNLOAD_EXTENSIONS = new Set([".docx", ".xlsx", ".pptx", ".csv", ".txt", ".md"]);
 const PREVIEW_ASSET_EXTENSIONS = new Set([
   ...WORKSPACE_BROWSER_PREVIEW_EXTENSIONS,
   ...WORKSPACE_IMAGE_PREVIEW_EXTENSIONS,
@@ -357,7 +358,10 @@ const finalizeWorkspaceFileAsset = Effect.fn("AssetAccess.finalizeWorkspaceFileA
             }),
         ),
       );
-    if (!isWorkspacePreviewEntryPath(resolved.relativePath)) {
+    const isOutput = OUTPUT_DOWNLOAD_EXTENSIONS.has(
+      path.extname(resolved.relativePath).toLowerCase(),
+    );
+    if (!isWorkspacePreviewEntryPath(resolved.relativePath) && !isOutput) {
       return yield* new AssetPreviewTypeValidationError({
         resource: input.resource,
       });
@@ -394,21 +398,22 @@ const finalizeWorkspaceFileAsset = Effect.fn("AssetAccess.finalizeWorkspaceFileA
       ? yield* readImageDimensionsFromHeader(canonicalFile)
       : null;
     return {
-      claims: isWorkspaceImagePreviewPath(resolved.relativePath)
-        ? {
-            version: 1 as const,
-            kind: "workspace-file-exact" as const,
-            workspaceRoot: canonicalWorkspaceRoot,
-            relativePath: resolved.relativePath,
-            expiresAt: input.expiresAt,
-          }
-        : {
-            version: 1 as const,
-            kind: "workspace-file" as const,
-            workspaceRoot: canonicalWorkspaceRoot,
-            baseRelativePath: path.dirname(resolved.relativePath),
-            expiresAt: input.expiresAt,
-          },
+      claims:
+        isOutput || isWorkspaceImagePreviewPath(resolved.relativePath)
+          ? {
+              version: 1 as const,
+              kind: "workspace-file-exact" as const,
+              workspaceRoot: canonicalWorkspaceRoot,
+              relativePath: resolved.relativePath,
+              expiresAt: input.expiresAt,
+            }
+          : {
+              version: 1 as const,
+              kind: "workspace-file" as const,
+              workspaceRoot: canonicalWorkspaceRoot,
+              baseRelativePath: path.dirname(resolved.relativePath),
+              expiresAt: input.expiresAt,
+            },
       fileName: path.basename(resolved.relativePath),
       imageDimensions,
     };
@@ -840,7 +845,17 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
       relativePath: claims.relativePath,
     });
     return exactWorkspaceFile
-      ? ({ kind: "file", path: exactWorkspaceFile } satisfies ResolvedAsset)
+      ? ({
+          kind: "file",
+          path: exactWorkspaceFile,
+          ...(OUTPUT_DOWNLOAD_EXTENSIONS.has(path.extname(exactWorkspaceFile).toLowerCase())
+            ? {
+                download: true,
+                fileName: path.basename(exactWorkspaceFile),
+                mimeType: "application/octet-stream",
+              }
+            : {}),
+        } satisfies ResolvedAsset)
       : null;
   }
   const segments = decodedPath.split(/[\\/]/);

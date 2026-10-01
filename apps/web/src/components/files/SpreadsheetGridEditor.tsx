@@ -81,7 +81,7 @@ export function SpreadsheetGridEditor({
                   {columnIndexToLetters(colIndex)}
                 </th>
               ))}
-              {readOnly ? null : (
+              {readOnly || !onDeleteRow ? null : (
                 <th className="w-10 min-w-10 border-b border-border/60 bg-background" />
               )}
             </tr>
@@ -120,7 +120,7 @@ export function SpreadsheetGridEditor({
                     />
                   </td>
                 ))}
-                {readOnly ? null : (
+                {readOnly || !onDeleteRow ? null : (
                   <td className="border-b border-border/60 p-0 text-center">
                     <button
                       type="button"

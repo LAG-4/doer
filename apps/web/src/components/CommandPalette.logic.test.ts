@@ -493,7 +493,7 @@ describe("buildThreadActionItems", () => {
   it("preserves thread project-name matches when there is no stronger title match", () => {
     const group: CommandPaletteGroup = {
       value: "threads-search",
-      label: "Threads",
+      label: "Tasks",
       items: [
         {
           kind: "action",

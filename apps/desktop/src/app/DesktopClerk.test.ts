@@ -44,8 +44,11 @@ const makeDesktopClerkLayer = (
     openSystemSettings: () => Effect.succeed(false),
     copyText: () => Effect.void,
   },
+  platform = "linux",
+  primary = true,
 ) => {
   const environment = DesktopEnvironment.DesktopEnvironment.of({
+    platform,
     stateDir: "/tmp/t3-state",
     isDevelopment,
     appDataDirectory: "/tmp/app-data",
@@ -54,6 +57,16 @@ const makeDesktopClerkLayer = (
   } as unknown as DesktopEnvironment.DesktopEnvironment["Service"]);
 
   const electronApp = {
+    requestSingleInstanceLock: Effect.sync(() => {
+      events.push("acquireLock");
+      return primary;
+    }),
+    releaseSingleInstanceLock: Effect.sync(() => {
+      events.push("releaseLock");
+    }),
+    quit: Effect.sync(() => {
+      events.push("quit");
+    }),
     setPath: (name: string, value: string) =>
       Effect.sync(() => {
         events.push(`setPath:${name}:${value}`);
@@ -103,9 +116,50 @@ describe("DesktopClerk", () => {
       // The bridge acquires Electron's single-instance lock at creation, and
       // the lock both lives in and creates the userData directory — so the
       // real path must be set before the bridge exists.
-      assert.deepEqual(events, ["setPath:userData:/tmp/app-data/doer-dev", "createClerkBridge"]);
+      assert.deepEqual(events, [
+        "setPath:userData:/tmp/t3-state/electron-profile",
+        "createClerkBridge",
+      ]);
       storageMock.mockClear();
       createClerkBridgeMock.mockClear();
+    });
+  });
+
+  it.effect(
+    "owns the macOS lock before initializing the bridge and releases it after cleanup",
+    () => {
+      const events: string[] = [];
+      storageMock.mockReturnValue(storageAdapter);
+      createClerkBridgeMock.mockImplementation(() => {
+        events.push("createClerkBridge");
+        return { isPrimaryInstance: true, cleanup: () => events.push("cleanup") };
+      });
+      return Effect.gen(function* () {
+        yield* Effect.scoped(Layer.build(makeDesktopClerkLayer(true, events, undefined, "darwin")));
+        assert.deepEqual(events, [
+          "setPath:userData:/tmp/t3-state/electron-profile",
+          "acquireLock",
+          "createClerkBridge",
+          "cleanup",
+          "releaseLock",
+        ]);
+      });
+    },
+  );
+
+  it.effect("a duplicate macOS launch quits before bridge or backend startup", () => {
+    const events: string[] = [];
+    return Effect.gen(function* () {
+      const exit = yield* Effect.exit(
+        Effect.scoped(Layer.build(makeDesktopClerkLayer(true, events, undefined, "darwin", false))),
+      );
+      assert.isTrue(Exit.hasInterrupts(exit));
+      assert.equal(createClerkBridgeMock.mock.calls.length, 0);
+      assert.deepEqual(events, [
+        "setPath:userData:/tmp/t3-state/electron-profile",
+        "acquireLock",
+        "quit",
+      ]);
     });
   });
 

@@ -12,6 +12,11 @@ vi.mock("~/lib/attachmentUploadQueue", () => ({
   ) => select({ uploadsByImageId: {} }),
   retryAttachmentUpload: vi.fn(),
 }));
+vi.mock("~/hooks/useSettings", () => ({
+  useClientSettings: (selector: (settings: { simpleModeEnabled: boolean }) => unknown) =>
+    selector({ simpleModeEnabled: false }),
+}));
+vi.mock("@tanstack/react-router", () => ({ Link: "a" }));
 
 import { DraftHeroSuggestions } from "./DraftHeroSuggestions";
 

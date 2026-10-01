@@ -1,6 +1,7 @@
 // This file mostly exists because we want dev mode to say "Doer (Dev)" instead of "electron"
 
 import * as NodeChildProcess from "node:child_process";
+import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodeModule from "node:module";
 import * as NodeOS from "node:os";
@@ -12,15 +13,17 @@ const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
 const __dirname = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
 export const desktopDir = NodePath.resolve(__dirname, "..");
 const repoRoot = NodePath.resolve(desktopDir, "..", "..");
-const devBundleIdSuffix = NodePath.basename(repoRoot)
-  .toLowerCase()
-  .replaceAll(/[^a-z0-9]+/g, "");
+export function developmentBundleId(root) {
+  const suffix = NodeCrypto.createHash("sha256")
+    .update(NodePath.resolve(root))
+    .digest("hex")
+    .slice(0, 12);
+  return `click.lagaryan.doer.dev.${suffix}`;
+}
 const APP_DISPLAY_NAME = isDevelopment ? "Doer (Dev)" : "Doer (Alpha)";
-const APP_BUNDLE_ID = isDevelopment
-  ? `click.lagaryan.doer.dev.${devBundleIdSuffix || "local"}`
-  : "click.lagaryan.doer";
+const APP_BUNDLE_ID = isDevelopment ? developmentBundleId(repoRoot) : "click.lagaryan.doer";
 const APP_PROTOCOL_SCHEMES = isDevelopment ? ["doer-dev"] : ["doer"];
-const LAUNCHER_VERSION = 19;
+const LAUNCHER_VERSION = 20;
 const developmentMacIconPngPath = NodePath.join(
   repoRoot,
   "assets",
@@ -113,6 +116,7 @@ export function makeDevelopmentEnvironmentScript(environment) {
     ["VITE_DEV_SERVER_URL", environment.VITE_DEV_SERVER_URL],
     ["T3CODE_PORT", environment.T3CODE_PORT],
     ["T3CODE_HOME", environment.T3CODE_HOME],
+    ["DOER_HOME", environment.DOER_HOME],
     ["T3CODE_COMMIT_HASH", environment.T3CODE_COMMIT_HASH],
     ["T3CODE_OTLP_TRACES_URL", environment.T3CODE_OTLP_TRACES_URL],
     ["T3CODE_OTLP_EXPORT_INTERVAL_MS", environment.T3CODE_OTLP_EXPORT_INTERVAL_MS],

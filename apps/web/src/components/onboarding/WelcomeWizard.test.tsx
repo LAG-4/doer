@@ -309,6 +309,22 @@ it("pauses instead of silently switching to a paid provider", async () => {
   expect(mocks.submit).not.toHaveBeenCalled();
 });
 
+it("pauses when a ready OpenCode account has no free models", async () => {
+  mocks.providers = [
+    {
+      ...READY_OPENCODE,
+      models: [{ ...READY_OPENCODE.models[0]!, slug: "paid-model", name: "Paid model" }],
+    },
+  ];
+  await act(async () => root.render(<WelcomeWizard onDone={vi.fn()} />));
+  await click("Try a sample");
+  expect(text()).toContain("No free model is available");
+  expect(text()).not.toContain("Your free AI is ready");
+  expect(button("Explain this report").disabled).toBe(true);
+  expect(button("Choose an AI service")).toBeDefined();
+  expect(mocks.submit).not.toHaveBeenCalled();
+});
+
 it("records a skip distinctly from first-task success", async () => {
   const onDone = vi.fn();
   await act(async () => root.render(<WelcomeWizard onDone={onDone} />));

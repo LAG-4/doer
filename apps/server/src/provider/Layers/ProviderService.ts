@@ -1,3 +1,9 @@
+import {
+  buildDoerContextPrompt,
+  parseDoerContext,
+  PERSONAL_CONTEXT_FILE,
+  SPACE_CONTEXT_FILE,
+} from "@t3tools/shared/doerContext";
 /**
  * ProviderServiceLive - Cross-provider orchestration layer.
  *
@@ -1682,6 +1688,33 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       }
       return false;
     };
+    // Native provider commands must stay exact; saved prose would become command arguments.
+    // Continuation-only turns also resume their existing prompt rather than starting another task.
+    if (!parsed.continuation && !parsed.input?.trimStart().startsWith("/")) {
+      const binding = Option.getOrUndefined(yield* directory.getBinding(parsed.threadId));
+      const contextCwd = binding ? readPersistedCwd(binding.runtimePayload) : undefined;
+      const readContext = (filePath: string) =>
+        fileSystem.readFileString(filePath).pipe(
+          Effect.flatMap((contents) => Effect.try(() => parseDoerContext(contents))),
+          Effect.orElseSucceed(() => undefined),
+        );
+      const personal = yield* readContext(
+        pathService.join(serverConfig.stateDir, PERSONAL_CONTEXT_FILE),
+      );
+      const space = contextCwd
+        ? yield* readContext(pathService.join(contextCwd, SPACE_CONTEXT_FILE))
+        : undefined;
+      const savedContext = buildDoerContextPrompt({
+        ...(personal ? { personal } : {}),
+        ...(space ? { space } : {}),
+      });
+      if (savedContext && !appendAttachmentContext(savedContext)) {
+        return yield* toValidationError(
+          "ProviderService.sendTurn",
+          "This request is too long to include your saved preferences. Shorten it and try again.",
+        );
+      }
+    }
     for (const attachment of attachments) {
       const attachmentPath = resolveAttachmentPath({
         attachmentsDir: serverConfig.attachmentsDir,

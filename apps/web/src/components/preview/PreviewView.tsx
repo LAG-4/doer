@@ -1,5 +1,8 @@
 "use client";
 
+import { BrowserHandoff } from "./BrowserHandoff";
+import { useClientSettings } from "~/hooks/useSettings";
+
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
@@ -104,6 +107,7 @@ export function PreviewView({
   visible,
   onSendAnnotation,
 }: Props) {
+  const simpleMode = useClientSettings((settings) => settings.simpleModeEnabled);
   const [focusUrlNonce, setFocusUrlNonce] = useState<number | undefined>(undefined);
   const [pickActive, setPickActive] = useState(false);
   const activeRecordingTabIds = useActiveBrowserRecordingTabIds();
@@ -820,6 +824,9 @@ export function PreviewView({
           </div>
         ) : null}
       </div>
+      {simpleMode && runtimeTabId && !showEmptyState ? (
+        <BrowserHandoff key={scopedThreadKey(threadRef)} threadRef={threadRef} />
+      ) : null}
     </div>
   );
 }
