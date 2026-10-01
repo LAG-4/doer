@@ -7,7 +7,7 @@ import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 /** Only actual files reported by completed work are offered as outputs. */
-export function taskOutputPaths(checkpoints: readonly OrchestrationCheckpointSummary[]): string[] {
+function taskOutputPaths(checkpoints: readonly OrchestrationCheckpointSummary[]): string[] {
   const files = new Map<string, string>();
   for (const checkpoint of checkpoints) {
     if (checkpoint.status !== "ready") continue;
