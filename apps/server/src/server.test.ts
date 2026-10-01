@@ -134,6 +134,7 @@ import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSna
 import { ThreadDeletionReactor } from "./orchestration/Services/ThreadDeletionReactor.ts";
 import * as PullRequestSyncReactor from "./orchestration/PullRequestSyncReactor.ts";
 import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
+import { DoerMemoryStoreLive } from "./persistence/Layers/DoerMemoryStore.ts";
 import { OrchestrationEventStoreLive } from "./persistence/Layers/OrchestrationEventStore.ts";
 import { OrchestrationEventStore } from "./persistence/Services/OrchestrationEventStore.ts";
 import { PersistenceSqlError } from "./persistence/Errors.ts";
@@ -785,6 +786,9 @@ const buildAppUnderTest = (options?: {
     ).pipe(
       Layer.provide(
         Layer.mergeAll(
+          // HttpRouter.serve exposes request-handler context outward, so the saved-memory
+          // store is provided here (one shared instance) rather than inside makeRoutesLayer.
+          DoerMemoryStoreLive.pipe(Layer.provide(SqlitePersistenceMemory)),
           Layer.mock(Keybindings.Keybindings)({
             loadConfigState: Effect.succeed({
               keybindings: [],

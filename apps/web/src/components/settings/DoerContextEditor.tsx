@@ -127,9 +127,10 @@ function ContextForm(props: {
     >
       <p className="text-sm text-muted-foreground">
         {props.personal
-          ? "Used across your Spaces on the selected computer."
-          : "Used for Tasks in this Space, including reminders."}{" "}
-        You choose what Doer remembers. Review, edit or forget it here.
+          ? "Standing instructions used across your Spaces on the selected computer."
+          : "Standing instructions used for Tasks in this Space, including reminders."}{" "}
+        For individual facts Doer remembers ("What Doer remembers" below), add, correct, or forget
+        them there — editing here does not touch that list.
       </p>
       {(["about", "preferences", "remembered"] as const).map((field) => (
         <div key={field} className="flex flex-col gap-1.5">
@@ -140,7 +141,7 @@ function ContextForm(props: {
                 : "What is this Space for?"
               : field === "preferences"
                 ? "Preferences"
-                : "Remembered details"}
+                : "Notes to always include"}
           </Label>
           <Textarea
             id={`${prefix}-${field}`}

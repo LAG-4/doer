@@ -76,6 +76,8 @@ import Migration0054 from "./Migrations/052_ProjectionThreadTitleState.ts";
 import Migration0055 from "./Migrations/053_PullRequestFilesViewed.ts";
 // Upstream's migration 054 follows Doer's existing migrations 051–055.
 import Migration0056 from "./Migrations/054_ProjectionThreadsAutoSettleDisabledAt.ts";
+// Doer saved memories (explicit local memory, one row per entry).
+import Migration0057 from "./Migrations/057_DoerMemories.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -144,6 +146,7 @@ const migrationEntries = [
   [54, "ProjectionThreadTitleState", Migration0054],
   [55, "PullRequestFilesViewed", Migration0055],
   [56, "ProjectionThreadsAutoSettleDisabledAt", Migration0056],
+  [57, "DoerMemories", Migration0057],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

@@ -367,6 +367,10 @@
       "types": "./src/doerContext.ts",
       "import": "./src/doerContext.ts"
     },
+    "./doerMemory": {
+      "types": "./src/doerMemory.ts",
+      "import": "./src/doerMemory.ts"
+    },
     "./microsoftConnection": {
       "types": "./src/microsoftConnection.ts",
       "default": "./src/microsoftConnection.ts"
