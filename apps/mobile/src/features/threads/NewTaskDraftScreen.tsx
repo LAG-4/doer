@@ -1600,7 +1600,9 @@ export function NewTaskDraftScreen(props: {
           />
         </View>
       ) : null}
-      {workspaceControls ? <View className="pb-1">{workspaceControls}</View> : null}
+      {flow.canChooseWorkspace && workspaceControls ? (
+        <View className="pb-1">{workspaceControls}</View>
+      ) : null}
 
       {modelUnavailable ? (
         <Pressable
