@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { useRouter } from "@tanstack/react-router";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
+  isOpenCodeFreeModelSlug,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
   DEFAULT_SERVER_SETTINGS,
@@ -124,16 +125,17 @@ export function WelcomeWizard({ onDone }: { readonly onDone: () => void }) {
   const selectedEntry = modelSelection
     ? entries.find((entry) => entry.instanceId === modelSelection.instanceId)
     : undefined;
-  // Nothing is selectable when every instance is errored or unavailable, but
-  // the failure still needs a face: surface the most relevant entry so its
-  // message and retry stay visible instead of a perpetual "getting ready".
+  // Keep setup and failures visible even when no model can be selected.
   const statusEntry =
     selectedEntry ??
     entries.find((entry) => entry.driverKind === "opencode" && entry.status === "error") ??
-    entries.find((entry) => entry.status === "error");
+    entries.find((entry) => entry.status === "error") ??
+    entries.find((entry) => entry.driverKind === "opencode");
   const providerState = getOnboardingProviderState(statusEntry?.snapshot);
   const catalogKnown = serverConfig !== null;
-  const isFreeDefault = selectedEntry?.driverKind === "opencode";
+  const isFreeDefault =
+    selectedEntry?.driverKind === "opencode" &&
+    Boolean(modelSelection && isOpenCodeFreeModelSlug(modelSelection.model));
   const isExplicitChoice =
     storedDefaultSelection !== null &&
     modelSelection?.instanceId === storedDefaultSelection.instanceId;
@@ -363,14 +365,21 @@ export function WelcomeWizard({ onDone }: { readonly onDone: () => void }) {
               submitError={submitError}
               canSubmit={canSubmit}
               spaceReady={inboxRef !== null || isInboxCapable}
-              providerState={providerState}
+              providerState={
+                modelSelection === null && providerState === "ready" ? "attention" : providerState
+              }
               providerDisplayName={statusEntry?.displayName ?? null}
               providerModel={modelSelection?.model ?? null}
-              providerMessage={statusEntry?.snapshot.message ?? null}
-              isFreeDefault={isFreeDefault || selectedEntry === undefined}
+              providerMessage={
+                modelSelection === null && statusEntry?.status === "ready"
+                  ? "No free model is available right now. Refresh, or choose an AI service in Settings before starting."
+                  : (statusEntry?.snapshot.message ?? null)
+              }
+              isFreeDefault={
+                isFreeDefault || statusEntry?.driverKind === "opencode" || statusEntry === undefined
+              }
               isAutoInstallDriver={
-                selectedEntry === undefined ||
-                isOnboardingAutoInstallDriver(selectedEntry.driverKind)
+                statusEntry === undefined || isOnboardingAutoInstallDriver(statusEntry.driverKind)
               }
               catalogKnown={catalogKnown}
               hasProviders={entries.length > 0}
@@ -781,6 +790,16 @@ function SetupStatus({
             ? "No AI service was found on this computer."
             : "The AI service ran into a problem.")}
       </p>
+      {isFreeDefault && providerModel === null ? (
+        <>
+          <p className="text-muted-foreground">
+            Doer won&rsquo;t switch you to a paid service without asking. Your file is kept.
+          </p>
+          <Button variant="outline" size="sm" disabled={disabled} onClick={onOpenProviderSettings}>
+            Choose an AI service
+          </Button>
+        </>
+      ) : null}
       <RetryButton
         label="Try again"
         loading={isRetryingProviders}

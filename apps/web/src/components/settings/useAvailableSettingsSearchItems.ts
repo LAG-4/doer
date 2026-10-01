@@ -1,3 +1,5 @@
+import { useClientSettings } from "~/hooks/useSettings";
+import { isAdvancedSettingsItem } from "~/simpleMode";
 import { useMemo } from "react";
 import { AuthAccessWriteScope } from "@t3tools/contracts";
 
@@ -17,6 +19,7 @@ import {
 } from "./settingsSearch";
 
 export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch = {}) {
+  const simple = useClientSettings((settings) => settings.simpleModeEnabled);
   const { environments } = useEnvironments();
   const primarySessionState = usePrimarySessionState();
   const localEnvironmentDisabled = isLocalEnvironmentDisabled();
@@ -59,8 +62,9 @@ export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch
         }),
         hasThreadAutoSettlement:
           getThreadAutoSettlementSearchAvailability(environments).eligibleEnvironmentIds.length > 0,
-      }),
+      }).filter((item) => !simple || !isAdvancedSettingsItem(item)),
     [
+      simple,
       canManageLocalBackend,
       desktopWsl.data,
       desktopWsl.error,

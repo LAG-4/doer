@@ -24,6 +24,7 @@ import * as Path from "effect/Path";
 import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { INBOX_PROJECT_TITLE, resolveInboxRoot } from "./InboxWorkspace.ts";
+import { ServerConfig } from "../config.ts";
 
 export const resolveInboxWelcomeTargets = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
@@ -34,7 +35,11 @@ export const resolveInboxWelcomeTargets = Effect.gen(function* () {
   const projectionReadModelQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
   const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
 
-  const inboxRoot = resolveInboxRoot(homeDir, path);
+  const config = yield* Effect.serviceOption(ServerConfig);
+  const inboxRoot =
+    Option.isSome(config) && config.value.devUrl !== undefined
+      ? path.join(config.value.baseDir, "inbox")
+      : resolveInboxRoot(homeDir, path);
   // A project record without its directory chats into "Workspace root does
   // not exist". Ensure the default folder before either branch so fresh
   // installs and pre-existing inbox records both self-repair on startup.

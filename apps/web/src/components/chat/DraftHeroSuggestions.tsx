@@ -1,5 +1,7 @@
 import { useRef, useState } from "react";
+import { useClientSettings } from "~/hooks/useSettings";
 import { create } from "zustand";
+import { Link } from "@tanstack/react-router";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ComposerThreadTarget } from "~/composerDraftStore";
@@ -93,6 +95,20 @@ export function DraftHeroSuggestions({
   onStart,
 }: DraftHeroSuggestionsProps) {
   const draft = useComposerThreadDraft(draftTarget);
+  const simpleMode = useClientSettings((settings) => settings.simpleModeEnabled);
+  const [showMoreTasks, setShowMoreTasks] = useState(false);
+  const primaryIds = ["understand", "application", "reports", "meeting", "trip", "organize"];
+  const primaryTasks = primaryIds.flatMap((id) =>
+    GUIDED_STARTER_TASKS.filter((task) => task.id === id),
+  );
+  const suggestions = simpleMode
+    ? [
+        ...primaryTasks,
+        ...(showMoreTasks
+          ? GUIDED_STARTER_TASKS.filter((task) => !primaryIds.includes(task.id))
+          : []),
+      ]
+    : GUIDED_STARTER_TASKS;
   const uploads = useAttachmentUploadStore((state) => state.uploadsByImageId);
   const targetKey = typeof draftTarget === "string" ? draftTarget : scopedThreadKey(draftTarget);
   const [selected, setSelected] = useState<{ targetKey: string; task: GuidedStarterTask } | null>(
@@ -172,7 +188,7 @@ export function DraftHeroSuggestions({
             Choose a guided Task, or type your own above.
           </p>
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-            {GUIDED_STARTER_TASKS.map((suggestion) => (
+            {suggestions.map((suggestion) => (
               <button
                 key={suggestion.id}
                 type="button"
@@ -191,6 +207,17 @@ export function DraftHeroSuggestions({
               </button>
             ))}
           </div>
+          {simpleMode ? (
+            <div className="mt-3 text-center">
+              <Button
+                variant="ghost-muted"
+                size="sm"
+                onClick={() => setShowMoreTasks((value) => !value)}
+              >
+                {showMoreTasks ? "Show fewer tasks" : "More tasks"}
+              </Button>
+            </div>
+          ) : null}
         </div>
       ) : null}
       <Dialog
@@ -300,6 +327,17 @@ export function DraftHeroSuggestions({
                           .finally(() => setPreparingFiles(false));
                       }}
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Need a file from email or cloud storage?{" "}
+                      <Link
+                        to="/settings/integrations"
+                        search={{ machine: environmentId }}
+                        className="underline"
+                      >
+                        Connect Microsoft
+                      </Link>
+                      . Your answers are kept when you return to this Task.
+                    </p>
                     {!supportsAttachmentUploads ? (
                       <p className="text-xs text-muted-foreground">
                         Files are unavailable on this computer right now. You can still describe

@@ -76,8 +76,8 @@ export interface SpreadsheetFormulaEngine {
     body: string,
     position: SpreadsheetFormulaPosition,
   ): Array<
-    | { row: number; col: number }
-    | { from: { row: number; col: number }; to: { row: number; col: number } }
+    | { row: number; col: number; sheet?: string }
+    | { from: { row: number; col: number }; to: { row: number; col: number }; sheet?: string }
   >;
   isFormulaError(value: unknown): boolean;
   formulaErrorCode(value: unknown): string;
@@ -159,8 +159,12 @@ export function loadSpreadsheetFormulaEngine(): Promise<SpreadsheetFormulaEngine
           });
           return refs.map((ref) =>
             ref.from && ref.to
-              ? { from: ref.from, to: ref.to }
-              : { row: ref.row ?? 0, col: ref.col ?? 0 },
+              ? { from: ref.from, to: ref.to, ...(ref.sheet ? { sheet: ref.sheet } : {}) }
+              : {
+                  row: ref.row ?? 0,
+                  col: ref.col ?? 0,
+                  ...(ref.sheet ? { sheet: ref.sheet } : {}),
+                },
           );
         },
         isFormulaError: isError,
@@ -193,9 +197,23 @@ export function evaluateSpreadsheetFormulas(
   formulas: readonly SpreadsheetFormulaCell[],
   sheetName: string,
   engine?: SpreadsheetFormulaEngine | null,
+  saved?: {
+    readonly rows: readonly (readonly string[])[];
+    readonly cachedRows: readonly (readonly string[])[];
+  },
 ): string[][] {
   const displays = rows.map((row) => [...row]);
-  if (formulas.length === 0 || !engine) return displays;
+  const savedResult = (row: number, col: number): string =>
+    saved && saved.rows[row]?.[col] === rows[row]?.[col]
+      ? saved.cachedRows[row]?.[col] || "#NOT CALCULATED"
+      : "#NOT CALCULATED";
+  if (formulas.length === 0) return displays;
+  if (!engine) {
+    for (const formula of formulas) {
+      if (saved) displays[formula.row]![formula.col] = savedResult(formula.row, formula.col);
+    }
+    return displays;
+  }
   const rowCount = rows.length;
   const colCount = rows.reduce((max, row) => Math.max(max, row.length), 0);
   const sameSheet = (sheet: string | undefined): boolean =>
@@ -218,6 +236,7 @@ export function evaluateSpreadsheetFormulas(
         col: formula.col + 1,
         sheet: sheetName,
       })) {
+        if (!sameSheet(ref.sheet)) continue;
         const cells: Array<{ row: number; col: number }> =
           "from" in ref
             ? (() => {
@@ -301,7 +320,7 @@ export function evaluateSpreadsheetFormulas(
 
   const parser = engine.createParser({
     onCell: (ref) => {
-      if (!sameSheet(ref.sheet)) return null;
+      if (!sameSheet(ref.sheet)) throw new Error("Calculation needs another sheet");
       const row = ref.row - 1;
       const col = ref.col - 1;
       if (row < 0 || col < 0 || row >= rowCount || col >= colCount) return null;
@@ -310,7 +329,7 @@ export function evaluateSpreadsheetFormulas(
       return typedRawValue(rows[row]?.[col] ?? "");
     },
     onRange: (ref) => {
-      if (!sameSheet(ref.sheet)) return [[]];
+      if (!sameSheet(ref.sheet)) throw new Error("Calculation needs another sheet");
       const firstRow = Math.max(1, Math.min(ref.from.row, ref.to.row)) - 1;
       const lastRow = Math.min(rowCount, Math.max(ref.from.row, ref.to.row)) - 1;
       const firstCol = Math.max(1, Math.min(ref.from.col, ref.to.col)) - 1;
@@ -344,7 +363,10 @@ export function evaluateSpreadsheetFormulas(
     } catch (error) {
       result = engine.isFormulaError(error) ? engine.formulaErrorCode(error) : "#ERROR!";
     }
-    computed.set(key, result);
+    if (saved && typeof result === "string" && result.startsWith("#")) {
+      result = savedResult(formula.row, formula.col);
+    }
+    computed.set(key, typeof result === "string" ? typedRawValue(result) : result);
     const display =
       typeof result === "string" && result.startsWith("#")
         ? result

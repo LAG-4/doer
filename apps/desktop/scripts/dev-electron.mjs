@@ -1,6 +1,5 @@
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
-import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import {
@@ -46,12 +45,9 @@ const watchedDirectories = [
   },
   { directory: "../server/dist", files: new Set(["bin.mjs"]) },
 ];
-const forcedShutdownTimeoutMs = 1_500;
+const forcedShutdownTimeoutMs = 10_000;
 const restartDebounceMs = 120;
-const childTreeGracePeriodMs = 1_200;
 const remoteDebuggingPort = process.env.T3CODE_DESKTOP_REMOTE_DEBUGGING_PORT?.trim();
-// oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone dev script has no Effect runtime.
-const hostPlatform = NodeOS.platform();
 
 NodeChildProcess.execFileSync(
   process.execPath,
@@ -81,24 +77,6 @@ let restartQueue = Promise.resolve();
 const expectedExits = new WeakSet();
 const watchers = [];
 
-function killChildTreeByPid(pid, signal) {
-  if (hostPlatform === "win32" || typeof pid !== "number") {
-    return;
-  }
-
-  NodeChildProcess.spawnSync("pkill", [`-${signal}`, "-P", String(pid)], { stdio: "ignore" });
-}
-
-function cleanupStaleDevApps() {
-  if (hostPlatform === "win32") {
-    return;
-  }
-
-  NodeChildProcess.spawnSync("pkill", ["-f", "--", `--doer-dev-root=${desktopDir}`], {
-    stdio: "ignore",
-  });
-}
-
 function startApp() {
   if (shuttingDown || currentApp !== null) {
     return;
@@ -118,6 +96,7 @@ function startApp() {
   });
 
   currentApp = app;
+  console.info(`[desktop-dev] started PID ${app.pid}`);
 
   app.once("error", () => {
     if (currentApp === app) {
@@ -163,9 +142,8 @@ async function stopApp() {
     };
 
     app.once("exit", finish);
+    // Only stop the child captured at launch; path matches can select a user app or agent.
     app.kill("SIGTERM");
-    killChildTreeByPid(app.pid, "TERM");
-    cleanupStaleDevApps();
 
     setTimeout(() => {
       if (settled) {
@@ -173,8 +151,6 @@ async function stopApp() {
       }
 
       app.kill("SIGKILL");
-      killChildTreeByPid(app.pid, "KILL");
-      cleanupStaleDevApps();
       finish();
     }, forcedShutdownTimeoutMs).unref();
   });
@@ -220,17 +196,6 @@ function startWatchers() {
   }
 }
 
-function killChildTree(signal) {
-  if (hostPlatform === "win32") {
-    return;
-  }
-
-  // Kill direct children as a final fallback in case normal shutdown leaves stragglers.
-  NodeChildProcess.spawnSync("pkill", [`-${signal}`, "-P", String(process.pid)], {
-    stdio: "ignore",
-  });
-}
-
 async function shutdown(exitCode) {
   if (shuttingDown) return;
   shuttingDown = true;
@@ -244,18 +209,15 @@ async function shutdown(exitCode) {
     watcher.close();
   }
 
+  // A pending restart may already be stopping the child. Wait for its cleanup
+  // before exiting, otherwise the old app can outlive the attached runner.
+  await restartQueue.catch(() => undefined);
   await stopApp();
-  killChildTree("TERM");
-  await new Promise((resolve) => {
-    setTimeout(resolve, childTreeGracePeriodMs);
-  });
-  killChildTree("KILL");
 
   process.exit(exitCode);
 }
 
 startWatchers();
-cleanupStaleDevApps();
 startApp();
 
 process.once("SIGINT", () => {

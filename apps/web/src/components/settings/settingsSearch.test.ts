@@ -233,8 +233,8 @@ describe("searchSettings", () => {
     });
 
     expect(searchSettings("auto-settle", available).map((item) => item.id)).toEqual([
-      "auto-settle-inactive-threads",
       "auto-settle-merged-threads",
+      "auto-settle-inactive-threads",
       "days-before-auto-settle",
     ]);
   });
@@ -454,8 +454,8 @@ describe("auto-settlement search availability", () => {
       hasThreadAutoSettlement: availability.eligibleEnvironmentIds.length > 0,
     });
     expect(searchSettings("auto-settle", items).map((item) => item.id)).toEqual([
-      "auto-settle-inactive-threads",
       "auto-settle-merged-threads",
+      "auto-settle-inactive-threads",
       "days-before-auto-settle",
     ]);
   });

@@ -4,7 +4,7 @@ import * as Effect from "effect/Effect";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import { beforeEach, vi } from "vite-plus/test";
+import { afterAll, beforeEach, vi } from "vite-plus/test";
 
 const { handleMock, netFetchMock, unhandleMock } = vi.hoisted(() => ({
   handleMock: vi.fn(),
@@ -26,7 +26,9 @@ describe("ElectronProtocol", () => {
     handleMock.mockReset();
     netFetchMock.mockReset();
     unhandleMock.mockReset();
+    vi.stubGlobal("fetch", netFetchMock);
   });
+  afterAll(() => vi.unstubAllGlobals());
 
   it.effect("serves the bundled client from disk without a backend", () =>
     Effect.gen(function* () {
@@ -68,13 +70,56 @@ describe("ElectronProtocol", () => {
     }).pipe(Effect.provide(Layer.merge(protocolLayer, NodeServices.layer)), Effect.scoped),
   );
 
+  it.effect("limits development proxy requests until their response bodies finish", () =>
+    Effect.gen(function* () {
+      let handler: ((request: Request) => Promise<Response>) | undefined;
+      handleMock.mockImplementation((_scheme, nextHandler) => {
+        handler = nextHandler;
+      });
+      const bodies: ReadableStreamDefaultController<Uint8Array>[] = [];
+      const firstBatch = Promise.withResolvers<void>();
+      const nextBatch = Promise.withResolvers<void>();
+      netFetchMock.mockImplementation(() => {
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            bodies.push(controller);
+          },
+        });
+        if (bodies.length === 16) firstBatch.resolve();
+        if (bodies.length === 17) nextBatch.resolve();
+        return Promise.resolve(new Response(body));
+      });
+      const protocol = yield* ElectronProtocol.ElectronProtocol;
+      yield* protocol.registerDesktopProtocol({
+        scheme: "doer-dev",
+        targetOrigin: new URL("http://localhost:3773/"),
+        clerkFrontendApiHostname: undefined,
+      });
+      yield* Effect.promise(async () => {
+        const responses = Array.from({ length: 17 }, (_, index) =>
+          handler!(new Request(`doer-dev://app/module-${index}.js`)),
+        );
+        await firstBatch.promise;
+        assert.equal(netFetchMock.mock.calls.length, 16);
+        bodies[0]!.close();
+        await nextBatch.promise;
+        for (const body of bodies.slice(1)) body.close();
+        assert.equal((await Promise.all(responses)).length, 17);
+      });
+    }).pipe(Effect.provide(protocolLayer), Effect.scoped),
+  );
+
   it.effect("proxies the stable renderer origin to the current app server", () =>
     Effect.gen(function* () {
       let handler: ((request: Request) => Promise<Response>) | undefined;
       handleMock.mockImplementation((_scheme, nextHandler) => {
         handler = nextHandler;
       });
-      netFetchMock.mockResolvedValue(new Response("ok"));
+      netFetchMock.mockResolvedValue(
+        new Response("ok", {
+          headers: { "content-encoding": "gzip", "content-length": "123" },
+        }),
+      );
 
       yield* Effect.scoped(
         Effect.gen(function* () {
@@ -98,6 +143,8 @@ describe("ElectronProtocol", () => {
               }),
             ),
           );
+          assert.isNull(response.headers.get("content-encoding"));
+          assert.isNull(response.headers.get("content-length"));
           assert.equal(yield* Effect.promise(() => response.text()), "ok");
           assert.include(
             response.headers.get("content-security-policy") ?? "",

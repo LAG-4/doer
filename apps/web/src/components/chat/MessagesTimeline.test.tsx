@@ -562,55 +562,79 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("Worked for 8.0s");
   });
 
-  it("keeps assistant changed-files headers sticky below the thread header", () => {
-    const assistantMessageId = MessageId.make("message-assistant-with-files");
-    const turnId = TurnId.make("turn-with-files");
-    const markup = renderToStaticMarkup(
-      <MessagesTimeline
-        {...buildProps()}
-        latestTurn={{
-          turnId,
-          state: "completed",
-          startedAt: MESSAGE_CREATED_AT,
-          completedAt: MESSAGE_CREATED_AT,
-        }}
-        timelineEntries={[
-          {
-            id: "entry-assistant-with-files",
-            kind: "message",
-            createdAt: MESSAGE_CREATED_AT,
-            message: {
-              id: assistantMessageId,
-              role: "assistant",
-              text: "Updated the fixture.",
+  it("keeps assistant changed-files headers sticky below the thread header in advanced mode", async () => {
+    const { DEFAULT_CLIENT_SETTINGS } = await import("@t3tools/contracts/settings");
+    const { __setClientSettingsForTests } = await import("~/hooks/useSettings");
+    __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, simpleModeEnabled: false });
+    vi.stubGlobal("document", { ...document, getElementById: () => new ElementStub() });
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.stubGlobal("requestAnimationFrame", () => 0);
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+    let renderer: ReactTestRenderer | undefined;
+    try {
+      const assistantMessageId = MessageId.make("message-assistant-with-files");
+      const turnId = TurnId.make("turn-with-files");
+      await act(() => {
+        renderer = create(
+          <MessagesTimeline
+            {...buildProps()}
+            latestTurn={{
               turnId,
-              createdAt: MESSAGE_CREATED_AT,
-              updatedAt: MESSAGE_CREATED_AT,
-              streaming: false,
-            },
-          },
-        ]}
-        turnDiffSummaries={[
-          {
-            turnId,
-            checkpointTurnCount: 1,
-            checkpointRef: CheckpointRef.make("checkpoint-with-files"),
-            status: "ready",
-            files: [{ path: "README.md", kind: "modified", additions: 2, deletions: 1 }],
-            assistantMessageId,
-            completedAt: MESSAGE_CREATED_AT,
-          },
-        ]}
-      />,
-    );
+              state: "completed",
+              startedAt: MESSAGE_CREATED_AT,
+              completedAt: MESSAGE_CREATED_AT,
+            }}
+            timelineEntries={[
+              {
+                id: "entry-assistant-with-files",
+                kind: "message",
+                createdAt: MESSAGE_CREATED_AT,
+                message: {
+                  id: assistantMessageId,
+                  role: "assistant",
+                  text: "Updated the fixture.",
+                  turnId,
+                  createdAt: MESSAGE_CREATED_AT,
+                  updatedAt: MESSAGE_CREATED_AT,
+                  streaming: false,
+                },
+              },
+            ]}
+            turnDiffSummaries={[
+              {
+                turnId,
+                checkpointTurnCount: 1,
+                checkpointRef: CheckpointRef.make("checkpoint-with-files"),
+                status: "ready",
+                files: [{ path: "README.md", kind: "modified", additions: 2, deletions: 1 }],
+                assistantMessageId,
+                completedAt: MESSAGE_CREATED_AT,
+              },
+            ]}
+          />,
+        );
+      });
 
-    expect(markup).toContain("sticky top-2 z-10");
-    expect(markup).not.toContain("self-start");
-    expect(markup).toContain("whitespace-nowrap");
-    expect(markup).toContain("size-3");
-    expect(markup).not.toContain('aria-label="Collapse all folders"');
-    expect(markup).toContain('aria-label="Open diff"');
-    expect(markup).toContain("1 changed file");
+      const markup = JSON.stringify(renderer!.toJSON());
+      expect(markup).toContain("sticky top-2 z-10");
+      expect(markup).not.toContain("self-start");
+      expect(markup).toContain("whitespace-nowrap");
+      expect(markup).toContain("size-3");
+      expect(renderer!.root.findAllByProps({ "aria-label": "Collapse all folders" })).toHaveLength(
+        0,
+      );
+      expect(renderer!.root.findAllByProps({ "aria-label": "Open diff" }).length).toBeGreaterThan(
+        0,
+      );
+      expect(
+        renderer!.root.findAll(
+          (node) => node.type === "span" && node.children.join("") === "1 changed file",
+        ).length,
+      ).toBeGreaterThan(0);
+    } finally {
+      await act(() => renderer?.unmount());
+      __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
+    }
   });
 
   it("treats only the strict list end as the live edge", async () => {

@@ -518,7 +518,7 @@ export function buildTraitsTriggerDisplay(input: {
           ? `${descriptor.label} ${descriptor.currentValue === true ? "On" : "Off"}`
           : getProviderOptionCurrentLabel(descriptor);
     if (typeof label === "string" && label.length > 0) {
-      labels.push(label);
+      labels.push(label === "Build" ? "Work" : label);
     }
   }
 

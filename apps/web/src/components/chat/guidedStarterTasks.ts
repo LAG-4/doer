@@ -20,6 +20,113 @@ export interface GuidedStarterTask {
 
 export const GUIDED_STARTER_TASKS: readonly GuidedStarterTask[] = [
   {
+    id: "understand",
+    title: "Understand a document",
+    startLabel: "Explain my document",
+    description: "Get a clear summary, key dates and useful next steps.",
+    questions: [
+      {
+        id: "goal",
+        label: "What would you like to understand?",
+        placeholder: "A plain-language summary, obligations, important dates…",
+        choices: ["Help me understand it", "What should I do next?"],
+      },
+      {
+        id: "detail",
+        label: "How much detail would you like?",
+        placeholder: "Quick overview or detailed explanation",
+        choices: ["Quick overview", "Detailed explanation"],
+      },
+    ],
+    attachmentLabel: "Add the document",
+    minimumFiles: 1,
+    result:
+      "Summarize the attached document in plain language. Cite pages or sections, identify important dates and actions, and distinguish what the document says from your interpretation.",
+    guidance:
+      "Use only the attached document for its factual summary. Highlight uncertainty and unreadable sections. Offer to explain a section or produce a summary document. For medical, legal or financial decisions, make the limits of the source clear.",
+  },
+  {
+    id: "application",
+    title: "Prepare a job application",
+    startLabel: "Prepare my application",
+    description: "Adapt your resume and draft a letter for a specific role.",
+    questions: [
+      {
+        id: "role",
+        label: "Which role are you applying for?",
+        placeholder: "Paste the job description or its link",
+      },
+      {
+        id: "experience",
+        label: "What experience should we highlight?",
+        placeholder: "Relevant experience, achievements or your resume below",
+      },
+      {
+        id: "format",
+        label: "What do you need?",
+        placeholder: "Resume, cover letter or both",
+        choices: ["Resume and cover letter", "Cover letter", "Resume"],
+      },
+    ],
+    attachmentLabel: "Add your resume or the job description (optional)",
+    result:
+      "Prepare an application tailored to the supplied role, explain the changes, and create downloadable document drafts using the built-in output tools.",
+    guidance:
+      "Never invent qualifications, experience, duties or achievements. Do not infer that the candidate has done a duty just because the role needs it. Before finishing, check every claim against the supplied facts; remove unsupported claims or replace them with clearly marked placeholders. Mark gaps for the user to review. If the role or resume is missing, ask for that essential source before drafting. Do not submit an application. Offer revision or a user-controlled application handoff.",
+  },
+  {
+    id: "meeting",
+    title: "Prepare for a meeting",
+    startLabel: "Prepare my meeting",
+    description: "Turn notes into an agenda, questions and a briefing.",
+    questions: [
+      {
+        id: "purpose",
+        label: "What is the meeting about?",
+        placeholder: "Purpose and the decision you hope to make",
+      },
+      { id: "people", label: "Who is attending?", placeholder: "Names or roles, if known" },
+      {
+        id: "context",
+        label: "What should we cover?",
+        placeholder: "Key topics, concerns or reference notes below",
+      },
+    ],
+    attachmentLabel: "Add notes or reports (optional)",
+    result:
+      "Prepare a short agenda, a briefing with source references, and useful questions. Create a downloadable document when helpful.",
+    guidance:
+      "Separate known facts from proposed discussion points. Never invent attendees or decisions. Offer turning meeting notes into actions as a next step; do not send invitations or messages.",
+  },
+  {
+    id: "organize",
+    title: "Organize my files",
+    startLabel: "Review my files",
+    description: "Review a folder and approve a clear organization plan.",
+    questions: [
+      {
+        id: "folder",
+        label: "Which folder should we organize?",
+        placeholder: "A folder in this Space",
+      },
+      {
+        id: "goal",
+        label: "How would you like it organized?",
+        placeholder: "By month, topic or type",
+        choices: ["Suggest a simple organization", "By date", "By topic"],
+      },
+      {
+        id: "keep",
+        label: "What should stay as it is?",
+        placeholder: "Folders, filenames or files to leave alone",
+      },
+    ],
+    result:
+      "Inspect the requested folder and show a concise proposed move/rename plan, with examples and any duplicates or conflicts. Wait for approval before making changes.",
+    guidance:
+      "Start read-only. Do not move, rename or delete until the user approves the concrete plan. Never delete duplicates automatically or follow links outside the chosen folder. Keep originals recoverable and explain where History applies. Offer applying the approved plan as the next step.",
+  },
+  {
     id: "jobs",
     title: "Find jobs for me",
     startLabel: "Find jobs",
@@ -101,7 +208,7 @@ export const GUIDED_STARTER_TASKS: readonly GuidedStarterTask[] = [
     attachmentLabel: "Add reference files (optional)",
     reviewSummary: "Prepare a usable document draft from my details and reference files.",
     result:
-      "Write a clean, usable draft. Produce a downloadable file if the current runtime supports it; otherwise provide a copyable draft and explain the limitation.",
+      "Write a clean, usable draft. Use the built-in output tools to create a downloadable document; if a tool fails, keep the draft and explain the failure.",
     guidance:
       "Never invent personal details. Mark missing details clearly. Offer refining the wording or changing the format as next steps.",
   },
@@ -313,5 +420,9 @@ export function buildStarterRequest(input: {
 }
 
 export function starterFileRequirement(task: GuidedStarterTask, fileCount: number): string | null {
-  return fileCount < (task.minimumFiles ?? 0) ? "Add two reports before continuing." : null;
+  return fileCount < (task.minimumFiles ?? 0)
+    ? task.id === "reports"
+      ? "Add two reports before continuing."
+      : "Add the document before continuing."
+    : null;
 }

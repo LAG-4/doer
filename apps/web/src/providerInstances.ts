@@ -246,9 +246,7 @@ export function getDefaultProviderInstanceModel(
       }
     }
     const free = builtInSlugs.filter((slug) => isOpenCodeFreeModelSlug(slug)).toSorted()[0];
-    if (free) {
-      return free;
-    }
+    return free;
   }
   return (
     entry.models.find((model) => model.isDefault && !model.isCustom)?.slug ??
@@ -314,7 +312,23 @@ export function resolveDefaultProviderModelSelection(
   providers: ReadonlyArray<ServerProvider>,
   selection: ModelSelection | null | undefined,
 ): ModelSelection | null {
-  const instanceId = resolveSelectableProviderInstance(providers, selection?.instanceId);
+  const exact = selection
+    ? providers.find(
+        (provider) =>
+          provider.instanceId === selection.instanceId &&
+          provider.enabled &&
+          provider.availability !== "unavailable",
+      )
+    : undefined;
+  const instanceId =
+    exact?.instanceId ??
+    providers.find(
+      (provider) =>
+        provider.enabled &&
+        provider.driver === "opencode" &&
+        provider.status !== "error" &&
+        provider.availability !== "unavailable",
+    )?.instanceId;
   if (instanceId === undefined) return null;
   if (selection?.instanceId === instanceId) return selection;
   const model = getDefaultProviderInstanceModel(providers, instanceId);

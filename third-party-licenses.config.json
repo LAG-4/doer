@@ -167,6 +167,24 @@
   ],
   "packageOverrides": [
     {
+      "name": "hash.js",
+      "sourceUrl": "https://github.com/indutny/hash.js/tree/v1.1.7",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright Fedor Indutny, 2014."]
+      }
+    },
+    {
+      "name": "https",
+      "generatedNotice": {
+        "licenseId": "ISC",
+        "copyrights": ["Copyright (c) hardus van der berg"],
+        "preamble": [
+          "https@1.0.0 is an empty compatibility package by hardus van der berg, published under ISC."
+        ]
+      }
+    },
+    {
       "license": "MIT",
       "name": "@react-grab/cli",
       "sourceUrl": "https://github.com/aidenybai/react-grab/tree/main/packages/cli",
