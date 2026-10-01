@@ -1,5 +1,4 @@
 import {
-  DOER_MEMORY_COPY,
   DOER_MEMORY_MAX_CONTENT_CHARS,
   DoerMemory,
   type DoerMemoryScope,
@@ -96,10 +95,6 @@ const toMemory = (body: unknown) => {
     throw new DoerMemoryRequestError("Doer sent back something unexpected. Try again.", 502);
   }
 };
-
-export function describeMemoryScopeLabel(scope: DoerMemoryScope): string {
-  return scope === "about-you" ? DOER_MEMORY_COPY.aboutYou : DOER_MEMORY_COPY.thisSpace;
-}
 
 export async function listDoerMemories(
   transport: DoerMemoryTransport,

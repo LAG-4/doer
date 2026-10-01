@@ -1,5 +1,6 @@
 import {
   DOER_MEMORY_MAX_COUNT_PER_SCOPE,
+  DOER_MEMORY_MAX_RECALL_ENTRIES,
   findDoerMemorySecretProblem,
   normalizeDoerMemoryContent,
   type DoerMemory,
@@ -176,7 +177,7 @@ const make = Effect.gen(function* () {
           query: input.query,
           memories: entries
             .filter((entry) => entry.content.toLowerCase().includes(needle))
-            .slice(0, 20),
+            .slice(0, DOER_MEMORY_MAX_RECALL_ENTRIES),
         };
       }),
 
