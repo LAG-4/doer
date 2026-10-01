@@ -13,6 +13,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import { CodexInstallation, type CodexInstallationError } from "./CodexInstallation.ts";
+import { ProviderCliInstallation, supportsCliInstallation } from "./ProviderCliInstallation.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import {
   AntigravityInstallation,
@@ -32,6 +33,7 @@ const decodeAntigravitySettings = Schema.decodeUnknownEffect(AntigravitySettings
 export const makeProviderInstallation = Effect.fn("makeProviderInstallation")(function* () {
   const antigravityInstallation = yield* AntigravityInstallation;
   const codexInstallation = yield* CodexInstallation;
+  const cliInstallation = yield* ProviderCliInstallation;
   const instances = yield* ProviderInstanceRegistry;
   const providers = yield* ProviderRegistry;
   const settings = yield* ServerSettingsService;
@@ -106,6 +108,10 @@ export const makeProviderInstallation = Effect.fn("makeProviderInstallation")(fu
       new ProviderSetupError({ instanceId, operation: error.operation, detail: error.detail });
 
   const start = Effect.fn("ProviderInstallation.start")(function* (input: ProviderSetupInput) {
+    const instance = yield* instances.getInstance(input.instanceId);
+    if (instance && supportsCliInstallation(instance.driverKind)) {
+      return yield* cliInstallation.start(input.instanceId, instance.driverKind);
+    }
     const { installation } = yield* requireInstance(input.instanceId, "install", true);
     return yield* installation.start.pipe(Effect.mapError(failure(input.instanceId)));
   });
@@ -113,6 +119,10 @@ export const makeProviderInstallation = Effect.fn("makeProviderInstallation")(fu
   const cancel = Effect.fn("ProviderInstallation.cancel")(function* (
     input: ProviderInstallCancelInput,
   ) {
+    const instance = yield* instances.getInstance(input.instanceId);
+    if (instance && supportsCliInstallation(instance.driverKind)) {
+      return yield* cliInstallation.cancel(input.instanceId, input.operationId);
+    }
     const { installation } = yield* requireInstance(input.instanceId, "cancel-install");
     return yield* installation
       .cancel(input.operationId)
@@ -121,9 +131,14 @@ export const makeProviderInstallation = Effect.fn("makeProviderInstallation")(fu
 
   const subscribe = (input: ProviderSetupInput) =>
     Stream.unwrap(
-      requireInstance(input.instanceId, "observe-install").pipe(
-        Effect.map(({ installation }) => installation.changes),
-      ),
+      Effect.gen(function* () {
+        const instance = yield* instances.getInstance(input.instanceId);
+        if (instance && supportsCliInstallation(instance.driverKind)) {
+          return cliInstallation.changes(input.instanceId, instance.driverKind);
+        }
+        const { installation } = yield* requireInstance(input.instanceId, "observe-install");
+        return installation.changes;
+      }),
     );
 
   const remove = Effect.fn("ProviderInstallation.remove")(function* (input: ProviderSetupInput) {

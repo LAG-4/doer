@@ -148,6 +148,7 @@ import {
   AntigravityInstallationError,
 } from "./provider/AntigravityInstallation.ts";
 import { CodexInstallation } from "./provider/CodexInstallation.ts";
+import { ProviderCliInstallation } from "./provider/ProviderCliInstallation.ts";
 import type { ProviderInstance } from "./provider/ProviderDriver.ts";
 import * as ProviderSessionDirectory from "./provider/Services/ProviderSessionDirectory.ts";
 import { ProviderAdapterRequestError } from "./provider/Errors.ts";
@@ -538,6 +539,7 @@ const buildAppUnderTest = (options?: {
     providerInstanceRegistry?: Partial<ProviderInstanceRegistry["Service"]>;
     antigravityInstallation?: Partial<AntigravityInstallation["Service"]>;
     codexInstallation?: Partial<CodexInstallation["Service"]>;
+    providerCliInstallation?: Partial<ProviderCliInstallation["Service"]>;
     serverSettings?: Partial<ServerSettings.ServerSettingsService["Service"]>;
     externalLauncher?: Partial<ExternalLauncher.ExternalLauncher["Service"]>;
     vcsDriver?: Partial<VcsDriver.VcsDriver["Service"]>;
@@ -844,6 +846,7 @@ const buildAppUnderTest = (options?: {
             managedDirectory: "unused-test-codex-runtime",
             ...options?.layers?.codexInstallation,
           }),
+          Layer.mock(ProviderCliInstallation)({ ...options?.layers?.providerCliInstallation }),
           Layer.mock(AntigravityInstallation)({
             managedDirectory: "unused-test-antigravity-runtime",
             ...options?.layers?.antigravityInstallation,
@@ -6751,6 +6754,84 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         );
         assert.deepEqual(calls, ["start", "cancel:old-operation", "cancel:install-operation"]);
       }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("provider setup installs a missing CLI through authenticated WebSocket requests", () =>
+    Effect.gen(function* () {
+      const cliId = ProviderInstanceId.make("claudeAgent");
+      const cliDriver = ProviderDriverKind.make("claudeAgent");
+      const state: ProviderInstallState = { ...providerSetupInstallState, driver: cliDriver };
+      const calls: string[] = [];
+      yield* buildAppUnderTest({
+        layers: {
+          providerInstanceRegistry: {
+            getInstance: (id) =>
+              Effect.succeed(
+                id === cliId
+                  ? {
+                      instanceId: cliId,
+                      driverKind: cliDriver,
+                      enabled: false,
+                      displayName: undefined,
+                      continuationIdentity: { driverKind: cliDriver, continuationKey: cliId },
+                      get adapter(): never {
+                        throw new Error("Installation must not start a chat session.");
+                      },
+                      get snapshot(): never {
+                        throw new Error("Installation routing must not probe the provider.");
+                      },
+                      get textGeneration(): never {
+                        throw new Error("Installation must not generate text.");
+                      },
+                    }
+                  : undefined,
+              ),
+          },
+          providerCliInstallation: {
+            start: (id, driver) =>
+              Effect.sync(() => {
+                assert.equal(id, cliId);
+                assert.equal(driver, cliDriver);
+                calls.push("start");
+                return state;
+              }),
+            cancel: (id, operationId) =>
+              Effect.sync(() => {
+                assert.equal(id, cliId);
+                assert.equal(operationId, state.operationId);
+                calls.push("cancel");
+                return { ...state, phase: "cancelled" };
+              }),
+            changes: (id, driver) => {
+              assert.equal(id, cliId);
+              assert.equal(driver, cliDriver);
+              return Stream.succeed(state);
+            },
+          },
+        },
+      });
+      const url = yield* getWsServerUrl("/ws");
+      yield* Effect.scoped(
+        withWsRpcClient(url, (client) =>
+          Effect.gen(function* () {
+            assert.deepEqual(
+              yield* client[WS_METHODS.providerInstallStart]({ instanceId: cliId }),
+              state,
+            );
+            const observed = yield* client[WS_METHODS.providerInstallSubscribe]({
+              instanceId: cliId,
+            }).pipe(Stream.runHead, Effect.map(Option.getOrThrow));
+            assert.deepEqual(observed, state);
+            const cancelled = yield* client[WS_METHODS.providerInstallCancel]({
+              instanceId: cliId,
+              operationId: state.operationId!,
+            });
+            assert.equal(cancelled.phase, "cancelled");
+          }),
+        ),
+      );
+      assert.deepEqual(calls, ["start", "cancel"]);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
   it.effect("routes websocket rpc subscribeServerConfig streams snapshot then update", () =>

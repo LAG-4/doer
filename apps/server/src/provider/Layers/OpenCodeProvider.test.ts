@@ -409,7 +409,7 @@ it.layer(testLayer)("checkOpenCodeProviderStatus", (it) => {
       NodeAssert.equal(snapshot.installed, false);
       NodeAssert.equal(
         snapshot.message,
-        "OpenCode CLI (`opencode`) is not installed or not on PATH. Automatic install failed: npm is unavailable",
+        "OpenCode setup could not finish. Check your internet connection, then try setup again in AI settings.",
       );
     }),
   );
