@@ -1,3 +1,4 @@
+// @effect-diagnostics globalFetch:off - The browser fetch supplies the connection's HttpClient transport.
 import { MicrosoftAction, MicrosoftResponse } from "@t3tools/shared/microsoftConnection";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -16,9 +17,9 @@ export class ConnectedAppsHttp extends Context.Service<
     readonly microsoft: (
       prepared: PreparedConnection,
       input: typeof MicrosoftAction.Type,
-    ) => Effect.Effect<typeof MicrosoftResponse.Type, RemoteEnvironmentRequestError>;
+    ) => Effect.Effect<MicrosoftResponse, RemoteEnvironmentRequestError>;
   }
->()("@t3tools/client-runtime/state/ConnectedAppsHttp") {}
+>()("@t3tools/client-runtime/state/connectedAppsHttp") {}
 
 export const connectedAppsHttpLayer = Layer.effect(
   ConnectedAppsHttp,
