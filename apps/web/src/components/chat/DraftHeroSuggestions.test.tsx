@@ -25,6 +25,11 @@ vi.mock("~/components/ui/dialog", () => ({
 vi.mock("~/components/ui/button", () => ({ Button: "button" }));
 vi.mock("~/components/ui/textarea", () => ({ Textarea: "textarea" }));
 vi.mock("~/components/ui/input", () => ({ Input: "input" }));
+vi.mock("~/hooks/useSettings", () => ({
+  useClientSettings: (selector: (settings: { simpleModeEnabled: boolean }) => unknown) =>
+    selector({ simpleModeEnabled: false }),
+}));
+vi.mock("@tanstack/react-router", () => ({ Link: "a" }));
 
 import { DraftHeroSuggestions } from "./DraftHeroSuggestions";
 
