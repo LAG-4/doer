@@ -8,7 +8,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { create } from "zustand";
 import { useAtomValue } from "@effect/atom-react";
 
@@ -85,9 +85,10 @@ const SCHEDULE_KINDS: ReadonlyArray<{ value: ScheduleKind; label: string }> = [
   { value: "once", label: "Once" },
   { value: "daily", label: "Every day" },
   { value: "weekly", label: "Every week" },
+  { value: "weekdays", label: "Weekdays" },
 ];
 
-type ScheduleKind = "once" | "daily" | "weekly";
+type ScheduleKind = "once" | "daily" | "weekly" | "weekdays";
 
 function toLocalDateTimeInputValue(iso: string): string {
   const date = new Date(iso);
@@ -270,6 +271,8 @@ function ScheduledTaskEditorForm(props: {
   const createThread = useAtomCommand(threadEnvironment.create);
   const createAutomation = useAtomCommand(automationEnvironment.create);
   const updateAutomation = useAtomCommand(automationEnvironment.update);
+  const pauseAutomation = useAtomCommand(automationEnvironment.pause);
+  const runAutomation = useAtomCommand(automationEnvironment.runNow);
 
   const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -311,6 +314,17 @@ function ScheduledTaskEditorForm(props: {
   const [model, setModel] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [previewFirst, setPreviewFirst] = useState(true);
+  const [setupStarted, setSetupStarted] = useState(false);
+  const setup = useRef<{
+    threadId: ReturnType<typeof newThreadId>;
+    entries: {
+      id: ReturnType<typeof newAutomationId>;
+      created: boolean;
+      paused: boolean;
+      configured: boolean;
+    }[];
+  } | null>(null);
 
   const presetSelectedProject =
     presetProject === null
@@ -379,10 +393,10 @@ function ScheduledTaskEditorForm(props: {
       return;
     }
     const { schedule, error } = buildReminderSchedule({
-      kind,
+      kind: kind === "weekdays" ? "weekly" : kind,
       onceAt,
       time,
-      weekday,
+      weekday: kind === "weekdays" ? 1 : weekday,
       timezone,
       now: Date.now(),
       previousSchedule: editingAutomation?.schedule,
@@ -428,41 +442,121 @@ function ScheduledTaskEditorForm(props: {
         setFormError("Pick a model first (under Advanced).");
         return;
       }
-      const threadId = newThreadId();
-      const threadResult = await createThread({
-        environmentId: selectedProject.environmentId,
-        input: {
+      const schedules: AutomationSchedule[] =
+        kind === "weekdays" && schedule.kind === "weekly"
+          ? [1, 2, 3, 4, 5].map((day) => ({ ...schedule, weekday: day }))
+          : [schedule];
+      if (!setup.current) {
+        const threadId = newThreadId();
+        const threadResult = await createThread({
+          environmentId: selectedProject.environmentId,
+          input: {
+            threadId,
+            projectId: selectedProject.id,
+            title: trimmedTitle,
+            modelSelection: createModelSelection(effectiveInstanceId, effectiveModel),
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+          },
+        });
+        if (threadResult._tag === "Failure") {
+          setFormError("Could not set up the reminder. Reconnect this computer and try again.");
+          return;
+        }
+        setSetupStarted(true);
+        setup.current = {
           threadId,
-          projectId: selectedProject.id,
-          title: trimmedTitle,
-          modelSelection: createModelSelection(effectiveInstanceId, effectiveModel),
-          runtimeMode: "full-access",
-          interactionMode: "default",
-          branch: null,
-          worktreePath: null,
-        },
-      });
-      if (threadResult._tag === "Failure") {
-        setFormError("Could not set up the reminder. Is this computer connected?");
+          entries: schedules.map(() => ({
+            id: newAutomationId(),
+            created: false,
+            paused: false,
+            configured: false,
+          })),
+        };
+      }
+      const current = setup.current;
+      if (current.entries.length !== schedules.length) {
+        setFormError("Finish the existing setup before changing how often it runs.");
         return;
       }
-      const automationResult = await createAutomation({
-        environmentId: selectedProject.environmentId,
-        input: {
-          automationId: newAutomationId(),
-          projectId: selectedProject.id,
-          threadId,
-          title: trimmedTitle,
-          prompt: trimmedPrompt,
-          schedule,
-          dedicatedThread: true,
-        },
-      });
-      if (automationResult._tag === "Failure") {
-        setFormError("The timing was rejected, so it will not run.");
-        return;
+      for (const [index, entry] of current.entries.entries()) {
+        const requested = schedules[index];
+        if (!requested) continue;
+        const title =
+          schedules.length > 1 && requested.kind === "weekly"
+            ? `${trimmedTitle} · ${WEEKDAY_SHORT[requested.weekday]}`
+            : trimmedTitle;
+        if (!entry.created) {
+          const result = await createAutomation({
+            environmentId: selectedProject.environmentId,
+            input: {
+              automationId: entry.id,
+              projectId: selectedProject.id,
+              threadId: current.threadId,
+              title: previewFirst ? `Preview · ${title}` : title,
+              prompt: trimmedPrompt,
+              // A preview is paused before the actual schedule is applied. It cannot race a nearby run.
+              schedule: previewFirst
+                ? { kind: "once", at: new Date(Date.now() + 30 * 86400000).toISOString() }
+                : requested,
+              dedicatedThread: true,
+            },
+          });
+          if (result._tag === "Failure") {
+            setFormError(
+              "Setup could not finish. Your entries are kept; reconnect and retry here to continue.",
+            );
+            return;
+          }
+          entry.created = true;
+        }
+        if (previewFirst && !entry.paused) {
+          const result = await pauseAutomation({
+            environmentId: selectedProject.environmentId,
+            input: { automationId: entry.id },
+          });
+          if (result._tag === "Failure") {
+            setFormError(
+              "The preview could not be paused. Check the Preview entry in Reminders before leaving this setup.",
+            );
+            return;
+          }
+          entry.paused = true;
+        }
+        if (previewFirst && !entry.configured) {
+          const result = await updateAutomation({
+            environmentId: selectedProject.environmentId,
+            input: { automationId: entry.id, title, schedule: requested },
+          });
+          if (result._tag === "Failure") {
+            setFormError("The preview is paused. Reconnect and retry to finish saving its timing.");
+            return;
+          }
+          entry.configured = true;
+        }
       }
-      toastManager.add({ type: "success", title: "Reminder created." });
+      if (previewFirst && current.entries[0]) {
+        const result = await runAutomation({
+          environmentId: selectedProject.environmentId,
+          input: { automationId: current.entries[0].id },
+        });
+        if (result._tag === "Failure") {
+          setFormError(
+            "The reminders are saved and paused. Open Reminders to run a preview and review its result before resuming.",
+          );
+          return;
+        }
+      }
+      toastManager.add({
+        type: "success",
+        title: previewFirst
+          ? "Preview started. Review its Task, then resume in Reminders."
+          : schedules.length > 1
+            ? "Five weekday reminders created. Manage each day in Reminders."
+            : "Reminder created.",
+      });
       close();
     } finally {
       setSaving(false);
@@ -479,7 +573,7 @@ function ScheduledTaskEditorForm(props: {
             : "Runs in a separate task with permission to work without waiting for you. Results stay in that task."}
         </DialogDescription>
       </DialogHeader>
-      <div className="flex flex-col gap-4 px-4 py-2">
+      <fieldset disabled={saving || setupStarted} className="flex flex-col gap-4 px-4 py-2">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="scheduled-task-title">Title</Label>
           <Input
@@ -508,26 +602,28 @@ function ScheduledTaskEditorForm(props: {
           <div
             role="radiogroup"
             aria-labelledby="scheduled-task-repeats-label"
-            className="grid grid-cols-3 gap-1 rounded-lg border border-input p-1"
+            className="grid grid-cols-2 gap-1 rounded-lg border border-input p-1"
           >
-            {SCHEDULE_KINDS.map((option) => {
-              const selected = kind === option.value;
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  onClick={() => setKind(option.value)}
-                  className={cn(
-                    "cursor-pointer rounded-md px-2 py-1.5 text-sm hover:bg-accent",
-                    selected ? "bg-accent font-medium" : "text-muted-foreground",
-                  )}
-                >
-                  {option.label}
-                </button>
-              );
-            })}
+            {SCHEDULE_KINDS.filter((option) => editing === null || option.value !== "weekdays").map(
+              (option) => {
+                const selected = kind === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => setKind(option.value)}
+                    className={cn(
+                      "cursor-pointer rounded-md px-2 py-1.5 text-sm hover:bg-accent",
+                      selected ? "bg-accent font-medium" : "text-muted-foreground",
+                    )}
+                  >
+                    {option.label}
+                  </button>
+                );
+              },
+            )}
           </div>
         </div>
         {kind === "once" ? (
@@ -579,7 +675,7 @@ function ScheduledTaskEditorForm(props: {
               />
             </div>
             <p className="text-xs text-muted-foreground">
-              {time} in {timezoneCity} ({timezone}) — daylight saving included.
+              {time} in {timezoneCity} — daylight saving included.
             </p>
           </div>
         )}
@@ -590,6 +686,30 @@ function ScheduledTaskEditorForm(props: {
           Keep it on with Doer running. After downtime, a missed reminder runs once when Doer starts
           again.
         </p>
+        {kind === "weekdays" ? (
+          <p className="text-xs text-muted-foreground">
+            Creates five weekly reminders, Monday through Friday. Each day appears separately in
+            Reminders and uses the same Task.
+          </p>
+        ) : null}
+        {editing === null ? (
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={previewFirst}
+              disabled={saving || setupStarted}
+              onChange={(event) => setPreviewFirst(event.target.checked)}
+            />{" "}
+            Try once before enabling
+          </label>
+        ) : null}
+        {editing === null && previewFirst ? (
+          <p className="text-xs text-muted-foreground">
+            Saves the reminder paused and starts one preview. It performs the saved work with the
+            permissions described above. Review the result in its Task, then resume when you are
+            ready.
+          </p>
+        ) : null}
         {editing === null || kind !== "once" ? (
           <details className="text-xs text-muted-foreground">
             <summary className="cursor-pointer text-sm font-medium text-foreground">
@@ -637,13 +757,19 @@ function ScheduledTaskEditorForm(props: {
             {formError}
           </p>
         ) : null}
-      </div>
+      </fieldset>
       <DialogFooter variant="bare">
         <Button variant="ghost" onClick={close} disabled={saving}>
           Cancel
         </Button>
         <Button onClick={save} disabled={saving}>
-          {saving ? "Saving…" : editing !== null ? "Save changes" : "Create reminder"}
+          {saving
+            ? "Saving…"
+            : editing !== null
+              ? "Save changes"
+              : previewFirst
+                ? "Save and try once"
+                : "Create reminder"}
         </Button>
       </DialogFooter>
     </>

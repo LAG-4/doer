@@ -102,6 +102,19 @@ export const make = Effect.gen(function* () {
   const userDataPath = yield* DesktopAppIdentity.resolveUserDataPath;
   yield* electronApp.setPath("userData", userDataPath);
 
+  // Clerk manages the lock on Windows/Linux, but assumes macOS launches go
+  // through Launch Services. Dev runners and automation can launch directly.
+  if (environment.platform === "darwin") {
+    const primary = yield* Effect.acquireRelease(
+      electronApp.requestSingleInstanceLock,
+      (acquired) => (acquired ? electronApp.releaseSingleInstanceLock : Effect.void),
+    );
+    if (!primary) {
+      yield* electronApp.quit;
+      return yield* Effect.interrupt;
+    }
+  }
+
   const bridge = yield* Effect.acquireRelease(
     Effect.try({
       try: () => createDesktopClerkBridge(environment.stateDir, environment.isDevelopment),

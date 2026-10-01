@@ -48,12 +48,12 @@ export function NoProjectsHero() {
               <EmptyTitle>What should we work on?</EmptyTitle>
               <EmptyDescription className="mt-2">
                 {isInboxCapable
-                  ? "Start chatting right away, or add a project folder first."
-                  : "Add a project to start your first thread."}
+                  ? "Start chatting right away, or add a folder as a Space first."
+                  : "Add a Space to start your first Task."}
               </EmptyDescription>
               {failed ? (
                 <p role="alert" className="mt-3 text-sm text-destructive">
-                  Could not set up your space. Try again or add a project.
+                  Could not set up your space. Try again or add a Space.
                 </p>
               ) : null}
               <div className="mt-6 flex justify-center gap-3">
@@ -64,13 +64,13 @@ export function NoProjectsHero() {
                     </Button>
                     <Button size="sm" variant="ghost-muted" onClick={openAddProject}>
                       <PlusIcon className="size-4" />
-                      Add project
+                      Add Space
                     </Button>
                   </>
                 ) : (
                   <Button size="sm" onClick={openAddProject}>
                     <PlusIcon className="size-4" />
-                    Add project
+                    Add Space
                   </Button>
                 )}
               </div>

@@ -77,3 +77,16 @@ the live domain served a fresh upstream build (canonical `t3.codes`,
   signs automatically when they exist. No code change.
 - **Package managers** (winget, Homebrew, AUR) need manual registry
   submissions; wire them up only on request.
+
+## Optional Microsoft sign-in
+
+Register a Microsoft Entra public-client application with device-code sign-in
+enabled and the supported account types your installation needs. Set
+`DOER_MICROSOFT_CLIENT_ID` to its application ID on the server host, then restart
+Doer. This is a public application identifier; no client secret is used.
+The initial delegated permissions are `User.Read`, `Mail.Read`, `Calendars.Read`,
+`Files.Read`, and `offline_access`. SharePoint is opt-in and additionally requests
+`Sites.Read.All`. Your organization may require administrator consent.
+Test consent with both personal and organization accounts before distributing
+your registered configuration. Access and refresh tokens stay in the server's
+protected secret store. Do not bundle account tokens in a release.

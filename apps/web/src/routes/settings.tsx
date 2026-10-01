@@ -1,3 +1,5 @@
+import { useClientSettings } from "../hooks/useSettings";
+import { isAdvancedSettingsPath } from "../simpleMode";
 import { Outlet, createFileRoute, redirect, useLocation } from "@tanstack/react-router";
 import { useState, type ReactNode } from "react";
 import { RotateCcwIcon } from "lucide-react";
@@ -44,6 +46,7 @@ function RestoreDeviceDefaultsButton({ onRestored }: { onRestored: () => void })
 }
 
 function SettingsScopeBoundary({ pathname, children }: { pathname: string; children: ReactNode }) {
+  const simple = useClientSettings((settings) => settings.simpleModeEnabled);
   const { scope, connectedEnvironments } = useSettingsScope();
   const { environments } = useEnvironments();
   const hash = useLocation({ select: (location) => location.hash });
@@ -51,6 +54,16 @@ function SettingsScopeBoundary({ pathname, children }: { pathname: string; child
   const autoSettlementAvailability = searchTarget?.requiresThreadAutoSettlement
     ? getThreadAutoSettlementSearchAvailability(environments, scope)
     : null;
+  if (simple && isAdvancedSettingsPath(pathname)) {
+    return (
+      <SettingsPageContainer>
+        <p className="text-sm text-muted-foreground">
+          These settings are available in Advanced mode. You can turn off Simple mode in General
+          settings.
+        </p>
+      </SettingsPageContainer>
+    );
+  }
   if (
     scope.kind !== "unavailable" &&
     searchTarget &&

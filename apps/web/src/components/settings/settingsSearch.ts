@@ -83,13 +83,13 @@ export interface SettingsSearchAvailability {
  * subtitles both render from this record, so each label exists once.
  */
 export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
-  "/settings/projects": "Project",
+  "/settings/projects": "Spaces",
   "/settings/general": "General",
   "/settings/appearance": "Appearance",
   "/settings/keybindings": "Keybindings",
   "/settings/snap-shot": "SnapShots",
-  "/settings/providers": "Providers",
-  "/settings/integrations": "Integrations",
+  "/settings/providers": "AI services",
+  "/settings/integrations": "Connected apps",
   "/settings/source-control": "Source Control",
   "/settings/storage": "Storage",
   "/settings/connections": "Connections",
@@ -129,6 +129,18 @@ const KEYBINDING_SEARCH_ITEMS = STATIC_KEYBINDING_COMMANDS.toSorted((left, right
  * that may not be mounted point at their nearest stable section instead.
  */
 export const SETTINGS_SEARCH_ITEMS = [
+  {
+    id: "personal-preferences",
+    title: "Personal preferences",
+    to: "/settings/general",
+    searchTerms: ["remember memory forget about me writing currency"],
+  },
+  {
+    id: "microsoft",
+    title: "Microsoft connected apps",
+    to: "/settings/integrations",
+    searchTerms: ["Outlook email Calendar OneDrive SharePoint account connect sign in"],
+  },
   {
     id: "storage-worktrees",
     title: "Worktree cleanup",
@@ -275,7 +287,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "auto-settle-inactive-threads",
-    title: "Auto-settle inactive threads",
+    title: "Automatically finish inactive Tasks",
     to: "/settings/general",
     searchTerms: ["sidebar inactivity days no activity automatically"],
     requiresThreadAutoSettlement: true,
@@ -291,7 +303,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "days-before-auto-settle",
-    title: "Days of inactivity before auto-settle",
+    title: "Days before finishing inactive Tasks",
     to: "/settings/general",
     targetId: "auto-settle-inactive-threads",
     searchTerms: ["thread timeout activity sidebar"],
@@ -306,7 +318,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "thread-notifications",
-    title: "Thread notifications",
+    title: "Task notifications",
     to: "/settings/general",
     searchTerms: ["notification sound alert completion input approval desktop"],
   },
@@ -392,7 +404,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "continue-threads-after-server-update",
-    title: "Continue threads after restarts",
+    title: "Continue Tasks after restarts",
     to: "/settings/general",
     scope: "project-defaults",
     searchTerms: [
@@ -410,7 +422,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "new-threads",
-    title: "New threads",
+    title: "New Tasks",
     to: "/settings/general",
     scope: "project-defaults",
     searchTerms: ["default workspace mode draft local worktree"],

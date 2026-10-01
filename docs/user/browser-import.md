@@ -18,3 +18,15 @@ the import wizard afterward. You can revoke Full Disk Access once the import is 
 On Windows, import supports Firefox and Helium profiles that use standard profile encryption.
 Other Chromium-based browsers use app-bound encryption and cannot be imported. Partitioned cookies
 are skipped on all platforms.
+
+## Sign-in and recovery
+
+If a site asks for sign-in or verification, use **Sign-in and site problems**
+in the desktop browser panel. Pause Doer before taking control, complete the
+step on the site, then choose **I'm ready to continue**. Review and send the
+continuation request. Passwords and sign-in codes belong on the site's page.
+
+If the site is blocked or its session is lost, choose **This site isn't working**
+to ask for another source or a manual handoff. The Task keeps its completed
+work. For job sites that do not support automation, ask Doer to prepare your
+application materials and tracker, then submit the application yourself.

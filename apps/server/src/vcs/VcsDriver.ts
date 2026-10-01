@@ -23,6 +23,11 @@ export interface VcsRestoreCheckpointInput {
   readonly cwd: string;
   readonly checkpointRef: CheckpointRef;
   readonly fallbackToHead?: boolean;
+  /** Ordinary folders restore only these Task files and reject later edits. */
+  readonly expectedPaths?: readonly {
+    readonly path: string;
+    readonly checkpointRef: CheckpointRef;
+  }[];
 }
 
 export interface VcsDiffCheckpointsInput {

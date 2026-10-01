@@ -1,3 +1,5 @@
+import { scheduledRunStatus } from "../scheduledTaskStatus";
+import { useThreadShell } from "../state/entities";
 import type { EnvironmentAutomation } from "@t3tools/client-runtime/state/models";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
@@ -77,6 +79,9 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
   projectTitle: string | null;
 }) {
   const { automation } = props;
+  const thread = useThreadShell(scopeThreadRef(automation.environmentId, automation.threadId));
+  const status = scheduledRunStatus(automation.runs.at(-1), thread);
+  const running = status === "Running" || status === "Needs your attention";
   const router = useRouter();
   const openEdit = useScheduledTaskEditorStore((s) => s.openEdit);
   const pauseAutomation = useAtomCommand(automationEnvironment.pause, { reportFailure: false });
@@ -175,11 +180,11 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
               {paused ? <PlayIcon className="size-3.5" /> : <PauseIcon className="size-3.5" />}
             </button>
           )}
-          {!done && (
+          {
             <button
               type="button"
               aria-label={`Run ${automation.title} now`}
-              disabled={busy}
+              disabled={busy || running}
               onClick={() =>
                 runCommand(
                   "Run now",
@@ -195,7 +200,7 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
             >
               <ClockIcon className="size-3.5" />
             </button>
-          )}
+          }
           {!done && (
             <button
               type="button"
@@ -234,6 +239,14 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
           </button>
         </span>
       </div>
+      <button
+        type="button"
+        onClick={openThread}
+        className="block cursor-pointer pt-1 text-left text-xs text-sidebar-muted-foreground hover:text-sidebar-foreground"
+        aria-label={`Latest result for ${automation.title}: ${status}`}
+      >
+        {status}
+      </button>
       <div className="flex items-center gap-2 pl-0.5 pt-0.5 text-2xs text-sidebar-muted-foreground/70">
         {nextFire !== null && !done ? (
           <span>Next {nextFire}</span>
@@ -262,7 +275,7 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
           {runs.slice(0, 5).map((run) => (
             <li key={run.occurrenceKey} className="flex items-center gap-2 text-2xs">
               <span className="text-sidebar-muted-foreground">
-                {describeRunOutcome(run)} ·{" "}
+                {scheduledRunStatus(run, thread)} · {describeRunOutcome(run)} ·{" "}
                 {new Date(run.firedAt).toLocaleString(undefined, {
                   month: "short",
                   day: "numeric",

@@ -9,7 +9,7 @@ import { type ComponentProps, useRef, useState } from "react";
 
 import { requestConfirmDialog } from "~/confirmDialog";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
-import { useEnvironmentSettings } from "~/hooks/useSettings";
+import { useClientSettings, useEnvironmentSettings } from "~/hooks/useSettings";
 import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { manualServerUpdateCommand } from "~/versionSkew";
@@ -197,6 +197,7 @@ export function ServerUpdateAction({
   className,
   appearance = "button",
 }: Omit<ServerUpdateTarget, "continueThreadsAfterServerUpdate"> & UpdateButtonProps) {
+  const simpleMode = useClientSettings((settings) => settings.simpleModeEnabled);
   const isDesktopAppUpdate = selfUpdate === "desktop-managed";
   const continueThreadsAfterServerUpdate = useEnvironmentSettings(
     environmentId,
@@ -257,6 +258,13 @@ export function ServerUpdateAction({
   }
 
   const manualCommand = selfUpdate === null ? manualServerUpdateCommand(targetVersion) : null;
+  if (simpleMode && manualCommand !== null) {
+    return (
+      <span className="text-xs text-muted-foreground">
+        Update instructions are available in Advanced settings.
+      </span>
+    );
+  }
   const actionLabel = manualCommand !== null ? "Copy update command" : label;
   const onClick =
     manualCommand !== null

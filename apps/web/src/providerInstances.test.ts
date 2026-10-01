@@ -420,19 +420,47 @@ describe("resolveDefaultProviderModelSelection", () => {
     ["codex", "codex", "gpt-5.6"],
     ["claudeAgent", "claudeAgent", "claude-fable-5"],
     ["cursor", "cursor", "composer-2"],
-  ])("uses the only available %s instance", (driver, instanceId, modelSlug) => {
+  ])(
+    "requires a choice before using the only available paid %s instance",
+    (driver, instanceId, modelSlug) => {
+      const providers = [
+        provider({
+          provider: ProviderDriverKind.make(driver),
+          instanceId,
+          models: [model(modelSlug, false, true)],
+        }),
+      ];
+
+      expect(resolveDefaultProviderModelSelection(providers, null)).toBeNull();
+    },
+  );
+
+  it("defaults to an available free OpenCode model and stops when only paid models exist", () => {
     const providers = [
       provider({
-        provider: ProviderDriverKind.make(driver),
-        instanceId,
-        models: [model(modelSlug, false, true)],
+        provider: ProviderDriverKind.make("opencode"),
+        instanceId: "opencode",
+        models: [model("opencode/paid"), model("opencode/big-pickle")],
       }),
     ];
-
     expect(resolveDefaultProviderModelSelection(providers, null)).toEqual({
-      instanceId,
-      model: modelSlug,
+      instanceId: "opencode",
+      model: "opencode/big-pickle",
     });
+    const paidOnly = [
+      provider({
+        provider: ProviderDriverKind.make("opencode"),
+        instanceId: "opencode",
+        models: [model("opencode/paid")],
+      }),
+    ];
+    expect(resolveDefaultProviderModelSelection(paidOnly, null)).toBeNull();
+    expect(
+      resolveDefaultProviderModelSelection(paidOnly, {
+        instanceId: ProviderInstanceId.make("opencode"),
+        model: "opencode/paid",
+      }),
+    ).toMatchObject({ model: "opencode/paid" });
   });
 
   it("preserves a valid stored selection including its options", () => {
@@ -452,7 +480,7 @@ describe("resolveDefaultProviderModelSelection", () => {
     expect(resolveDefaultProviderModelSelection(providers, stored)).toBe(stored);
   });
 
-  it("replaces a stale stored instance with the first ready instance and its model", () => {
+  it("does not replace a removed service with another paid service", () => {
     const providers = [
       provider({
         provider: ProviderDriverKind.make("codex"),
@@ -472,11 +500,11 @@ describe("resolveDefaultProviderModelSelection", () => {
         instanceId: ProviderInstanceId.make("removed-provider"),
         model: "stale-model",
       }),
-    ).toEqual({ instanceId: "claudeAgent", model: "claude-opus-4-8" });
+    ).toBeNull();
   });
 
   it.each([{ enabled: false }, { availability: "unavailable" as const }])(
-    "replaces an unavailable stored instance deterministically",
+    "does not replace an unavailable service with another paid service",
     (requestedState) => {
       const providers = [
         provider({
@@ -497,7 +525,7 @@ describe("resolveDefaultProviderModelSelection", () => {
           instanceId: ProviderInstanceId.make("codex"),
           model: "gpt-5.6",
         }),
-      ).toEqual({ instanceId: "claudeAgent", model: "claude-opus-4-8" });
+      ).toBeNull();
     },
   );
 

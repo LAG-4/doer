@@ -1,3 +1,4 @@
+import { connectedAppsHttpLayer } from "@t3tools/client-runtime/state/connected-apps";
 import { Connection } from "@t3tools/client-runtime/connection";
 import { shellSnapshotLoaderLayer } from "@t3tools/client-runtime/state/shell";
 import { threadSnapshotLoaderLayer } from "@t3tools/client-runtime/state/threads";
@@ -20,6 +21,7 @@ const snapshotLoaderLayer = Layer.mergeAll(
   threadSnapshotLoaderLayer,
   shellSnapshotLoaderLayer,
   pullRequestDiffLoaderLayer,
+  connectedAppsHttpLayer,
 );
 
 type ConnectionLayerSource =

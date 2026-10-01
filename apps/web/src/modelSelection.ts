@@ -1,5 +1,6 @@
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
+  isOpenCodeFreeModelSlug,
   DEFAULT_TEXT_GENERATION_MODEL,
   DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
@@ -321,7 +322,9 @@ export function resolveAppModelSelectionForInstance(
       return unavailableSelection;
     }
   }
-  return options.find((option) => option.isDefault)?.slug ?? options[0]?.slug ?? null;
+  return entry.driverKind === "opencode"
+    ? (options.find((option) => isOpenCodeFreeModelSlug(option.slug))?.slug ?? null)
+    : (options.find((option) => option.isDefault)?.slug ?? options[0]?.slug ?? null);
 }
 
 /**
@@ -417,8 +420,7 @@ export function resolveAppModelSelectionState(
     entries.find(
       (candidate) =>
         candidate.driverKind === "opencode" && candidate.enabled && candidate.isAvailable,
-    ) ??
-    entries.find((candidate) => candidate.enabled && candidate.isAvailable);
+    );
   if (entry) {
     // When the instance changed due to fallback (e.g. selected instance was disabled),
     // don't carry over the old instance's model — use the fallback instance's default.
@@ -430,8 +432,9 @@ export function resolveAppModelSelectionState(
         supportedProviders,
         selectedModel,
       ) ??
-      entry.models[0]?.slug ??
-      DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[entry.driverKind];
+      (entry.driverKind === "opencode"
+        ? undefined
+        : (entry.models[0]?.slug ?? DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[entry.driverKind]));
     if (!model) {
       return createModelSelection(entry.instanceId, "", []);
     }

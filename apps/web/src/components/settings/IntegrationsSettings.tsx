@@ -1,3 +1,4 @@
+import { MicrosoftConnectionCard } from "./MicrosoftConnectionCard";
 import { DeviceHostUpdates } from "../device/DeviceHostUpdates";
 import { DeviceToolVersions } from "../device/DeviceToolVersions";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
@@ -1445,17 +1446,23 @@ export function IntegrationsSettingsPanel() {
     <SettingsPageContainer>
       {/* Server-authoritative agent access is scoped by the header selection;
           the preview defaults below are device-local and ignore it. */}
-      <ProjectDefaultsSettings category="integrations" />
-      <SettingsSection id="browser" title="Browser">
-        {previewDefaultsDisabled ? (
-          <SettingsUnavailableGroup message="Only available in the desktop app.">
-            {previewDefaults}
-          </SettingsUnavailableGroup>
-        ) : (
-          previewDefaults
-        )}
-      </SettingsSection>
-      <DeviceIntegrationSettings />
+      <MicrosoftConnectionCard />
+      <details>
+        <summary className="cursor-pointer text-sm font-medium">
+          Advanced browser and device settings
+        </summary>
+        <ProjectDefaultsSettings category="integrations" />
+        <SettingsSection id="browser" title="Browser">
+          {previewDefaultsDisabled ? (
+            <SettingsUnavailableGroup message="Only available in the desktop app.">
+              {previewDefaults}
+            </SettingsUnavailableGroup>
+          ) : (
+            previewDefaults
+          )}
+        </SettingsSection>
+        <DeviceIntegrationSettings />
+      </details>
     </SettingsPageContainer>
   );
 }

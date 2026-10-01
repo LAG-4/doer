@@ -1,3 +1,5 @@
+import { TaskResults } from "./chat/TaskResults";
+import { isAdvancedCommand, isAdvancedPanel } from "~/simpleMode";
 import { isChatGptUsageLimitError } from "@t3tools/shared/usageLimits";
 import { useLoadBalancedEnvironment } from "../hooks/useLoadBalancedEnvironment";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
@@ -2029,6 +2031,7 @@ export default function ChatView(props: ChatViewProps) {
       useDiffPanelStore.getState().selectGitScope(activeThreadRef, "unstaged");
     }
   }, [activeThreadRef, diffOpen]);
+  const simpleModeEnabled = useClientSettings((settings) => settings.simpleModeEnabled);
   const rightPanelState = useRightPanelStore((state) =>
     selectThreadRightPanelState(state.byThreadKey, activeThreadRef),
   );
@@ -2061,7 +2064,13 @@ export default function ChatView(props: ChatViewProps) {
     [activeKnownTerminalIds, panelTerminalIds],
   );
   const previewPanelOpen = activeRightPanelKind === "preview" && isPreviewSupportedInRuntime();
-  const rightPanelOpen = rightPanelState.isOpen;
+  const rightPanelOpen =
+    rightPanelState.isOpen &&
+    !(
+      simpleModeEnabled &&
+      activeRightPanelSurface &&
+      isAdvancedPanel(activeRightPanelSurface.kind)
+    );
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
     usePanelAnimationSettings();
   const activeTerminalDrawerPresence = usePanelPresence(
@@ -2089,7 +2098,9 @@ export default function ChatView(props: ChatViewProps) {
   const rightPanelControlsInPanel = shouldUseRightPanelSheet && rightPanelPresent && rightPanelOpen;
   const rightPanelControlsAtRoot = rightPanelPresent && !shouldUseRightPanelSheet;
   const renderedRightPanelSurface = rightPanelPresence.value?.activeSurface ?? null;
-  const renderedRightPanelSurfaces = rightPanelPresence.value?.surfaces ?? [];
+  const renderedRightPanelSurfaces = (rightPanelPresence.value?.surfaces ?? []).filter(
+    (surface) => !simpleModeEnabled || !isAdvancedPanel(surface.kind),
+  );
   const previewMiniPlayerVisible = shouldRenderPreviewMiniPlayer(
     activePreviewMiniPlayer?.source ?? null,
     renderedRightPanelSurface,
@@ -2304,7 +2315,10 @@ export default function ChatView(props: ChatViewProps) {
     startNewThreadForProject(activeProjectRef, handleNewThread);
   }, [activeProjectRef, handleNewThread]);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
-  const simpleModeEnabled = useClientSettings((settings) => settings.simpleModeEnabled);
+  useEffect(() => {
+    if (!simpleModeEnabled || !activeThreadRef) return;
+    useTerminalUiStateStore.getState().setTerminalOpen(activeThreadRef, false);
+  }, [simpleModeEnabled, activeThreadRef]);
   const activeDraftLogicalProjectKey =
     !isServerThread && activeProject
       ? deriveLogicalProjectKeyFromSettings(activeProject, projectGroupingSettings)
@@ -6822,6 +6836,8 @@ export default function ChatView(props: ChatViewProps) {
         return;
       }
 
+      if (simpleModeEnabled && command && isAdvancedCommand(command)) return;
+
       if (command === "terminal.toggle") {
         event.preventDefault();
         event.stopPropagation();
@@ -7013,6 +7029,7 @@ export default function ChatView(props: ChatViewProps) {
     getShortcutContext,
     toggleRightPanel,
     toggleRightPanelMaximized,
+    simpleModeEnabled,
     toggleTerminalVisibility,
     composerRef,
   ]);
@@ -8005,7 +8022,7 @@ export default function ChatView(props: ChatViewProps) {
         const title = truncate(
           assistantCitationsToPlainText(stripInlineContextReferences(trimmed)).trim() ||
             composerAttachmentsSnapshot[0]?.name ||
-            "New thread",
+            "New Task",
         );
         promptRef.current = "";
         clearComposerDraftContent(composerDraftTarget);
@@ -8335,7 +8352,7 @@ export default function ChatView(props: ChatViewProps) {
       } else if (composerPreviewAnnotationsSnapshot.length > 0) {
         titleSeed = previewAnnotationContextLabel(composerPreviewAnnotationsSnapshot[0]!);
       } else {
-        titleSeed = "New thread";
+        titleSeed = "New Task";
       }
     }
     const title = truncate(titleSeed);
@@ -9544,7 +9561,7 @@ export default function ChatView(props: ChatViewProps) {
   const panelToggleControls = (
     <PanelLayoutControls
       showTerminalControl={!simpleModeEnabled}
-      terminalAvailable={activeProject !== null}
+      terminalAvailable={!simpleModeEnabled && activeProject !== null}
       terminalOpen={terminalUiState.terminalOpen}
       terminalShortcutLabel={shortcutLabelForCommand(keybindings, "terminal.toggle")}
       rightPanelAvailable={activeProject !== null}
@@ -9588,169 +9605,210 @@ export default function ChatView(props: ChatViewProps) {
       <div className="pointer-events-auto flex h-full items-center">{panelToggleControls}</div>
     </div>
   );
-  const rightPanelContent = activeThreadRef ? (
-    renderedRightPanelSurface?.kind === "preview" ? (
-      <Suspense fallback={null}>
-        <PreviewPanel
-          mode="embedded"
-          threadRef={activeThreadRef}
-          tabId={renderedRightPanelSurface.resourceId}
-          configuredUrls={configuredPreviewUrls}
+  const rightPanelContent =
+    activeThreadRef &&
+    !(
+      simpleModeEnabled &&
+      renderedRightPanelSurface &&
+      isAdvancedPanel(renderedRightPanelSurface.kind)
+    ) ? (
+      renderedRightPanelSurface?.kind === "preview" ? (
+        <Suspense fallback={null}>
+          <PreviewPanel
+            mode="embedded"
+            threadRef={activeThreadRef}
+            tabId={renderedRightPanelSurface.resourceId}
+            configuredUrls={configuredPreviewUrls}
+            visible={rightPanelOpen}
+            onSendAnnotation={(annotation, image) => {
+              void onSend(undefined, "foreground", { annotation, image });
+            }}
+          />
+        </Suspense>
+      ) : renderedRightPanelSurface?.kind === "terminal" ? (
+        <PersistentThreadTerminalPanel
           visible={rightPanelOpen}
-          onSendAnnotation={(annotation, image) => {
-            void onSend(undefined, "foreground", { annotation, image });
-          }}
-        />
-      </Suspense>
-    ) : renderedRightPanelSurface?.kind === "terminal" ? (
-      <PersistentThreadTerminalPanel
-        visible={rightPanelOpen}
-        threadRef={activeThreadRef}
-        surface={renderedRightPanelSurface}
-        launchContext={activeTerminalLaunchContext ?? null}
-        focusRequestId={terminalFocusRequestId}
-        keybindings={keybindings}
-        onAddTerminalContext={addTerminalContextToDraft}
-        onSplitTerminal={splitPanelTerminal}
-        onSplitTerminalVertical={splitPanelTerminalVertical}
-        onNewTerminal={addTerminalSurface}
-        onActiveTerminalChange={activatePanelTerminal}
-        onCloseTerminal={closePanelTerminal}
-        splitShortcutLabel={splitTerminalShortcutLabel ?? undefined}
-        splitVerticalShortcutLabel={splitTerminalVerticalShortcutLabel ?? undefined}
-        newShortcutLabel={newTerminalShortcutLabel ?? undefined}
-        closeShortcutLabel={closeTerminalShortcutLabel ?? undefined}
-      />
-    ) : renderedRightPanelSurface?.kind === "diff" ? (
-      <Suspense fallback={null}>
-        <DiffPanel
-          key={activeThreadKey}
-          mode="embedded"
-          composerDraftTarget={composerDraftTarget}
-          workspaceMutationId={workspaceMutationId}
-        />
-      </Suspense>
-    ) : renderedRightPanelSurface?.kind === "pull-request" && !pullRequestsCapabilityKnown ? (
-      <PullRequestDetailGhost />
-    ) : renderedRightPanelSurface?.kind === "pull-request" && !supportsPullRequests ? (
-      <PullRequestsUnavailableState
-        title="Pull requests unavailable"
-        error="Update this environment's Doer server to browse pull requests."
-      />
-    ) : renderedRightPanelSurface?.kind === "pull-request" ? (
-      // No onClose: the surface tab's own X owns closing here, and a second X in the header
-      // would be the same action twice. The thread context also drops the checkout button, so it
-      // is only right for the thread's own pull request, whose branch is already under the
-      // reader's feet. A link the agent wrote can open any other one here, and that one has to be
-      // checkable out like it is anywhere else.
-      <PullRequestDetailPanel
-        getShortcutContext={getShortcutContext}
-        shortcutsEnabled={
-          rightPanelOpen && activeRightPanelSurface?.id === renderedRightPanelSurface.id
-        }
-        key={`${renderedRightPanelSurface.host ?? ""}:${renderedRightPanelSurface.repository}#${renderedRightPanelSurface.number}`}
-        environmentId={activeThread.environmentId}
-        onSelectPullRequest={(reference) => {
-          if (activeThreadRef)
-            useRightPanelStore.getState().openPullRequest(activeThreadRef, {
-              projectId: reference.projectId,
-              repository: reference.repository,
-              number: reference.number,
-              ...(reference.host ? { host: reference.host } : {}),
-            });
-        }}
-        threadRef={activeThreadRef}
-        reference={{
-          projectId: renderedRightPanelSurface.projectId as ProjectId,
-          ...(renderedRightPanelSurface.host ? { host: renderedRightPanelSurface.host } : {}),
-          repository: renderedRightPanelSurface.repository,
-          number: renderedRightPanelSurface.number,
-        }}
-        context={pullRequestPanelContext(
-          {
-            projectId: activeThreadMetadata?.projectId ?? null,
-            pullRequests: activeThreadMetadata?.pullRequests,
-            linkedPullRequest: activeThreadMetadata?.linkedPullRequest,
-            branchPullRequest: activeThreadMetadata?.branchPullRequest,
-          },
-          renderedRightPanelSurface,
-        )}
-        composerDraftTarget={composerDraftTarget}
-        onBack={
-          activeThreadRef !== null && pullRequestsSurfaceAvailable && visiblePullRequestCount > 1
-            ? addPullRequestsSurface
-            : undefined
-        }
-      />
-    ) : renderedRightPanelSurface?.kind === "pull-requests" && activeThreadRef ? (
-      <ThreadPullRequestsPanel threadRef={activeThreadRef} />
-    ) : renderedRightPanelSurface?.kind === "agents" ? (
-      <AgentsPanel
-        model={agentPanelModel}
-        environmentId={activeThreadRef?.environmentId ?? null}
-        threadId={activeThreadRef?.threadId ?? null}
-      />
-    ) : renderedRightPanelSurface?.kind === "device" ? (
-      <Suspense fallback={null}>
-        <DevicePanel
-          mode="embedded"
           threadRef={activeThreadRef}
-          key={renderedRightPanelSurface.id}
           surface={renderedRightPanelSurface}
-          visible={rightPanelOpen}
-          onDismissSetup={() => {
-            closeRightPanelSurface(renderedRightPanelSurface);
-            useRightPanelStore.getState().show(activeThreadRef);
-          }}
-        />
-      </Suspense>
-    ) : (renderedRightPanelSurface?.kind === "files" ||
-        renderedRightPanelSurface?.kind === "file") &&
-      ((activeProject && activeWorkspaceRoot) ||
-        (renderedRightPanelSurface.kind === "file" && renderedRightPanelSurface.attachment)) ? (
-      <Suspense fallback={null}>
-        <FilePreviewPanel
-          key={`${activeThread.environmentId}:${
-            renderedRightPanelSurface.kind === "file" && renderedRightPanelSurface.attachment
-              ? `attachment:${renderedRightPanelSurface.attachment.id}`
-              : activeWorkspaceRoot
-          }`}
-          environmentId={activeThread.environmentId}
-          cwd={activeWorkspaceRoot ?? ""}
-          projectName={activeProject?.title ?? ""}
-          threadRef={activeThreadRef}
-          composerDraftTarget={composerDraftTarget}
+          launchContext={activeTerminalLaunchContext ?? null}
+          focusRequestId={terminalFocusRequestId}
           keybindings={keybindings}
-          availableEditors={availableEditors}
-          relativePath={
-            renderedRightPanelSurface.kind === "file"
-              ? renderedRightPanelSurface.relativePath
-              : null
-          }
-          {...(renderedRightPanelSurface.kind === "file" && renderedRightPanelSurface.attachment
-            ? { attachment: renderedRightPanelSurface.attachment }
-            : {})}
-          revealLine={
-            renderedRightPanelSurface.kind === "file"
-              ? (renderedRightPanelSurface.revealLine ?? null)
-              : null
-          }
-          revealRequestId={
-            renderedRightPanelSurface.kind === "file"
-              ? renderedRightPanelSurface.revealRequestId
-              : 0
-          }
-          onOpenFile={openFileSurface}
-          onPendingChange={handleFilePendingChange}
-          selectedFilePending={
-            renderedRightPanelSurface.kind === "file" &&
-            pendingFileSurfaceIds.has(renderedRightPanelSurface.id)
-          }
-          workspaceMutationId={workspaceMutationId}
+          onAddTerminalContext={addTerminalContextToDraft}
+          onSplitTerminal={splitPanelTerminal}
+          onSplitTerminalVertical={splitPanelTerminalVertical}
+          onNewTerminal={addTerminalSurface}
+          onActiveTerminalChange={activatePanelTerminal}
+          onCloseTerminal={closePanelTerminal}
+          splitShortcutLabel={splitTerminalShortcutLabel ?? undefined}
+          splitVerticalShortcutLabel={splitTerminalVerticalShortcutLabel ?? undefined}
+          newShortcutLabel={newTerminalShortcutLabel ?? undefined}
+          closeShortcutLabel={closeTerminalShortcutLabel ?? undefined}
         />
-      </Suspense>
-    ) : null
-  ) : null;
+      ) : renderedRightPanelSurface?.kind === "diff" ? (
+        <Suspense fallback={null}>
+          <DiffPanel
+            key={activeThreadKey}
+            mode="embedded"
+            composerDraftTarget={composerDraftTarget}
+            workspaceMutationId={workspaceMutationId}
+          />
+        </Suspense>
+      ) : renderedRightPanelSurface?.kind === "pull-request" && !pullRequestsCapabilityKnown ? (
+        <PullRequestDetailGhost />
+      ) : renderedRightPanelSurface?.kind === "pull-request" && !supportsPullRequests ? (
+        <PullRequestsUnavailableState
+          title="Pull requests unavailable"
+          error="Update this environment's Doer server to browse pull requests."
+        />
+      ) : renderedRightPanelSurface?.kind === "pull-request" ? (
+        // No onClose: the surface tab's own X owns closing here, and a second X in the header
+        // would be the same action twice. The thread context also drops the checkout button, so it
+        // is only right for the thread's own pull request, whose branch is already under the
+        // reader's feet. A link the agent wrote can open any other one here, and that one has to be
+        // checkable out like it is anywhere else.
+        <PullRequestDetailPanel
+          getShortcutContext={getShortcutContext}
+          shortcutsEnabled={
+            rightPanelOpen && activeRightPanelSurface?.id === renderedRightPanelSurface.id
+          }
+          key={`${renderedRightPanelSurface.host ?? ""}:${renderedRightPanelSurface.repository}#${renderedRightPanelSurface.number}`}
+          environmentId={activeThread.environmentId}
+          onSelectPullRequest={(reference) => {
+            if (activeThreadRef)
+              useRightPanelStore.getState().openPullRequest(activeThreadRef, {
+                projectId: reference.projectId,
+                repository: reference.repository,
+                number: reference.number,
+                ...(reference.host ? { host: reference.host } : {}),
+              });
+          }}
+          threadRef={activeThreadRef}
+          reference={{
+            projectId: renderedRightPanelSurface.projectId as ProjectId,
+            ...(renderedRightPanelSurface.host ? { host: renderedRightPanelSurface.host } : {}),
+            repository: renderedRightPanelSurface.repository,
+            number: renderedRightPanelSurface.number,
+          }}
+          context={pullRequestPanelContext(
+            {
+              projectId: activeThreadMetadata?.projectId ?? null,
+              pullRequests: activeThreadMetadata?.pullRequests,
+              linkedPullRequest: activeThreadMetadata?.linkedPullRequest,
+              branchPullRequest: activeThreadMetadata?.branchPullRequest,
+            },
+            renderedRightPanelSurface,
+          )}
+          composerDraftTarget={composerDraftTarget}
+          onBack={
+            activeThreadRef !== null && pullRequestsSurfaceAvailable && visiblePullRequestCount > 1
+              ? addPullRequestsSurface
+              : undefined
+          }
+        />
+      ) : renderedRightPanelSurface?.kind === "pull-requests" && activeThreadRef ? (
+        <ThreadPullRequestsPanel threadRef={activeThreadRef} />
+      ) : renderedRightPanelSurface?.kind === "agents" ? (
+        <AgentsPanel
+          model={agentPanelModel}
+          environmentId={activeThreadRef?.environmentId ?? null}
+          threadId={activeThreadRef?.threadId ?? null}
+        />
+      ) : renderedRightPanelSurface?.kind === "device" ? (
+        <Suspense fallback={null}>
+          <DevicePanel
+            mode="embedded"
+            threadRef={activeThreadRef}
+            key={renderedRightPanelSurface.id}
+            surface={renderedRightPanelSurface}
+            visible={rightPanelOpen}
+            onDismissSetup={() => {
+              closeRightPanelSurface(renderedRightPanelSurface);
+              useRightPanelStore.getState().show(activeThreadRef);
+            }}
+          />
+        </Suspense>
+      ) : (renderedRightPanelSurface?.kind === "files" ||
+          renderedRightPanelSurface?.kind === "file") &&
+        ((activeProject && activeWorkspaceRoot) ||
+          (renderedRightPanelSurface.kind === "file" && renderedRightPanelSurface.attachment)) ? (
+        <Suspense fallback={null}>
+          <FilePreviewPanel
+            key={`${activeThread.environmentId}:${
+              renderedRightPanelSurface.kind === "file" && renderedRightPanelSurface.attachment
+                ? `attachment:${renderedRightPanelSurface.attachment.id}`
+                : activeWorkspaceRoot
+            }`}
+            environmentId={activeThread.environmentId}
+            cwd={activeWorkspaceRoot ?? ""}
+            projectName={activeProject?.title ?? ""}
+            threadRef={activeThreadRef}
+            composerDraftTarget={composerDraftTarget}
+            keybindings={keybindings}
+            availableEditors={availableEditors}
+            relativePath={
+              renderedRightPanelSurface.kind === "file"
+                ? renderedRightPanelSurface.relativePath
+                : null
+            }
+            {...(renderedRightPanelSurface.kind === "file" && renderedRightPanelSurface.attachment
+              ? { attachment: renderedRightPanelSurface.attachment }
+              : {})}
+            revealLine={
+              renderedRightPanelSurface.kind === "file"
+                ? (renderedRightPanelSurface.revealLine ?? null)
+                : null
+            }
+            revealRequestId={
+              renderedRightPanelSurface.kind === "file"
+                ? renderedRightPanelSurface.revealRequestId
+                : 0
+            }
+            onOpenFile={openFileSurface}
+            onPendingChange={handleFilePendingChange}
+            selectedFilePending={
+              renderedRightPanelSurface.kind === "file" &&
+              pendingFileSurfaceIds.has(renderedRightPanelSurface.id)
+            }
+            workspaceMutationId={workspaceMutationId}
+          />
+        </Suspense>
+      ) : null
+    ) : null;
+
+  const showTaskExplanation = useCallback(() => {
+    const entry = displayedTimeline.entries.findLast(
+      (entry) => entry.kind === "message" && entry.message.role === "assistant",
+    );
+    const list = legendListRef.current;
+    const index = entry && list?.getState().indexByKey(entry.id);
+    if (!list || index === undefined) return;
+    cancelTimelineLiveFollowForUserNavigation();
+    void list.scrollToIndex({ index, animated: true, viewPosition: 0, viewOffset: 8 });
+  }, [displayedTimeline.entries, cancelTimelineLiveFollowForUserNavigation]);
+
+  const taskResults = useMemo(
+    () =>
+      isServerThread && !paintOnlyDisplayedTimeline ? (
+        <TaskResults
+          key={activeThreadKey}
+          environmentId={activeThread.environmentId}
+          threadId={activeThread.id}
+          checkpoints={activeThread.checkpoints}
+          onOpen={openFileSurface}
+          onSources={showTaskExplanation}
+        />
+      ) : null,
+    [
+      isServerThread,
+      paintOnlyDisplayedTimeline,
+      activeThreadKey,
+      activeThread.environmentId,
+      activeThread.id,
+      activeThread.checkpoints,
+      openFileSurface,
+      showTaskExplanation,
+    ],
+  );
 
   const workspaceFileDropHandlers = makeWorkspaceFileDropHandlers({
     setDragActive: setIsWorkspaceFileDragActive,
@@ -9948,6 +10006,7 @@ export default function ChatView(props: ChatViewProps) {
                 anchorMessageId={paintOnlyDisplayedTimeline ? null : timelineAnchorMessageId}
                 onAnchorReady={onTimelineAnchorReady}
                 contentInsetEndAdjustment={composerTimelineInset}
+                endContent={taskResults}
                 liveFollowEnabled={!paintOnlyDisplayedTimeline && timelineLiveFollowEnabled}
                 onIsAtEndChange={onIsAtEndChange}
                 onContentOverflowChange={setTimelineOverflows}
@@ -10088,7 +10147,7 @@ export default function ChatView(props: ChatViewProps) {
                                   : threadDetailLoading
                                     ? "Messages loading"
                                     : worktreeSetupBlocksSend
-                                      ? "Preparing worktree"
+                                      ? "Preparing your Space"
                                       : projectCloneSendBlockReason
                             }
                             isPreparingWorktree={isPreparingWorktree}
@@ -10350,24 +10409,29 @@ export default function ChatView(props: ChatViewProps) {
         </div>
         {/* end horizontal flex container */}
 
-        {mountedTerminalThreadRefs.map(({ key: mountedThreadKey, threadRef: mountedThreadRef }) => (
-          <PersistentThreadTerminalDrawer
-            key={mountedThreadKey}
-            threadRef={mountedThreadRef}
-            threadId={mountedThreadRef.threadId}
-            active={mountedThreadKey === activeThreadKey}
-            launchContext={
-              mountedThreadKey === activeThreadKey ? (activeTerminalLaunchContext ?? null) : null
-            }
-            focusRequestId={mountedThreadKey === activeThreadKey ? terminalFocusRequestId : 0}
-            splitShortcutLabel={splitTerminalShortcutLabel ?? undefined}
-            splitVerticalShortcutLabel={splitTerminalVerticalShortcutLabel ?? undefined}
-            newShortcutLabel={newTerminalShortcutLabel ?? undefined}
-            closeShortcutLabel={closeTerminalShortcutLabel ?? undefined}
-            keybindings={keybindings}
-            onAddTerminalContext={addTerminalContextToDraft}
-          />
-        ))}
+        {!simpleModeEnabled &&
+          mountedTerminalThreadRefs.map(
+            ({ key: mountedThreadKey, threadRef: mountedThreadRef }) => (
+              <PersistentThreadTerminalDrawer
+                key={mountedThreadKey}
+                threadRef={mountedThreadRef}
+                threadId={mountedThreadRef.threadId}
+                active={mountedThreadKey === activeThreadKey}
+                launchContext={
+                  mountedThreadKey === activeThreadKey
+                    ? (activeTerminalLaunchContext ?? null)
+                    : null
+                }
+                focusRequestId={mountedThreadKey === activeThreadKey ? terminalFocusRequestId : 0}
+                splitShortcutLabel={splitTerminalShortcutLabel ?? undefined}
+                splitVerticalShortcutLabel={splitTerminalVerticalShortcutLabel ?? undefined}
+                newShortcutLabel={newTerminalShortcutLabel ?? undefined}
+                closeShortcutLabel={closeTerminalShortcutLabel ?? undefined}
+                keybindings={keybindings}
+                onAddTerminalContext={addTerminalContextToDraft}
+              />
+            ),
+          )}
       </div>
 
       {rightPanelPresent && !shouldUseRightPanelSheet && activeThreadRef ? (
@@ -10404,11 +10468,11 @@ export default function ChatView(props: ChatViewProps) {
           onAddAgents={addAgentsSurface}
           onAddDevice={addDeviceSurface}
           browserAvailable={isPreviewSupportedInRuntime()}
-          terminalAvailable={activeProject !== null}
-          diffAvailable={isServerThread && isGitRepo}
+          terminalAvailable={!simpleModeEnabled && activeProject !== null}
+          diffAvailable={!simpleModeEnabled && isServerThread && isGitRepo}
           filesAvailable={activeProject !== null}
-          pullRequestAvailable={pullRequestSurfaceAvailable}
-          pullRequestsAvailable={pullRequestsSurfaceAvailable}
+          pullRequestAvailable={!simpleModeEnabled && pullRequestSurfaceAvailable}
+          pullRequestsAvailable={!simpleModeEnabled && pullRequestsSurfaceAvailable}
           agentsAvailable
           deviceAvailable={activeThreadRef !== null}
           liveAgentCount={agentPanelModel.liveCount}
@@ -10461,11 +10525,11 @@ export default function ChatView(props: ChatViewProps) {
             onAddAgents={addAgentsSurface}
             onAddDevice={addDeviceSurface}
             browserAvailable={isPreviewSupportedInRuntime()}
-            terminalAvailable={activeProject !== null}
-            diffAvailable={isServerThread && isGitRepo}
+            terminalAvailable={!simpleModeEnabled && activeProject !== null}
+            diffAvailable={!simpleModeEnabled && isServerThread && isGitRepo}
             filesAvailable={activeProject !== null}
-            pullRequestAvailable={pullRequestSurfaceAvailable}
-            pullRequestsAvailable={pullRequestsSurfaceAvailable}
+            pullRequestAvailable={!simpleModeEnabled && pullRequestSurfaceAvailable}
+            pullRequestsAvailable={!simpleModeEnabled && pullRequestsSurfaceAvailable}
             agentsAvailable
             deviceAvailable={activeThreadRef !== null}
             liveAgentCount={agentPanelModel.liveCount}
@@ -10486,15 +10550,16 @@ export default function ChatView(props: ChatViewProps) {
             <AlertDialogTitle>Edit from here?</AlertDialogTitle>
             <AlertDialogDescription>
               Rewind chat to before this message. Your prompt and attachments return to the
-              composer.
-              {activeWorktreePath === null
-                ? " Files stay as they are because this thread shares the project directory."
+              composer. File recovery covers this Space; it cannot undo actions on websites or in
+              other apps. Later file edits are kept if they conflict with the selected History.
+              {activeWorktreePath === null && isGitRepo
+                ? " Files stay as they are because this Task shares the Space folder."
                 : null}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
-            {activeWorktreePath !== null ? (
+            {activeWorktreePath !== null || !isGitRepo ? (
               <Button
                 variant="destructive"
                 onClick={() => {
@@ -10503,7 +10568,7 @@ export default function ChatView(props: ChatViewProps) {
                   void onRevertToTurnCount(pendingRevert.turnCount, pendingRevert.messageId, true);
                 }}
               >
-                Revert files too
+                Restore covered files too
               </Button>
             ) : null}
             <Button
@@ -10513,7 +10578,7 @@ export default function ChatView(props: ChatViewProps) {
                 void onRevertToTurnCount(pendingRevert.turnCount, pendingRevert.messageId, false);
               }}
             >
-              Revert and keep changes
+              Undo conversation only
             </Button>
           </AlertDialogFooter>
         </AlertDialogPopup>

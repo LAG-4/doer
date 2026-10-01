@@ -236,7 +236,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
             : isConnecting
               ? "Connecting"
               : isPreparingWorktree
-                ? "Preparing worktree"
+                ? "Preparing your Space"
                 : isSendBusy
                   ? "Sending"
                   : isRunning

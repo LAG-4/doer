@@ -139,8 +139,8 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
       title="Model"
       description={
         isProjectScope
-          ? "Model for new threads in this project."
-          : "Default model for new threads. Projects can override it."
+          ? "Model for new Tasks in this Space."
+          : "Default model for new Tasks. Spaces can override it."
       }
       status={
         unavailable || mixedModel || modelSource === "project"
@@ -209,8 +209,8 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
       title="Workspace"
       description={
         isProjectScope
-          ? "Where new threads in this project start."
-          : "Where new threads start. Projects and their t3.json can override it."
+          ? "Where new Tasks in this Space start."
+          : "Where new Tasks start. Projects and their t3.json can override it."
       }
       resetAction={
         !isProjectScope && settings.defaultThreadEnvMode !== null ? (
@@ -259,7 +259,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
       }
       title={
         category === "general" || category === "project"
-          ? "New threads"
+          ? "New Tasks"
           : category === "integrations"
             ? "Browser"
             : "Repositories"
@@ -280,8 +280,8 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
             {...searchableSetting("default-permissions")}
             description={
               isProjectScope
-                ? "Permissions for new threads in this project."
-                : "Default permissions for new threads. Projects can override them."
+                ? "Permissions for new Tasks in this Space."
+                : "Default permissions for new Tasks. Spaces can override them."
             }
             resetAction={
               settings.defaultRuntimeMode !== DEFAULT_SERVER_SETTINGS.defaultRuntimeMode ? (
@@ -342,7 +342,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
             {...searchableSetting("worktree-submodules")}
             description={
               isProjectScope
-                ? "How new worktrees in this project populate git submodules."
+                ? "How new worktrees in this Space populate git submodules."
                 : "How new worktrees populate git submodules. Projects and their t3.json can override it."
             }
             resetAction={
@@ -392,8 +392,8 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
             title="Automatically pull"
             description={
               isProjectScope
-                ? "Keeps this project's default branch current when the checkout has no local changes or commits."
-                : "Keeps the default branch current when the checkout has no local changes or commits. Projects can override it."
+                ? "Keeps this Space's default branch current when the checkout has no local changes or commits."
+                : "Keeps the default branch current when the checkout has no local changes or commits. Spaces can override it."
             }
             resetAction={
               settings.defaultAutoPull ? (
@@ -420,7 +420,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
             {...searchableSetting("pull-request-merge-method")}
             description={
               isProjectScope
-                ? "Pull requests in this project start with this method."
+                ? "Pull requests in this Space start with this method."
                 : "Pull requests start with this method. Last selected reuses whatever you chose most recently on this device."
             }
             resetAction={
@@ -472,8 +472,8 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
             title="Agent browser access"
             description={
               isProjectScope
-                ? "Allow agents in this project to use the shared browser. Applies when the agent session next starts."
-                : "Allow agents to use the shared browser. Projects can override it."
+                ? "Allow agents in this Space to use the shared browser. Applies when the agent session next starts."
+                : "Allow agents to use the shared browser. Spaces can override it."
             }
             resetAction={
               settings.enableAgentBrowserAccess !==
@@ -505,7 +505,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
             title="Agent computer access"
             description={
               isProjectScope
-                ? "Allow agents in this project to see the desktop and operate apps. Applies when the agent session next starts."
+                ? "Allow agents in this Space to see the desktop and operate apps. Applies when the agent session next starts."
                 : "Allow agents to see the desktop and operate apps. Agents still ask before touching each app."
             }
             resetAction={
