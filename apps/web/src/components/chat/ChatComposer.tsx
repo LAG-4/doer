@@ -1,6 +1,7 @@
 import { DESKTOP_PASTE_AS_TEXT_EVENT } from "../../lib/desktopPasteAsText";
 import { isLocalEnvironmentDisabled } from "../../localEnvironment";
 import { usePrimaryEnvironmentId } from "../../state/environments";
+import { useClientSettings } from "~/hooks/useSettings";
 import { runtimeModeConfig, runtimeModeOptions } from "./runtimeModeConfig";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { AttachmentFilePreview } from "../files/AttachmentFilePreview";
@@ -1097,8 +1098,8 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
   const RuntimeModeIcon = runtimeModeOption.icon;
   const interactionModeTooltip =
     props.interactionMode === "plan"
-      ? "Plan mode — click to return to normal build mode"
-      : "Default mode — click to enter plan mode";
+      ? "Plan mode — click to return to doing the task"
+      : "Work mode — click to plan before acting";
 
   const interactionModeToggle = props.showInteractionModeToggle ? (
     <>
@@ -1130,7 +1131,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
             />
           )}
           <span data-composer-control-label className="sr-only sm:not-sr-only">
-            {props.interactionMode === "plan" ? "Plan" : "Build"}
+            {props.interactionMode === "plan" ? "Plan" : "Work"}
           </span>
         </TooltipTrigger>
         <TooltipPopup side="top">{interactionModeTooltip}</TooltipPopup>
@@ -1154,7 +1155,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
               <ComposerSelectControl
                 data-composer-shortcut="composer.mode"
                 size={size}
-                aria-label="Runtime mode"
+                aria-label="Action permissions"
               />
             }
           >
@@ -1594,6 +1595,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onFileOpen,
   } = props;
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const simpleModeEnabled = useClientSettings((settings) => settings.simpleModeEnabled);
   const composerDraftTargetKey = composerTargetKey(composerDraftTarget);
   // Opening a running thread resyncs for a few frames. Show the sync row, and
   // hide the tasks row for it, only when the sync lasts. Logic that depends on
@@ -1946,10 +1948,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     projectModelSelection: activeProjectDefaultModelSelection,
     settings,
   });
-  const providerSendBlockReason = getAntigravitySendBlockReason(
-    selectedProviderEntry?.snapshot,
-    selectedModel,
-  );
+  const providerSendBlockReason =
+    selectedProvider === "opencode" &&
+    !selectedProviderEntry?.models.some((model) => model.slug === selectedModel)
+      ? "This model is unavailable. Refresh AI services or choose another model. Free Tasks never switch to a paid model automatically."
+      : getAntigravitySendBlockReason(selectedProviderEntry?.snapshot, selectedModel);
   const sendDisabledReason =
     externalSendDisabledReason ??
     (multipleModelSelections?.length === 0 ? "Select at least one model." : null) ??
@@ -6992,12 +6995,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                             : projectProvisioning
                               ? "Setting up your space…"
                               : projectSelectionRequired
-                                ? "Choose a project above to start a thread"
+                                ? "Choose a Space above to start a Task"
                                 : showProviderUnavailable
-                                  ? "Enable a provider in Settings to send a message"
+                                  ? "Choose an available AI service in Settings to start"
                                   : phase === "disconnected"
                                     ? DISCONNECTED_COMPOSER_PLACEHOLDER
-                                    : "Ask anything, @tag files/folders, $use skills, or / for commands"
+                                    : "Ask a question, describe a task, or attach files"
                     }
                     disabled={
                       isConnecting ||
@@ -7079,29 +7082,31 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   }
                   className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
                 >
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          onPointerDown={(event) => event.preventDefault()}
-                          onClick={openComposerCommandMenu}
-                          disabled={
-                            isConnecting ||
-                            isComposerApprovalState ||
-                            projectSelectionRequired ||
-                            pendingUserInputs.length > 0
-                          }
-                          aria-label="Browse commands & skills"
-                        />
-                      }
-                    >
-                      <SlashIcon />
-                    </TooltipTrigger>
-                    <TooltipPopup>Browse commands &amp; skills</TooltipPopup>
-                  </Tooltip>
+                  {!simpleModeEnabled ? (
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            onPointerDown={(event) => event.preventDefault()}
+                            onClick={openComposerCommandMenu}
+                            disabled={
+                              isConnecting ||
+                              isComposerApprovalState ||
+                              projectSelectionRequired ||
+                              pendingUserInputs.length > 0
+                            }
+                            aria-label="Browse commands & skills"
+                          />
+                        }
+                      >
+                        <SlashIcon />
+                      </TooltipTrigger>
+                      <TooltipPopup>Browse commands &amp; skills</TooltipPopup>
+                    </Tooltip>
+                  ) : null}
                   {showComposerAttachAction ? (
                     <>
                       <input

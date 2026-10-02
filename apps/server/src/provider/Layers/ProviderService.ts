@@ -1,3 +1,10 @@
+import {
+  buildDoerContextPrompt,
+  parseDoerContext,
+  PERSONAL_CONTEXT_FILE,
+  SPACE_CONTEXT_FILE,
+} from "@t3tools/shared/doerContext";
+import { buildDoerMemoryPrompt } from "@t3tools/shared/doerMemory";
 /**
  * ProviderServiceLive - Cross-provider orchestration layer.
  *
@@ -88,6 +95,7 @@ import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as ProjectionSnapshotQuery from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { DoerMemoryStore } from "../../persistence/Services/DoerMemoryStore.ts";
 const isModelSelection = Schema.is(ModelSelection);
 const encodePromptJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
@@ -493,6 +501,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const projectionQuery = yield* Effect.serviceOption(
     ProjectionSnapshotQuery.ProjectionSnapshotQuery,
   );
+  // Saved memories are optional here so provider-only runtimes without the
+  // persistence layer still send turns (recall is skipped, never fatal).
+  const doerMemoryStore = yield* Effect.serviceOption(DoerMemoryStore);
   const issueMcpCredential =
     options?.issueMcpCredential ?? McpSessionRegistry.issueActiveMcpCredential;
   const fileSystem = yield* FileSystem.FileSystem;
@@ -1638,6 +1649,36 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     },
   );
 
+  /**
+   * Bounded recall for one turn. About-you entries plus the calling Task's
+   * Space only — the project id comes from the authoritative thread shell,
+   * never from caller input. Unknown threads and store-less runtimes fall
+   * back to About-you only (or nothing), so recall is correct when a Task is
+   * resumed or switched and fresh saves apply next turn.
+   */
+  const readDoerMemoryPrompt = Effect.fn("ProviderService.readDoerMemoryPrompt")(function* (
+    threadId: ThreadId,
+  ) {
+    if (Option.isNone(doerMemoryStore)) return "";
+    const store = doerMemoryStore.value;
+    if (Option.isNone(projectionQuery)) {
+      return buildDoerMemoryPrompt({ aboutYou: yield* store.listAboutYou() });
+    }
+    const thread = yield* projectionQuery.value.getThreadShellById(threadId);
+    if (Option.isNone(thread)) {
+      return buildDoerMemoryPrompt({ aboutYou: yield* store.listAboutYou() });
+    }
+    const projectId = String(thread.value.projectId);
+    const [aboutYou, space] = yield* Effect.zip(
+      store.listAboutYou(),
+      store.listForSpace({ projectId }),
+      {
+        concurrent: true,
+      },
+    );
+    return buildDoerMemoryPrompt({ aboutYou, space });
+  });
+
   const sendTurn: ProviderServiceMethod<"sendTurn"> = Effect.fn("sendTurn")(function* (rawInput) {
     const parsed = yield* decodeInputOrValidationError({
       operation: "ProviderService.sendTurn",
@@ -1682,6 +1723,52 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       }
       return false;
     };
+    // Native provider commands must stay exact; saved prose would become command arguments.
+    // Continuation-only turns also resume their existing prompt rather than starting another task.
+    if (!parsed.continuation && !parsed.input?.trimStart().startsWith("/")) {
+      const binding = Option.getOrUndefined(yield* directory.getBinding(parsed.threadId));
+      const contextCwd = binding ? readPersistedCwd(binding.runtimePayload) : undefined;
+      const readContext = (filePath: string) =>
+        fileSystem.readFileString(filePath).pipe(
+          Effect.flatMap((contents) => Effect.try(() => parseDoerContext(contents))),
+          Effect.orElseSucceed(() => undefined),
+        );
+      const personal = yield* readContext(
+        pathService.join(serverConfig.stateDir, PERSONAL_CONTEXT_FILE),
+      );
+      const space = contextCwd
+        ? yield* readContext(pathService.join(contextCwd, SPACE_CONTEXT_FILE))
+        : undefined;
+      const savedContext = buildDoerContextPrompt({
+        ...(personal ? { personal } : {}),
+        ...(space ? { space } : {}),
+      });
+      if (savedContext && !appendAttachmentContext(savedContext)) {
+        return yield* toValidationError(
+          "ProviderService.sendTurn",
+          "This request is too long to include your saved preferences. Shorten it and try again.",
+        );
+      }
+      // Saved memories: About-you plus the current Space only, bounded by the
+      // shared prompt budget. Resolved fresh on every turn so a save is
+      // recalled next turn and a resumed or switched Task recalls the correct
+      // Space. A failed read warns and skips — recall never blocks a turn.
+      if (Option.isSome(doerMemoryStore)) {
+        const memoryPrompt = yield* readDoerMemoryPrompt(parsed.threadId).pipe(
+          Effect.catch((cause) =>
+            Effect.logWarning("Could not read saved memories for this turn.", { cause }).pipe(
+              Effect.as(""),
+            ),
+          ),
+        );
+        if (memoryPrompt && !appendAttachmentContext(memoryPrompt)) {
+          return yield* toValidationError(
+            "ProviderService.sendTurn",
+            "This request is too long to include your saved memories. Shorten it and try again.",
+          );
+        }
+      }
+    }
     for (const attachment of attachments) {
       const attachmentPath = resolveAttachmentPath({
         attachmentsDir: serverConfig.attachmentsDir,

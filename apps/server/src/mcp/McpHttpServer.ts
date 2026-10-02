@@ -1,3 +1,7 @@
+import { ConnectedAppsToolkit } from "./toolkits/connectedApps/tools.ts";
+import { ConnectedAppsToolkitHandlersLive } from "./toolkits/connectedApps/handlers.ts";
+import { OutputsToolkit } from "./toolkits/outputs/tools.ts";
+import { OutputsToolkitHandlersLive } from "./toolkits/outputs/handlers.ts";
 import * as NodeCrypto from "node:crypto";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
@@ -35,6 +39,8 @@ import { PullRequestsToolkitHandlersLive } from "./toolkits/pullRequests/handler
 import { PullRequestsToolkit } from "./toolkits/pullRequests/tools.ts";
 import { ScheduledTasksToolkitHandlersLive } from "./toolkits/scheduledTasks/handlers.ts";
 import { ScheduledTasksToolkit } from "./toolkits/scheduledTasks/tools.ts";
+import { MemoriesToolkitHandlersLive } from "./toolkits/memories/handlers.ts";
+import { MemoriesToolkit } from "./toolkits/memories/tools.ts";
 import {
   DeviceScreenshotToolkitHandlersLive,
   DeviceStandardToolkitHandlersLive,
@@ -663,6 +669,10 @@ const ScheduledTasksToolkitRegistrationLive = McpServer.toolkit(ScheduledTasksTo
   Layer.provide(ScheduledTasksToolkitHandlersLive),
 );
 
+const MemoriesToolkitRegistrationLive = McpServer.toolkit(MemoriesToolkit).pipe(
+  Layer.provide(MemoriesToolkitHandlersLive),
+);
+
 const DeviceStandardToolkitRegistrationLive = McpServer.toolkit(DeviceStandardToolkit).pipe(
   Layer.provide(DeviceStandardToolkitHandlersLive),
 );
@@ -714,7 +724,10 @@ const McpTransportLive = McpServer.layerHttp({
 export const layer = Layer.mergeAll(
   PreviewToolkitRegistrationLive,
   PullRequestsToolkitRegistrationLive,
+  McpServer.toolkit(OutputsToolkit).pipe(Layer.provide(OutputsToolkitHandlersLive)),
+  McpServer.toolkit(ConnectedAppsToolkit).pipe(Layer.provide(ConnectedAppsToolkitHandlersLive)),
   ScheduledTasksToolkitRegistrationLive,
+  MemoriesToolkitRegistrationLive,
   DeviceToolkitRegistrationLive,
   ComputerToolkitRegistrationLive,
 ).pipe(Layer.provideMerge(McpTransportLive));

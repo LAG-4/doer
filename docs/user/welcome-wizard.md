@@ -18,7 +18,7 @@ your file is kept so you can try again.
 
 Select **Skip for now** at any time (or press Escape) to reach the start
 screen instead. There, **Start chatting** opens the default folder and
-**Add project** points Doer at one of your folders.
+**Add Space** points Doer at one of your folders.
 
 When your first explanation is ready, Doer offers next steps: ask about the
 report, try another task, or go to your tasks. To see the welcome screen

@@ -1,6 +1,6 @@
 import {
   CommandId,
-  type CheckpointRef,
+  CheckpointRef,
   EventId,
   MessageId,
   type ProjectId,
@@ -248,7 +248,10 @@ const make = Effect.gen(function* () {
     if (!cwd) {
       return undefined;
     }
-    if (!(yield* checkpointStore.isGitRepository(cwd))) {
+    if (
+      !checkpointStore.supportsOrdinaryFolders &&
+      !(yield* checkpointStore.isGitRepository(cwd))
+    ) {
       return undefined;
     }
     return cwd;
@@ -272,7 +275,11 @@ const make = Effect.gen(function* () {
     readonly createdAt: string;
   }) {
     const fromTurnCount = Math.max(0, input.turnCount - 1);
-    const fromCheckpointRef = checkpointRefForThreadTurn(input.threadId, fromTurnCount);
+    const previousRef = checkpointRefForThreadTurn(input.threadId, fromTurnCount);
+    const ordinary =
+      checkpointStore.supportsOrdinaryFolders &&
+      !(yield* checkpointStore.isGitRepository(input.cwd));
+    const fromCheckpointRef = ordinary ? CheckpointRef.make(`${previousRef}-start`) : previousRef;
     const targetCheckpointRef = checkpointRefForThreadTurn(input.threadId, input.turnCount);
 
     const fromCheckpointExists = yield* checkpointStore
@@ -505,14 +512,21 @@ const make = Effect.gen(function* () {
         cwd: checkpointCwd,
         checkpointRef: baselineCheckpointRef,
       });
-      if (baselineExists) {
-        return;
-      }
-
-      yield* checkpointStore.captureCheckpoint({
-        cwd: checkpointCwd,
-        checkpointRef: baselineCheckpointRef,
-      });
+      const ordinary =
+        checkpointStore.supportsOrdinaryFolders &&
+        !(yield* checkpointStore.isGitRepository(checkpointCwd));
+      const startRef = CheckpointRef.make(`${baselineCheckpointRef}-start`);
+      const startExists =
+        ordinary &&
+        (yield* checkpointStore.hasCheckpointRef({ cwd: checkpointCwd, checkpointRef: startRef }));
+      if (baselineExists && (!ordinary || startExists)) return;
+      if (ordinary && !startExists)
+        yield* checkpointStore.captureCheckpoint({ cwd: checkpointCwd, checkpointRef: startRef });
+      if (!baselineExists)
+        yield* checkpointStore.captureCheckpoint({
+          cwd: checkpointCwd,
+          checkpointRef: baselineCheckpointRef,
+        });
       yield* receiptBus.publish({
         type: "checkpoint.baseline.captured",
         threadId: thread.id,
@@ -716,14 +730,20 @@ const make = Effect.gen(function* () {
       cwd: checkpointCwd,
       checkpointRef: baselineCheckpointRef,
     });
-    if (baselineExists) {
-      return;
-    }
-
-    yield* checkpointStore.captureCheckpoint({
-      cwd: checkpointCwd,
-      checkpointRef: baselineCheckpointRef,
-    });
+    const ordinary =
+      checkpointStore.supportsOrdinaryFolders &&
+      !(yield* checkpointStore.isGitRepository(checkpointCwd));
+    if (ordinary)
+      yield* checkpointStore.captureCheckpoint({
+        cwd: checkpointCwd,
+        checkpointRef: CheckpointRef.make(`${baselineCheckpointRef}-start`),
+      });
+    if (!baselineExists)
+      yield* checkpointStore.captureCheckpoint({
+        cwd: checkpointCwd,
+        checkpointRef: baselineCheckpointRef,
+      });
+    if (baselineExists && !ordinary) return;
     yield* receiptBus.publish({
       type: "checkpoint.baseline.captured",
       threadId,
@@ -827,13 +847,16 @@ const make = Effect.gen(function* () {
         yield* appendRevertFailureActivity({
           threadId: event.payload.threadId,
           turnCount: event.payload.turnCount,
-          detail: "Checkpoint workspace is unavailable or is not a git repository.",
+          detail: "File History is unavailable for this Space.",
           createdAt: now,
         }).pipe(Effect.catch(() => Effect.void));
         return;
       }
 
-      if (!(yield* isRestoreWorkspaceIsolated(thread, checkpointCwd))) {
+      const ordinary =
+        checkpointStore.supportsOrdinaryFolders &&
+        !(yield* checkpointStore.isGitRepository(checkpointCwd));
+      if (!ordinary && !(yield* isRestoreWorkspaceIsolated(thread, checkpointCwd))) {
         yield* appendRevertFailureActivity({
           threadId: thread.id,
           turnCount: event.payload.turnCount,
@@ -861,10 +884,25 @@ const make = Effect.gen(function* () {
         return;
       }
 
+      const expectedPaths = new Map<string, CheckpointRef>();
+      if (ordinary)
+        for (const checkpoint of thread.checkpoints) {
+          if (checkpoint.checkpointTurnCount <= event.payload.turnCount) continue;
+          for (const file of checkpoint.files)
+            expectedPaths.set(file.path, checkpoint.checkpointRef);
+        }
       const restored = yield* checkpointStore.restoreCheckpoint({
         cwd: checkpointCwd,
         checkpointRef: targetCheckpointRef,
         fallbackToHead: event.payload.turnCount === 0,
+        ...(ordinary
+          ? {
+              expectedPaths: [...expectedPaths].map(([path, checkpointRef]) => ({
+                path,
+                checkpointRef,
+              })),
+            }
+          : {}),
       });
       if (!restored) {
         yield* appendRevertFailureActivity({
@@ -891,7 +929,11 @@ const make = Effect.gen(function* () {
 
     const staleCheckpointRefs: Array<CheckpointRef> = [];
     for (const checkpoint of thread.checkpoints) {
-      if (checkpoint.checkpointTurnCount > event.payload.turnCount) {
+      if (
+        checkpoint.status === "ready" &&
+        checkpoint.checkpointRef.startsWith("refs/") &&
+        checkpoint.checkpointTurnCount > event.payload.turnCount
+      ) {
         staleCheckpointRefs.push(checkpoint.checkpointRef);
       }
     }

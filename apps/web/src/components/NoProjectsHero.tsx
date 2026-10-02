@@ -53,8 +53,8 @@ export function NoProjectsHero() {
               <EmptyTitle>What should we work on?</EmptyTitle>
               <EmptyDescription className="mt-2">
                 {isInboxCapable
-                  ? "Start chatting right away, or add a Space folder first."
-                  : "Add a Space, or start without one."}
+                  ? "Start chatting right away, or add a folder as a Space first."
+                  : "Add a Space to start your first Task."}
               </EmptyDescription>
               {failed ? (
                 <p role="alert" className="mt-3 text-sm text-destructive">

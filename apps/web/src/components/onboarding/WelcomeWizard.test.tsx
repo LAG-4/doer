@@ -254,6 +254,38 @@ it("shows provider failures with a retry that re-probes", async () => {
   expect(onDone).not.toHaveBeenCalled();
 });
 
+it("recovers from a failed fresh install before allowing the first task", async () => {
+  const installFailure =
+    "Could not download the free AI service. Check your internet connection and try setup again.";
+  mocks.providers = [
+    {
+      ...READY_OPENCODE,
+      installed: false,
+      status: "error",
+      availability: "unavailable",
+      models: [],
+      message: installFailure,
+    },
+  ];
+  const onDone = vi.fn();
+  await act(async () => root.render(<WelcomeWizard onDone={onDone} />));
+  await click("Try a sample");
+  expect(text()).toContain(installFailure);
+  expect(text()).not.toContain("Getting the AI service ready…");
+  expect(button("Explain this report").disabled).toBe(true);
+  expect(mocks.submit).not.toHaveBeenCalled();
+  expect(mocks.complete).not.toHaveBeenCalled();
+  await click("Try again");
+  expect(mocks.refresh).toHaveBeenCalledWith({ environmentId: "env-1", input: {} });
+  mocks.providers = [READY_OPENCODE];
+  await act(async () => root.render(<WelcomeWizard onDone={onDone} />));
+  expect(text()).toContain("Your free AI is ready");
+  expect(text()).toContain("sample-sales-report.md");
+  await click("Explain this report");
+  expect(mocks.submit).toHaveBeenCalledOnce();
+  expect(onDone).toHaveBeenCalledOnce();
+});
+
 it("pauses instead of silently switching to a paid provider", async () => {
   mocks.providers = [
     { ...READY_OPENCODE, status: "error" },
@@ -274,6 +306,22 @@ it("pauses instead of silently switching to a paid provider", async () => {
   await click("Try a sample");
   expect(text()).toContain("won’t switch you to a paid service");
   expect(button("Explain this report").disabled).toBe(true);
+  expect(mocks.submit).not.toHaveBeenCalled();
+});
+
+it("pauses when a ready OpenCode account has no free models", async () => {
+  mocks.providers = [
+    {
+      ...READY_OPENCODE,
+      models: [{ ...READY_OPENCODE.models[0]!, slug: "paid-model", name: "Paid model" }],
+    },
+  ];
+  await act(async () => root.render(<WelcomeWizard onDone={vi.fn()} />));
+  await click("Try a sample");
+  expect(text()).toContain("No free model is available");
+  expect(text()).not.toContain("Your free AI is ready");
+  expect(button("Explain this report").disabled).toBe(true);
+  expect(button("Choose an AI service")).toBeDefined();
   expect(mocks.submit).not.toHaveBeenCalled();
 });
 

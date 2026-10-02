@@ -43,6 +43,8 @@ const makeElectronAppLayer = (calls: ElectronAppCalls) =>
     systemLocale: Effect.succeed("en-US"),
     whenReady: Effect.void,
     quit: Effect.void,
+    requestSingleInstanceLock: Effect.succeed(true),
+    releaseSingleInstanceLock: Effect.void,
     exit: () => Effect.void,
     relaunch: () => Effect.void,
     setPath: () => Effect.void,
@@ -136,6 +138,28 @@ const withIdentity = <A, E, R>(
 };
 
 describe("DesktopAppIdentity", () => {
+  it.effect("isolates development browser state and its single-instance lock", () =>
+    withIdentity(
+      Effect.gen(function* () {
+        const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        assert.equal(
+          yield* identity.resolveUserDataPath,
+          environment.path.join(environment.stateDir, "electron-profile"),
+        );
+      }),
+      {
+        environment: {
+          isPackaged: false,
+          env: {
+            DOER_HOME: "/tmp/doer-verification",
+            VITE_DEV_SERVER_URL: "http://localhost:5733",
+          },
+        },
+      },
+    ),
+  );
+
   it.effect("always uses the Doer userData path, never the T3 Code one", () =>
     withIdentity(
       Effect.gen(function* () {

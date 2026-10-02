@@ -1,3 +1,7 @@
+import { DoerContextEditor } from "./DoerContextEditor";
+import { MemoryManager } from "./MemoryManager";
+import { SPACE_CONTEXT_FILE } from "@t3tools/shared/doerContext";
+import { useClientSettings } from "~/hooks/useSettings";
 import {
   isAtomCommandInterrupted,
   mapAtomCommandResult,
@@ -131,8 +135,8 @@ export function ProjectSettingsPanel({
     return (
       <div className="flex flex-1 items-center justify-center p-8 text-sm text-muted-foreground">
         {groups.length === 0
-          ? "Add a project from the sidebar to configure it here."
-          : "This project is no longer available."}
+          ? "Add a Space from the sidebar to configure it here."
+          : "This Space is no longer available."}
       </div>
     );
   }
@@ -165,6 +169,7 @@ function ProjectDetail({
   hasOtherMembers: boolean;
 }) {
   const navigate = useNavigate({ from: "/settings" });
+  const simple = useClientSettings((settings) => settings.simpleModeEnabled);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const { environments } = useEnvironments();
   const environmentById = useMemo(
@@ -273,7 +278,7 @@ function ProjectDetail({
     [group.memberProjects, updateAllMembers],
   );
 
-  // ----- project icon -----
+  // ----- Space icon -----
   const [faviconPickerOpen, setFaviconPickerOpen] = useState(false);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [isSavingFavicon, setIsSavingFavicon] = useState(false);
@@ -284,7 +289,7 @@ function ProjectDetail({
       savingFaviconRef.current = true;
       setIsSavingFavicon(true);
       try {
-        await updateAllMembers(input, "Failed to update project icon");
+        await updateAllMembers(input, "Failed to update Space icon");
       } finally {
         savingFaviconRef.current = false;
         setIsSavingFavicon(false);
@@ -412,19 +417,19 @@ function ProjectDetail({
         <Alert variant="info">
           <InfoIcon aria-hidden />
           <AlertDescription>
-            Can't find a setting? Keep this project picked above and hop to any other settings page.
+            Can't find a setting? Keep this Space selected above and go to any other settings page.
           </AlertDescription>
         </Alert>
-        <SettingsSection id="project-overview" title="Project" hideTitle>
+        <SettingsSection id="project-overview" title="Space" hideTitle>
           <SettingsRow
             title="Name"
-            description="The shared name for this project group in the sidebar and thread lists."
+            description="The shared name for this Space in the sidebar and Task lists."
             control={
               <Input
                 key={`${group.projectKey}:${group.displayName}`}
                 size="sm"
                 className="w-full sm:w-64"
-                aria-label="Project name"
+                aria-label="Space name"
                 defaultValue={group.displayName}
                 onChange={() => {
                   projectNameEditedRef.current = true;
@@ -441,7 +446,7 @@ function ProjectDetail({
             }
           />
           <SettingsRow
-            title="Project icon"
+            title="Space icon"
             description={
               projectIcon?.kind === "lucide"
                 ? `${projectIcon.name} · ${projectIcon.color}`
@@ -456,7 +461,7 @@ function ProjectDetail({
                 (member) => member.faviconPath != null || member.projectIcon != null,
               ) ? (
                 <SettingResetButton
-                  label="project icon"
+                  label="Space icon"
                   disabled={isSavingFavicon}
                   onClick={() => void setProjectIcon({ faviconPath: null, projectIcon: null })}
                 />
@@ -469,7 +474,7 @@ function ProjectDetail({
                   size="sm"
                   variant="outline"
                   type="button"
-                  aria-label="Choose a project icon"
+                  aria-label="Choose a Space icon"
                   disabled={isSavingFavicon}
                   onClick={() => setIconPickerOpen(true)}
                 >
@@ -479,7 +484,7 @@ function ProjectDetail({
                   size="sm"
                   variant="outline"
                   type="button"
-                  aria-label="Choose a project icon file"
+                  aria-label="Choose a Space icon file"
                   disabled={isSavingFavicon}
                   onClick={() => setFaviconPickerOpen(true)}
                 >
@@ -489,9 +494,32 @@ function ProjectDetail({
             }
           />
         </SettingsSection>
-        <ProjectDefaultsSettings category="project" />
-        <ProjectActionsSettings />
-        {hasMultipleCheckouts ? checkoutChoices : null}
+        <DoerContextEditor
+          environmentId={representative.environmentId}
+          cwd={representative.workspaceRoot}
+          relativePath={SPACE_CONTEXT_FILE}
+        />
+        {group.memberProjects.map((member) => (
+          <MemoryManager
+            key={`${member.environmentId}-${String(member.id)}`}
+            environmentId={member.environmentId}
+            scope="space"
+            projectId={String(member.id)}
+            sectionId={`space-memory-${member.environmentId}-${String(member.id)}`}
+            title="What Doer remembers about this Space"
+            description={
+              group.memberProjects.length > 1
+                ? `Used for Tasks in this Space on ${member.environmentLabel ?? "this computer"} (${member.workspaceRoot}), including reminders. You choose what Doer remembers — ask in chat or add it here, and review, correct, or forget it any time.`
+                : "Used for Tasks in this Space, including reminders. You choose what Doer remembers — ask in chat or add it here, and review, correct, or forget it any time."
+            }
+          />
+        ))}
+        <details>
+          <summary className="cursor-pointer text-sm font-medium">Advanced</summary>
+          <ProjectDefaultsSettings category="project" />
+          <ProjectActionsSettings />
+          {!simple && hasMultipleCheckouts ? checkoutChoices : null}
+        </details>
         <SettingsSection title="Danger">
           <SettingsRow
             title={
@@ -499,14 +527,14 @@ function ProjectDetail({
                 ? "Remove checkout"
                 : group.memberProjects.length > 1
                   ? "Remove this project everywhere"
-                  : "Remove project"
+                  : "Remove Space"
             }
             description={
               hasOtherMembers
                 ? "Deletes the selected machine's checkout entries and their threads. Other machines and files on disk are not touched."
                 : group.memberProjects.length > 1
                   ? `Deletes all ${group.memberProjects.length} checkout entries and their threads on every machine. Files on disk are not touched.`
-                  : "Deletes the project entry and its threads. Files on disk are not touched."
+                  : "Removes this Space and its Tasks. Files on disk are not touched."
             }
             control={
               <Button
@@ -519,7 +547,7 @@ function ProjectDetail({
                   ? "Remove checkout"
                   : group.memberProjects.length > 1
                     ? "Remove all entries"
-                    : "Remove project"}
+                    : "Remove Space"}
               </Button>
             }
           />

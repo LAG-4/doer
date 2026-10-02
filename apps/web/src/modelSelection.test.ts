@@ -865,7 +865,7 @@ describe("instance-scoped model selection", () => {
     };
 
     expect(resolveAppModelSelectionState(settings, [unsupported, supported])).toEqual(
-      createModelSelection(supported.instanceId, "gpt-5.6-sol"),
+      NO_PROVIDER_MODEL_SELECTION,
     );
     expect(resolveAppModelSelectionState(settings, [unsupported])).toEqual(
       NO_PROVIDER_MODEL_SELECTION,

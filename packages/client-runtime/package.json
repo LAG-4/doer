@@ -131,6 +131,10 @@
       "types": "./src/delayedStatus.ts",
       "default": "./src/delayedStatus.ts"
     },
+    "./doer-memory": {
+      "types": "./src/doerMemory.ts",
+      "default": "./src/doerMemory.ts"
+    },
     "./state/connections": {
       "types": "./src/state/connections.ts",
       "default": "./src/state/connections.ts"
@@ -310,6 +314,14 @@
     "./device/duo-control": {
       "types": "./src/device/duoControl.ts",
       "default": "./src/device/duoControl.ts"
+    },
+    "./state/environment-http-auth": {
+      "types": "./src/state/environmentHttpAuth.ts",
+      "default": "./src/state/environmentHttpAuth.ts"
+    },
+    "./state/connected-apps": {
+      "types": "./src/state/connectedAppsHttp.ts",
+      "default": "./src/state/connectedAppsHttp.ts"
     }
   },
   "scripts": {

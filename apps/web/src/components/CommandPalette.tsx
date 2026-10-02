@@ -1,4 +1,5 @@
-"use client";
+import { isAdvancedCommand } from "~/simpleMode";
+("use client");
 
 import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
@@ -475,6 +476,11 @@ function overlayModeForCommand(command: string | null): SearchOverlayMode | null
 }
 
 export function CommandPalette({ children }: { children: ReactNode }) {
+  const simple = useClientSettings((settings) => settings.simpleModeEnabled);
+  return <AdvancedCommandPalette simple={simple}>{children}</AdvancedCommandPalette>;
+}
+
+function AdvancedCommandPalette({ children, simple }: { children: ReactNode; simple: boolean }) {
   const navigate = useNavigate();
   const [state, dispatch] = useReducer(reduceCommandPaletteUiState, {
     open: false,
@@ -534,6 +540,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
           modelPickerOpen: composerHandleRef.current?.isModelPickerOpen() ?? false,
         },
       });
+      if (simple && command && isAdvancedCommand(command)) return;
       if (command === "appearance.cycle") {
         event.preventDefault();
         event.stopPropagation();
@@ -586,6 +593,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
+    simple,
     appearanceMode,
     keybindings,
     navigate,
@@ -722,6 +730,7 @@ function OpenCommandPaletteDialog(props: {
     reportFailure: false,
     reportDefect: false,
   });
+  const simple = useClientSettings((settings) => settings.simpleModeEnabled);
   const cloneRepository = useAtomCommand(sourceControlEnvironment.cloneRepository, {
     reportFailure: false,
   });
@@ -1885,10 +1894,9 @@ function OpenCommandPaletteDialog(props: {
         },
       ];
 
-      const orderedSources: ReadonlyArray<AddProjectRemoteSource> = [
-        "url",
-        ...sortAddProjectProviderSources(readinessBySource),
-      ];
+      const orderedSources: ReadonlyArray<AddProjectRemoteSource> = simple
+        ? []
+        : ["url", ...sortAddProjectProviderSources(readinessBySource)];
 
       for (const source of orderedSources) {
         const label = remoteProjectSourceLabel(source);
@@ -1956,6 +1964,7 @@ function OpenCommandPaletteDialog(props: {
       return [{ value: `sources:${environmentId}`, label: "Sources", items: sourceItems }];
     },
     [
+      simple,
       openSourceControlSettings,
       startAddProjectBrowse,
       startAddProjectClone,
@@ -2102,7 +2111,7 @@ function OpenCommandPaletteDialog(props: {
       groups: [
         {
           value: "projects",
-          label: "Projects",
+          label: "Spaces",
           items: enumerateCommandPaletteItems(prioritized),
         },
       ],
@@ -2131,7 +2140,7 @@ function OpenCommandPaletteDialog(props: {
         searchTerms: ["new thread", "chat", "create", "draft"],
         title: (
           <>
-            New thread in <span className="font-semibold">{activeProjectTitle}</span>
+            New Task in <span className="font-semibold">{activeProjectTitle}</span>
           </>
         ),
         icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
@@ -2151,10 +2160,10 @@ function OpenCommandPaletteDialog(props: {
       kind: "submenu",
       value: "action:new-thread-in",
       searchTerms: ["new thread", "project", "pick", "choose", "select"],
-      title: "New thread in...",
+      title: "New Task in...",
       icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
       addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
-      groups: [{ value: "projects", label: "Projects", items: projectThreadItems }],
+      groups: [{ value: "projects", label: "Spaces", items: projectThreadItems }],
     });
   }
 
@@ -2231,7 +2240,7 @@ function OpenCommandPaletteDialog(props: {
     kind: "action",
     value: "action:search-project-contents",
     searchTerms: ["search project", "find in files", "grep", "content search", "text search"],
-    title: "Search project contents",
+    title: "Search files in this Space",
     icon: <TextSearchIcon className={ITEM_ICON_CLASS} />,
     keepOpen: true,
     shortcutCommand: "projectSearch.toggle",
@@ -2262,7 +2271,7 @@ function OpenCommandPaletteDialog(props: {
       "url",
       "environment",
     ],
-    title: "Add project",
+    title: "Add Space",
     icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
     keepOpen: true,
     run: async () => {
@@ -2477,7 +2486,7 @@ function OpenCommandPaletteDialog(props: {
         "remove",
         "t3.json",
       ],
-      title: "Project settings",
+      title: "Space settings",
       description: contextualProjectGroup.displayName,
       icon: <FolderIcon className={ITEM_ICON_CLASS} />,
       run: async () => {
@@ -2489,7 +2498,15 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
-  const rootGroups = buildRootGroups({ actionItems, recentThreadItems });
+  const rootGroups = buildRootGroups({
+    actionItems: simple
+      ? actionItems.filter(
+          (item) =>
+            !/pull-request|copy-thread-reference|add-project:wsl|theme-editor/.test(item.value),
+        )
+      : actionItems,
+    recentThreadItems,
+  });
   const settingsSearchItems: CommandPaletteActionItem[] = searchSettings(
     deferredQuery,
     availableSettingsSearchItems,

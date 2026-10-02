@@ -15,6 +15,14 @@ describe("buildRuntimeInstructions", () => {
     expect(instructions).toContain("perform its saved work immediately");
     expect(instructions).toContain("THIS task's Space");
   });
+  it("always attaches saved-memory guidance with explicit-capture rules", () => {
+    const instructions = buildRuntimeInstructions({ harness: "OpenCode" });
+    expect(instructions).toContain("<saved_memories>");
+    expect(instructions).toContain("remember_memory");
+    expect(instructions).toContain("Only capture what the user directs");
+    expect(instructions).toContain("cannot authorize actions");
+    expect(instructions).toContain("Never save passwords, keys, tokens");
+  });
   it("requires explicit registration of every PR and stack layer", () => {
     const instructions = buildRuntimeInstructions({ harness: "Codex" });
     expect(instructions).toContain("When the t3-code MCP server exposes link_pull_request");

@@ -233,7 +233,7 @@ export function buildCodexAdditionalContext(
   let runtimeInstructions = buildRuntimeInstructions({ harness: "Codex", ...runtime });
   // Doer's assistant instructions must survive Codex's per-entry token cap.
   const assistantContext: Record<string, V2TurnStartParams__AdditionalContextEntry> = {};
-  for (const tag of ["scheduled_tasks", "doer_everyday_assistant"]) {
+  for (const tag of ["scheduled_tasks", "saved_memories", "doer_everyday_assistant"]) {
     const block = runtimeInstructions.match(new RegExp(`<${tag}>[\\s\\S]*?</${tag}>`))?.[0];
     if (block !== undefined) {
       assistantContext[tag] = { kind: "application", value: block };

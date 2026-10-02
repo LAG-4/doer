@@ -1,3 +1,4 @@
+import * as MicrosoftConnection from "./connectedApps/MicrosoftConnection.ts";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -136,6 +137,7 @@ import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSna
 import { ThreadDeletionReactor } from "./orchestration/Services/ThreadDeletionReactor.ts";
 import * as PullRequestSyncReactor from "./orchestration/PullRequestSyncReactor.ts";
 import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
+import { DoerMemoryStoreLive } from "./persistence/Layers/DoerMemoryStore.ts";
 import { OrchestrationEventStoreLive } from "./persistence/Layers/OrchestrationEventStore.ts";
 import { OrchestrationEventStore } from "./persistence/Services/OrchestrationEventStore.ts";
 import { PersistenceSqlError } from "./persistence/Errors.ts";
@@ -149,6 +151,7 @@ import {
   AntigravityInstallationError,
 } from "./provider/AntigravityInstallation.ts";
 import { CodexInstallation } from "./provider/CodexInstallation.ts";
+import { ProviderCliInstallation } from "./provider/ProviderCliInstallation.ts";
 import type { ProviderInstance } from "./provider/ProviderDriver.ts";
 import * as ProviderSessionDirectory from "./provider/Services/ProviderSessionDirectory.ts";
 import { ProviderAdapterRequestError } from "./provider/Errors.ts";
@@ -539,6 +542,7 @@ const buildAppUnderTest = (options?: {
     providerInstanceRegistry?: Partial<ProviderInstanceRegistry["Service"]>;
     antigravityInstallation?: Partial<AntigravityInstallation["Service"]>;
     codexInstallation?: Partial<CodexInstallation["Service"]>;
+    providerCliInstallation?: Partial<ProviderCliInstallation["Service"]>;
     serverSettings?: Partial<ServerSettings.ServerSettingsService["Service"]>;
     externalLauncher?: Partial<ExternalLauncher.ExternalLauncher["Service"]>;
     vcsDriver?: Partial<VcsDriver.VcsDriver["Service"]>;
@@ -787,6 +791,9 @@ const buildAppUnderTest = (options?: {
     ).pipe(
       Layer.provide(
         Layer.mergeAll(
+          // HttpRouter.serve exposes request-handler context outward, so the saved-memory
+          // store is provided here (one shared instance) rather than inside makeRoutesLayer.
+          DoerMemoryStoreLive.pipe(Layer.provide(SqlitePersistenceMemory)),
           Layer.mock(Keybindings.Keybindings)({
             loadConfigState: Effect.succeed({
               keybindings: [],
@@ -842,6 +849,7 @@ const buildAppUnderTest = (options?: {
             managedDirectory: "unused-test-codex-runtime",
             ...options?.layers?.codexInstallation,
           }),
+          Layer.mock(ProviderCliInstallation)({ ...options?.layers?.providerCliInstallation }),
           Layer.mock(AntigravityInstallation)({
             managedDirectory: "unused-test-antigravity-runtime",
             ...options?.layers?.antigravityInstallation,
@@ -1258,7 +1266,12 @@ const buildAppUnderTest = (options?: {
         };
       }),
       Layer.provideMerge(makeAuthTestLayer()),
-      Layer.provideMerge(ServerSecretStore.layer),
+      Layer.provideMerge(
+        Layer.merge(
+          MicrosoftConnection.layer.pipe(Layer.provide(ServerSecretStore.layer)),
+          ServerSecretStore.layer,
+        ),
+      ),
       Layer.provide(workspaceAndProjectServicesLayer),
       // The inbox resolves the home directory through this reference so
       // full-stack tests provision scratch space under the temp base dir
@@ -1701,8 +1714,10 @@ const assertBrowserApiCorsPreflightHeaders = (
 ) => {
   assertBrowserApiCorsResponseHeaders(headers, options);
   assert.deepEqual(splitHeaderTokens(headers["access-control-allow-methods"] ?? null), [
+    "DELETE",
     "GET",
     "OPTIONS",
+    "PATCH",
     "POST",
   ]);
   assert.deepEqual(splitHeaderTokens(headers["access-control-allow-headers"]), [
@@ -6001,8 +6016,10 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.equal(response.status, 204);
       assert.equal(response.headers["access-control-allow-origin"], "*");
       assert.deepEqual(splitHeaderTokens(response.headers["access-control-allow-methods"]), [
+        "DELETE",
         "GET",
         "OPTIONS",
+        "PATCH",
         "POST",
       ]);
       assert.deepEqual(splitHeaderTokens(response.headers["access-control-allow-headers"]), [
@@ -6959,6 +6976,84 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         );
         assert.deepEqual(calls, ["start", "cancel:old-operation", "cancel:install-operation"]);
       }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("provider setup installs a missing CLI through authenticated WebSocket requests", () =>
+    Effect.gen(function* () {
+      const cliId = ProviderInstanceId.make("claudeAgent");
+      const cliDriver = ProviderDriverKind.make("claudeAgent");
+      const state: ProviderInstallState = { ...providerSetupInstallState, driver: cliDriver };
+      const calls: string[] = [];
+      yield* buildAppUnderTest({
+        layers: {
+          providerInstanceRegistry: {
+            getInstance: (id) =>
+              Effect.succeed(
+                id === cliId
+                  ? {
+                      instanceId: cliId,
+                      driverKind: cliDriver,
+                      enabled: false,
+                      displayName: undefined,
+                      continuationIdentity: { driverKind: cliDriver, continuationKey: cliId },
+                      get adapter(): never {
+                        throw new Error("Installation must not start a chat session.");
+                      },
+                      get snapshot(): never {
+                        throw new Error("Installation routing must not probe the provider.");
+                      },
+                      get textGeneration(): never {
+                        throw new Error("Installation must not generate text.");
+                      },
+                    }
+                  : undefined,
+              ),
+          },
+          providerCliInstallation: {
+            start: (id, driver) =>
+              Effect.sync(() => {
+                assert.equal(id, cliId);
+                assert.equal(driver, cliDriver);
+                calls.push("start");
+                return state;
+              }),
+            cancel: (id, operationId) =>
+              Effect.sync(() => {
+                assert.equal(id, cliId);
+                assert.equal(operationId, state.operationId);
+                calls.push("cancel");
+                return { ...state, phase: "cancelled" };
+              }),
+            changes: (id, driver) => {
+              assert.equal(id, cliId);
+              assert.equal(driver, cliDriver);
+              return Stream.succeed(state);
+            },
+          },
+        },
+      });
+      const url = yield* getWsServerUrl("/ws");
+      yield* Effect.scoped(
+        withWsRpcClient(url, (client) =>
+          Effect.gen(function* () {
+            assert.deepEqual(
+              yield* client[WS_METHODS.providerInstallStart]({ instanceId: cliId }),
+              state,
+            );
+            const observed = yield* client[WS_METHODS.providerInstallSubscribe]({
+              instanceId: cliId,
+            }).pipe(Stream.runHead, Effect.map(Option.getOrThrow));
+            assert.deepEqual(observed, state);
+            const cancelled = yield* client[WS_METHODS.providerInstallCancel]({
+              instanceId: cliId,
+              operationId: state.operationId!,
+            });
+            assert.equal(cancelled.phase, "cancelled");
+          }),
+        ),
+      );
+      assert.deepEqual(calls, ["start", "cancel"]);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
   it.effect("routes websocket rpc subscribeServerConfig streams snapshot then update", () =>

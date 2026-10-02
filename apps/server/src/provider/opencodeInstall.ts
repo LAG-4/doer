@@ -131,7 +131,8 @@ export interface OpenCodeBinaryCandidatesInput {
  * returned verbatim (the user's explicit choice wins and is never
  * second-guessed); the default resolves through PATH first, then the
  * official script's `~/.opencode/bin`, then the T3-managed installs
- * (npm first, script-downloaded second).
+ * (standalone first, npm second). A failed npm install can leave a broken shim;
+ * the standalone fallback must remain usable on the next startup too.
  */
 export function openCodeBinaryCandidates(
   input: OpenCodeBinaryCandidatesInput,
@@ -147,8 +148,8 @@ export function openCodeBinaryCandidates(
   }
   const managedDir = input.managedDir?.trim();
   if (managedDir) {
-    candidates.push(openCodeManagedBinaryPath(managedDir, input.platform));
     candidates.push(openCodeManagedScriptBinaryPath(managedDir, input.platform));
+    candidates.push(openCodeManagedBinaryPath(managedDir, input.platform));
   }
   return candidates;
 }
@@ -246,7 +247,22 @@ export function openCodeInstallDownloadUrl(target: OpenCodeInstallTarget): strin
 
 /** `curl` argv that downloads a URL to a file, failing loudly on HTTP errors. */
 export function openCodeCurlDownloadArgs(url: string, outputPath: string): ReadonlyArray<string> {
-  return ["-fsSL", "-L", "-o", outputPath, url];
+  return [
+    "-fsSL",
+    "--retry",
+    "3",
+    "--retry-delay",
+    "1",
+    "--retry-max-time",
+    "120",
+    "--connect-timeout",
+    "15",
+    "--max-time",
+    "120",
+    "-o",
+    outputPath,
+    url,
+  ];
 }
 
 export interface OpenCodeExtractCommand {
@@ -257,6 +273,19 @@ export interface OpenCodeExtractCommand {
 /** Quote a path for PowerShell single-quoted string context. */
 export function powershellSingleQuoted(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
+}
+
+/** Windows fallback uses the OS downloader when curl is missing or fails. */
+export function openCodePowerShellDownloadArgs(
+  url: string,
+  outputPath: string,
+): ReadonlyArray<string> {
+  return [
+    "-NoProfile",
+    "-NonInteractive",
+    "-Command",
+    `$ErrorActionPreference = 'Stop'; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -UseBasicParsing -Uri ${powershellSingleQuoted(url)} -OutFile ${powershellSingleQuoted(outputPath)} -TimeoutSec 120`,
+  ];
 }
 
 /**

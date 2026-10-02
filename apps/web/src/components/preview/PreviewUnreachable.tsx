@@ -36,7 +36,7 @@ export function PreviewUnreachable({ url, code, description, onReload }: Props) 
             <p className="mb-2 font-medium text-foreground">Try:</p>
             <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
               <li>Checking your connection</li>
-              <li>Confirming the dev server is running</li>
+              <li>Confirming the website is available</li>
               <li>Checking the proxy and the firewall</li>
             </ul>
           </div>

@@ -314,7 +314,7 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
       descriptionParts.push(`#${thread.branch}`);
     }
     if (thread.id === input.activeThreadId) {
-      descriptionParts.push("Current thread");
+      descriptionParts.push("Current Task");
     }
 
     const leadingContent = input.renderLeadingContent?.(thread);
@@ -437,7 +437,7 @@ export function filterCommandPaletteGroups(input: {
     if (input.projectSearchItems.length > 0) {
       searchableGroups.push({
         value: "projects-search",
-        label: "Projects",
+        label: "Spaces",
         items: input.projectSearchItems,
       });
     }
@@ -451,7 +451,7 @@ export function filterCommandPaletteGroups(input: {
     if (input.threadSearchItems.length > 0) {
       searchableGroups.push({
         value: "threads-search",
-        label: "Threads",
+        label: "Tasks",
         items: input.threadSearchItems,
       });
     }
@@ -569,7 +569,7 @@ export function buildRootGroups(input: {
   if (input.recentThreadItems.length > 0) {
     groups.push({
       value: "recent-threads",
-      label: "Recent Threads",
+      label: "Recent Tasks",
       items: input.recentThreadItems,
     });
   }

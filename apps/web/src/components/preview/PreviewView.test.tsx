@@ -11,6 +11,11 @@ import { act, createElement, Profiler } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+vi.mock("~/hooks/useSettings", () => ({
+  useClientSettings: (selector: (settings: { simpleModeEnabled: boolean }) => unknown) =>
+    selector({ simpleModeEnabled: false }),
+}));
+
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(async (_tabId: string, _url: string): Promise<void> => undefined),
   rememberPreviewUrl: vi.fn(),

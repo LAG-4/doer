@@ -511,6 +511,32 @@ describe("AssetAccess", () => {
     }).pipe(Effect.provide(testLayer)),
   );
 
+  it.effect("downloads office outputs without granting access to sibling files", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped();
+      for (const extension of ["docx", "xlsx", "pptx", "csv"]) {
+        const name = `My report.${extension}`;
+        yield* fs.writeFile(path.join(root, name), new Uint8Array([80, 75, 3, 4]));
+        yield* fs.writeFileString(path.join(root, "other.txt"), "private sibling");
+        const issued = yield* issueAssetUrl({
+          resource: { _tag: "workspace-file", threadId: ThreadId.make("thread-1"), path: name },
+          workspaceRoot: root,
+        });
+        const token = issued.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length).split("/")[0]!;
+        expect(yield* resolveAsset(token, encodeURIComponent(name))).toMatchObject({
+          kind: "file",
+          download: true,
+          fileName: name,
+          mimeType: "application/octet-stream",
+        });
+        expect(yield* resolveAsset(token, "other.txt")).toBeNull();
+        expect(yield* resolveAsset(token, "../other.txt")).toBeNull();
+      }
+    }).pipe(Effect.provide(testLayer)),
+  );
+
   it.effect("rejects workspace files outside the authorized root", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
