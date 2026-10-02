@@ -1,9 +1,11 @@
-import { PlusIcon } from "lucide-react";
+import { MessageSquareDashedIcon, PlusIcon } from "lucide-react";
 import { useCallback, useState } from "react";
 
 import { openCommandPalette } from "../commandPaletteBus";
 import { useEnsureInboxProject } from "../hooks/useEnsureInboxProject";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { useScratchProject } from "../hooks/useScratchProject";
+import { usePrimaryEnvironmentId } from "../state/environments";
 import { isElectron } from "../env";
 import { Button } from "./ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "./ui/empty";
@@ -14,6 +16,9 @@ export function NoProjectsHero() {
   const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
   const { handleNewThread } = useHandleNewThread();
   const { prepareInboxProject, settleInboxProject, isInboxCapable } = useEnsureInboxProject();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const { scratchEnvironmentId, startScratchThread } = useScratchProject();
+  const scratchTargetEnvironmentId = scratchEnvironmentId(primaryEnvironmentId);
   const [failed, setFailed] = useState(false);
 
   // Opens the inbox draft instantly; creation settles behind it. A null
@@ -56,7 +61,7 @@ export function NoProjectsHero() {
                   Could not set up your space. Try again or add a Space.
                 </p>
               ) : null}
-              <div className="mt-6 flex justify-center gap-3">
+              <div className="mt-6 flex flex-wrap justify-center gap-3">
                 {isInboxCapable ? (
                   <>
                     <Button size="sm" onClick={() => void startChatting()}>
@@ -71,6 +76,16 @@ export function NoProjectsHero() {
                   <Button size="sm" onClick={openAddProject}>
                     <PlusIcon className="size-4" />
                     Add Space
+                  </Button>
+                )}
+                {scratchTargetEnvironmentId === null ? null : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void startScratchThread(scratchTargetEnvironmentId)}
+                  >
+                    <MessageSquareDashedIcon className="size-4" />
+                    Start without a Space
                   </Button>
                 )}
               </div>

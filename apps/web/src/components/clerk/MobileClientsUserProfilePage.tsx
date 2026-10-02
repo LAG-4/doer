@@ -111,7 +111,7 @@ export function MobileClientsUserProfilePage() {
   return (
     <ClerkUserProfilePage
       title="Mobile clients"
-      description="Devices registered to receive T3 Connect activity from your environments."
+      description="Mobile devices that get notifications from your environments."
       action={
         <ClerkUserProfileRefreshButton
           isPending={devicesState.isPending}
