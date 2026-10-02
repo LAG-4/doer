@@ -131,6 +131,10 @@
       "types": "./src/delayedStatus.ts",
       "default": "./src/delayedStatus.ts"
     },
+    "./doer-memory": {
+      "types": "./src/doerMemory.ts",
+      "default": "./src/doerMemory.ts"
+    },
     "./state/connections": {
       "types": "./src/state/connections.ts",
       "default": "./src/state/connections.ts"

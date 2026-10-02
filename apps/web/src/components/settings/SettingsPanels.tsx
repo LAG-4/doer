@@ -1,4 +1,5 @@
 import { DoerContextEditor } from "./DoerContextEditor";
+import { MemoryManager } from "./MemoryManager";
 import { PERSONAL_CONTEXT_FILE } from "@t3tools/shared/doerContext";
 import { SettingsGroup } from "./SettingsGroup";
 import { Spinner } from "~/components/ui/spinner";
@@ -2249,6 +2250,15 @@ export function GeneralSettingsPanel() {
           environmentId={environmentId}
           cwd={environment.serverConfig.keybindingsConfigPath.replace(/[^\\/]+$/, "")}
           relativePath={PERSONAL_CONTEXT_FILE}
+        />
+      ) : null}
+      {environmentId ? (
+        <MemoryManager
+          environmentId={environmentId}
+          scope="about-you"
+          sectionId="about-you-memory"
+          title="What Doer remembers about you"
+          description="Used across your Spaces on this computer. You choose what Doer remembers — ask in chat or add it here, and review, correct, or forget it any time."
         />
       ) : null}
       <ProjectDefaultsSettings category="general" />

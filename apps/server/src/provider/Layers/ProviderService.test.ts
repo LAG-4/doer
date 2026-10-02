@@ -78,6 +78,8 @@ import * as ServerSettings from "../../serverSettings.ts";
 import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import { makeAdapterRegistryMock } from "../testUtils/providerAdapterRegistryMock.ts";
 import * as ProjectionSnapshotQuery from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { DoerMemoryStore } from "../../persistence/Services/DoerMemoryStore.ts";
+import { DoerMemoryStoreLive } from "../../persistence/Layers/DoerMemoryStore.ts";
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const defaultServerSettingsLayer = ServerSettings.ServerSettingsService.layerTest();
@@ -5452,6 +5454,154 @@ chatGptTelemetry.layer("ChatGPT connector turn analytics", (it) => {
         subscriptionSharing: true,
         errorType: "ProviderAdapterSessionNotFoundError",
       });
+    }),
+  );
+});
+
+describe("saved memory recall", () => {
+  const memoryShell = (projectId: ProjectId): OrchestrationThreadShell => ({
+    id: asThreadId("thread-memory-recall"),
+    projectId,
+    title: "Memory recall",
+    modelSelection: { instanceId: codexInstanceId, model: "gpt-5" },
+    runtimeMode: "full-access",
+    interactionMode: "default",
+    pullRequests: [],
+    branch: null,
+    worktreePath: null,
+    latestTurn: null,
+    createdAt: "2026-08-01T00:00:00.000Z",
+    updatedAt: "2026-08-20T00:00:00.000Z",
+    archivedAt: null,
+    settledOverride: null,
+    settledAt: null,
+    session: null,
+    latestUserMessageAt: "2026-08-20T00:00:00.000Z",
+    hasPendingApprovals: false,
+    hasPendingUserInput: false,
+    hasActionableProposedPlan: false,
+  });
+
+  it.effect("injects about-you and current-space memories, then picks up saves and switches", () =>
+    Effect.gen(function* () {
+      const codex = makeFakeCodexAdapter();
+      const registry = makeStaticInstanceRegistry([[codexInstanceId, codex.adapter]]);
+      const runtimeRepositoryLayer = ProviderSessionRuntime.layer.pipe(
+        Layer.provide(SqlitePersistenceMemory),
+      );
+      const directoryLayer = ProviderSessionDirectoryLive.pipe(
+        Layer.provide(runtimeRepositoryLayer),
+      );
+      const memoryLayer = DoerMemoryStoreLive.pipe(Layer.provide(SqlitePersistenceMemory));
+      const spaceRef = yield* Ref.make(ProjectId.make("project-memory-home"));
+      const snapshotLayer = Layer.mock(ProjectionSnapshotQuery.ProjectionSnapshotQuery)({
+        getThreadShellById: (threadId) =>
+          threadId === asThreadId("thread-memory-recall")
+            ? Ref.get(spaceRef).pipe(Effect.map((projectId) => Option.some(memoryShell(projectId))))
+            : Effect.succeed(Option.none()),
+      });
+      const recordedAnalytics = makeRecordingAnalytics();
+      const providerLayer = Layer.mergeAll(
+        makeProviderServiceLive().pipe(
+          Layer.provide(NodeServices.layer),
+          Layer.provide(Layer.succeed(ProviderAdapterRegistry.ProviderAdapterRegistry, registry)),
+          Layer.provide(directoryLayer),
+          Layer.provide(memoryLayer),
+          Layer.provide(snapshotLayer),
+          Layer.provide(defaultServerSettingsLayer),
+          Layer.provide(serverConfigTestLayer),
+          Layer.provide(recordedAnalytics.layer),
+          Layer.provide(
+            Layer.succeed(
+              ProviderEventLoggers.ProviderEventLoggers,
+              ProviderEventLoggers.NoOpProviderEventLoggers,
+            ),
+          ),
+        ),
+        directoryLayer,
+        memoryLayer,
+        runtimeRepositoryLayer,
+        NodeServices.layer,
+      );
+      const scope = yield* Scope.make();
+      const runtimeServices = yield* Layer.build(providerLayer).pipe(Scope.provide(scope));
+      const provider = yield* ProviderService.ProviderService.pipe(Effect.provide(runtimeServices));
+      const store = yield* Effect.provide(DoerMemoryStore, runtimeServices);
+      const threadId = asThreadId("thread-memory-recall");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      const seed = (
+        id: string,
+        content: string,
+        entryScope: "about-you" | "space",
+        project: string | null,
+      ) =>
+        store.create({
+          id,
+          scope: entryScope,
+          projectId: project,
+          content,
+          sourceThreadId: String(threadId),
+          createdAt: "2026-09-01T00:00:00.000Z",
+          updatedAt: "2026-09-01T00:00:00.000Z",
+        });
+      yield* seed("mem_recall_about", "Prefers concise summaries", "about-you", null);
+      yield* seed(
+        "mem_recall_home",
+        "Home renovation budget is 4000",
+        "space",
+        "project-memory-home",
+      );
+      yield* seed("mem_recall_away", "Foreign fact stays away", "space", "project-memory-away");
+
+      yield* provider.sendTurn({ threadId, input: "hello", attachments: [] });
+      const firstInput = String(codex.sendTurn.mock.calls[0]?.[0].input);
+      assert.include(firstInput, "<doer_saved_memories>");
+      assert.include(firstInput, "Prefers concise summaries");
+      assert.include(firstInput, "Home renovation budget is 4000");
+      assert.notInclude(firstInput, "Foreign fact stays away");
+
+      // A fresh save applies on the same Space next turn.
+      yield* seed("mem_recall_new", "Just saved for home", "space", "project-memory-home");
+      yield* provider.sendTurn({ threadId, input: "again", attachments: [] });
+      const secondInput = String(codex.sendTurn.mock.calls[1]?.[0].input);
+      assert.include(secondInput, "Just saved for home");
+      assert.include(secondInput, "Home renovation budget is 4000");
+      assert.notInclude(secondInput, "Foreign fact stays away");
+
+      // An update applies next turn with the corrected wording only.
+      assert.isTrue(
+        yield* store.updateById({
+          id: "mem_recall_home",
+          content: "Home renovation budget is 5000",
+          updatedAt: "2026-09-03T00:00:00.000Z",
+        }),
+      );
+      yield* provider.sendTurn({ threadId, input: "third", attachments: [] });
+      const thirdInput = String(codex.sendTurn.mock.calls[2]?.[0].input);
+      assert.include(thirdInput, "Home renovation budget is 5000");
+      assert.notInclude(thirdInput, "Home renovation budget is 4000");
+
+      // A forget applies next turn: the entry is gone.
+      assert.isTrue(yield* store.deleteById({ id: "mem_recall_home" }));
+      yield* provider.sendTurn({ threadId, input: "fourth", attachments: [] });
+      const fourthInput = String(codex.sendTurn.mock.calls[3]?.[0].input);
+      assert.notInclude(fourthInput, "Home renovation budget is 5000");
+      assert.include(fourthInput, "Just saved for home");
+      assert.include(fourthInput, "Prefers concise summaries");
+
+      // A switched Task recalls the new Space, not the old one.
+      yield* Ref.set(spaceRef, ProjectId.make("project-memory-away"));
+      yield* provider.sendTurn({ threadId, input: "fifth", attachments: [] });
+      const fifthInput = String(codex.sendTurn.mock.calls[4]?.[0].input);
+      assert.include(fifthInput, "Foreign fact stays away");
+      assert.include(fifthInput, "Prefers concise summaries");
+      assert.notInclude(fifthInput, "Just saved for home");
+      yield* Scope.close(scope, Exit.void);
     }),
   );
 });

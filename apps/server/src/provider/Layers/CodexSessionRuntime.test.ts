@@ -670,6 +670,7 @@ describe("T3 tool instructions", () => {
     });
     NodeAssert.match(context.scheduled_tasks?.value ?? "", /create_scheduled_task/);
     NodeAssert.match(context.scheduled_tasks?.value ?? "", /thread:'new'/);
+    NodeAssert.match(context.saved_memories?.value ?? "", /remember_memory/);
     NodeAssert.match(context.doer_everyday_assistant?.value ?? "", /everyday assistant/);
     NodeAssert.match(context.t3_code_computer?.value ?? "", /computer_start/);
     NodeAssert.match(context.t3_code_computer?.value ?? "", /computer_allow/);
@@ -690,6 +691,7 @@ describe("T3 tool instructions", () => {
     NodeAssert.deepStrictEqual(Object.keys(context), [
       "t3_code_runtime",
       "scheduled_tasks",
+      "saved_memories",
       "doer_everyday_assistant",
     ]);
   });

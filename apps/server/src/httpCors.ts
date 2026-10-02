@@ -1,4 +1,4 @@
-export const browserApiCorsAllowedMethods = ["GET", "POST", "OPTIONS"] as const;
+export const browserApiCorsAllowedMethods = ["GET", "POST", "PATCH", "DELETE", "OPTIONS"] as const;
 export const browserApiCorsAllowedHeaders = [
   "authorization",
   "b3",

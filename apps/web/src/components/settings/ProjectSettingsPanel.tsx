@@ -1,4 +1,5 @@
 import { DoerContextEditor } from "./DoerContextEditor";
+import { MemoryManager } from "./MemoryManager";
 import { SPACE_CONTEXT_FILE } from "@t3tools/shared/doerContext";
 import { useClientSettings } from "~/hooks/useSettings";
 import {
@@ -498,6 +499,21 @@ function ProjectDetail({
           cwd={representative.workspaceRoot}
           relativePath={SPACE_CONTEXT_FILE}
         />
+        {group.memberProjects.map((member) => (
+          <MemoryManager
+            key={`${member.environmentId}-${String(member.id)}`}
+            environmentId={member.environmentId}
+            scope="space"
+            projectId={String(member.id)}
+            sectionId={`space-memory-${member.environmentId}-${String(member.id)}`}
+            title="What Doer remembers about this Space"
+            description={
+              group.memberProjects.length > 1
+                ? `Used for Tasks in this Space on ${member.environmentLabel ?? "this computer"} (${member.workspaceRoot}), including reminders. You choose what Doer remembers — ask in chat or add it here, and review, correct, or forget it any time.`
+                : "Used for Tasks in this Space, including reminders. You choose what Doer remembers — ask in chat or add it here, and review, correct, or forget it any time."
+            }
+          />
+        ))}
         <details>
           <summary className="cursor-pointer text-sm font-medium">Advanced</summary>
           <ProjectDefaultsSettings category="project" />
