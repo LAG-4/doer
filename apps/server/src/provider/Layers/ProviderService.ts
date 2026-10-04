@@ -879,12 +879,30 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       const computerOverridden = entries.some(
         (entry) => entry.enableAgentComputerAccess !== undefined,
       );
+      const gmailOverridden = entries.some((entry) => entry.enableGmailAccess !== undefined);
+      const spreadsheetsOverridden = entries.some(
+        (entry) => entry.enableLocalSpreadsheetAccess !== undefined,
+      );
+      const presentationsOverridden = entries.some(
+        (entry) => entry.enableLocalPresentationAccess !== undefined,
+      );
       const environment = {
         browser: settings.enableAgentBrowserAccess,
         device: settings.enableAgentDeviceAccess,
         computer: settings.enableAgentComputerAccess,
+        gmail: settings.enableGmailAccess,
+        spreadsheets: settings.enableLocalSpreadsheetAccess,
+        presentations: settings.enableLocalPresentationAccess,
       };
-      if (!browserOverridden && !deviceOverridden && !computerOverridden) return environment;
+      if (
+        !browserOverridden &&
+        !deviceOverridden &&
+        !computerOverridden &&
+        !gmailOverridden &&
+        !spreadsheetsOverridden &&
+        !presentationsOverridden
+      )
+        return environment;
       // Provider-only runtimes may omit orchestration. An unresolved project
       // must not bypass an explicit project override, but a capability no
       // project overrides keeps its environment value.
@@ -892,6 +910,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         browser: browserOverridden ? false : environment.browser,
         device: deviceOverridden ? false : environment.device,
         computer: computerOverridden ? false : environment.computer,
+        gmail: gmailOverridden ? false : environment.gmail,
+        spreadsheets: spreadsheetsOverridden ? false : environment.spreadsheets,
+        presentations: presentationsOverridden ? false : environment.presentations,
       };
       if (Option.isNone(projectionQuery)) return denied;
       const thread = yield* projectionQuery.value.getThreadShellById(threadId);
@@ -901,13 +922,25 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         browser: resolved.enableAgentBrowserAccess,
         device: resolved.enableAgentDeviceAccess,
         computer: resolved.enableAgentComputerAccess,
+        gmail: resolved.enableGmailAccess,
+        spreadsheets: resolved.enableLocalSpreadsheetAccess,
+        presentations: resolved.enableLocalPresentationAccess,
       };
     },
     Effect.catch((cause) =>
       Effect.logWarning(
         "Could not read server settings; withholding agent browser, device, and computer access for this session.",
         { cause },
-      ).pipe(Effect.as({ browser: false, device: false, computer: false })),
+      ).pipe(
+        Effect.as({
+          browser: false,
+          device: false,
+          computer: false,
+          gmail: false,
+          spreadsheets: false,
+          presentations: false,
+        }),
+      ),
     ),
   );
 
@@ -922,6 +955,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     if (access.browser) capabilities.add("preview");
     if (access.device) capabilities.add("device");
     if (access.computer) capabilities.add("computer");
+    if (access.gmail) capabilities.add("gmail");
+    if (access.spreadsheets) capabilities.add("local-spreadsheets");
+    if (access.presentations) capabilities.add("local-presentations");
     return capabilities;
   });
 

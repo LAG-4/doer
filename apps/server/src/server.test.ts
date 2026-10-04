@@ -115,6 +115,7 @@ import * as ServerConfig from "./config.ts";
 import * as DeviceService from "./device/DeviceService.ts";
 import * as ComputerService from "./computer/ComputerService.ts";
 import { HTTP_ROUTER_CONFIG, makeRoutesLayer } from "./server.ts";
+import { GmailConnection } from "./integrations/GmailConnection.ts";
 import {
   isThreadDetailEvent,
   resolveAvailableEditorsForConfig,
@@ -772,6 +773,16 @@ const buildAppUnderTest = (options?: {
     ).pipe(
       Layer.provide(
         Layer.mergeAll(
+          Layer.succeed(
+            GmailConnection,
+            GmailConnection.of({
+              status: Effect.succeed({ configured: false, connected: false, email: null }),
+              begin: Effect.die("Gmail sign-in is not available in this test"),
+              complete: () => Effect.die("Gmail sign-in is not available in this test"),
+              disconnect: Effect.void,
+              send: () => Effect.die("Gmail send is not available in this test"),
+            }),
+          ),
           Layer.mock(Keybindings.Keybindings)({
             loadConfigState: Effect.succeed({
               keybindings: [],

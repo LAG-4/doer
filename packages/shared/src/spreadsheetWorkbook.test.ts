@@ -13,6 +13,7 @@ import {
   normalizeSpreadsheetGrid,
   parseSheetGrid,
   parseSpreadsheet,
+  replaceSpreadsheetCell,
   serializeSpreadsheet,
   spreadsheetCellInputFromText,
   spreadsheetGridsEqual,
@@ -21,6 +22,15 @@ import {
 describe("spreadsheet runtime", () => {
   it("reports platform zip support", () => {
     expect(isSpreadsheetRuntimeSupported()).toBe(true);
+  });
+});
+
+describe("targeted spreadsheet editing", () => {
+  it("replaces an existing cell and keeps the other value", async () => {
+    const original = await createSpreadsheet([["First", "Keep"]]);
+    const edited = await replaceSpreadsheetCell(original, "A1", "Updated & safe");
+    expect((await parseSpreadsheet(edited)).rows).toEqual([["Updated & safe", "Keep"]]);
+    await expect(replaceSpreadsheetCell(original, "C1", "new")).rejects.toThrow(/does not exist/);
   });
 });
 

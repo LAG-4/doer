@@ -50,6 +50,7 @@ import {
 import { type OpenCodeAdapterShape } from "../Services/OpenCodeAdapter.ts";
 import {
   buildOpenCodePermissionRules,
+  isGmailSendPermission,
   OpenCodeRuntime,
   OpenCodeRuntimeError,
   openCodeQuestionId,
@@ -1768,11 +1769,16 @@ export function makeOpenCodeAdapter(
           args: request.metadata,
           options: [
             { decision: "accept", label: "Allow once" },
-            {
-              decision: "acceptForSession",
-              label: "Allow for workspace",
-              warning: "Applies to matching requests in other OpenCode sessions in this workspace.",
-            },
+            ...(!isGmailSendPermission(request.permission)
+              ? [
+                  {
+                    decision: "acceptForSession" as const,
+                    label: "Allow for workspace",
+                    warning:
+                      "Applies to matching requests in other OpenCode sessions in this workspace.",
+                  },
+                ]
+              : []),
             { decision: "decline", label: "Deny" },
           ],
         },
@@ -1825,7 +1831,10 @@ export function makeOpenCodeAdapter(
         if (context.pendingPermissions.has(request.id)) {
           return;
         }
-        if (context.session.runtimeMode === "full-access") {
+        if (
+          context.session.runtimeMode === "full-access" &&
+          !isGmailSendPermission(request.permission)
+        ) {
           // Reply outside the event pump so a slow HTTP response cannot hide
           // progress, terminal replies, or the acknowledgment for Stop.
           context.resolvedRequestIds.add(request.id);

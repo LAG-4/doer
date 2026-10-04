@@ -34,6 +34,11 @@ import { PullRequestsToolkitHandlersLive } from "./toolkits/pullRequests/handler
 import { PullRequestsToolkit } from "./toolkits/pullRequests/tools.ts";
 import { ScheduledTasksToolkitHandlersLive } from "./toolkits/scheduledTasks/handlers.ts";
 import { ScheduledTasksToolkit } from "./toolkits/scheduledTasks/tools.ts";
+import { GmailToolkitHandlersLive } from "./toolkits/gmail/handlers.ts";
+import { GmailToolkit } from "./toolkits/gmail/tools.ts";
+import { layer as GmailConnectionLive } from "../integrations/GmailConnection.ts";
+import { LocalDocumentsToolkitHandlersLive } from "./toolkits/localDocuments/handlers.ts";
+import { LocalDocumentsToolkit } from "./toolkits/localDocuments/tools.ts";
 import {
   DeviceScreenshotToolkitHandlersLive,
   DeviceStandardToolkitHandlersLive,
@@ -624,6 +629,15 @@ export const ScheduledTasksToolkitRegistrationLive = McpServer.toolkit(Scheduled
   Layer.provide(ScheduledTasksToolkitHandlersLive),
 );
 
+export const GmailToolkitRegistrationLive = McpServer.toolkit(GmailToolkit).pipe(
+  Layer.provide(GmailToolkitHandlersLive),
+  Layer.provide(GmailConnectionLive),
+);
+
+export const LocalDocumentsToolkitRegistrationLive = McpServer.toolkit(LocalDocumentsToolkit).pipe(
+  Layer.provide(LocalDocumentsToolkitHandlersLive),
+);
+
 const DeviceStandardToolkitRegistrationLive = McpServer.toolkit(DeviceStandardToolkit).pipe(
   Layer.provide(DeviceStandardToolkitHandlersLive),
 );
@@ -676,6 +690,8 @@ export const layer = Layer.mergeAll(
   PreviewToolkitRegistrationLive,
   PullRequestsToolkitRegistrationLive,
   ScheduledTasksToolkitRegistrationLive,
+  GmailToolkitRegistrationLive,
+  LocalDocumentsToolkitRegistrationLive,
   DeviceToolkitRegistrationLive,
   ComputerToolkitRegistrationLive,
 ).pipe(Layer.provideMerge(McpTransportLive));
