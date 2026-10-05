@@ -180,7 +180,10 @@ jobs:
           run-install: false
 
       - name: Install desktop dependencies
-        run: vp install --filter=@t3tools/desktop... --filter=@t3tools/scripts...
+        # Include the oxlint plugin package: `vp lint` loads
+        # ./oxlint-plugin-t3code/index.ts, which imports @oxlint/plugins.
+        # A filtered install without it fails with ERR_MODULE_NOT_FOUND.
+        run: vp install --filter=@t3tools/desktop... --filter=@t3tools/scripts... --filter=@t3tools/oxlint-plugin-t3code...
 
       - name: Typecheck scripts package
         run: vp run --filter @t3tools/scripts typecheck
@@ -430,6 +433,91 @@ jobs:
           $env:STORE_APPX_EXPECTED_APPLICATION_ID = "Doer"
           node scripts/validate-store-appx-manifest.ts "$manifest" --app-version "$env:APP_VERSION" --assets-dir "$PWD/unpack/assets"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify Store reconfig helper on synthetic package
+        # Template-handoff proof only: runs when the build used the synthetic
+        # build-verification identity. Reconfigures a COPY to a second
+        # synthetic identity with scripts/configure-store-appx.ps1, then
+        # unpacks the output and validates it (identity fields, manifest
+        # version, x64, Application Id, doer protocol, runFullTrust,
+        # MinVersion, logos, identical app payload, no signature).
+        # Real-identity runs skip this step. Neither synthetic package is
+        # Store-ready or attached to a release.
+        if: ${{ github.event.inputs.appx_identity_name == 'Doer.StoreBuildVerification' && github.event.inputs.appx_publisher == 'CN=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' }}
+        shell: pwsh
+        env:
+          APP_VERSION: ${{ needs.preflight.outputs.app_version }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $appx = Get-ChildItem release/*.appx | Select-Object -First 1
+          if ($null -eq $appx) { Write-Error "No .appx package was produced in release/."; exit 1 }
+          $configured = Join-Path $env:RUNNER_TEMP "Doer-config-verification.appx"
+          if (Test-Path $configured) { Remove-Item $configured -Force }
+          & "$PWD/scripts/configure-store-appx.ps1" `
+            -InputAppx $appx.FullName `
+            -OutputAppx $configured `
+            -IdentityName "Doer.ConfigurationVerification" `
+            -Publisher "CN=bbbbbbbb-cccc-dddd-eeee-ffffffffffff" `
+            -PublisherDisplayName "Doer Configuration Verification" `
+            -DisplayName "Doer Configuration Verification"
+          $searchRoots = @(
+            (Join-Path $env:LOCALAPPDATA "electron-builder\Cache\winCodeSign"),
+            "${env:ProgramFiles(x86)}\Windows Kits\10\bin",
+            "$env:ProgramFiles\Windows Kits\10\bin"
+          ) | Where-Object { Test-Path $_ }
+          $makeappx = $searchRoots |
+            ForEach-Object { Get-ChildItem -Path $_ -Filter "makeappx.exe" -Recurse -ErrorAction SilentlyContinue } |
+            Where-Object { $_.FullName -match "\\x64\\" } |
+            Select-Object -First 1
+          if ($null -eq $makeappx) {
+            $makeappx = $searchRoots |
+              ForEach-Object { Get-ChildItem -Path $_ -Filter "makeappx.exe" -Recurse -ErrorAction SilentlyContinue } |
+              Select-Object -First 1
+          }
+          if ($null -eq $makeappx) { Write-Error "makeappx.exe not found in builder cache or Windows SDK."; exit 1 }
+          $unpackConfigured = Join-Path $PWD "unpack-configured"
+          New-Item -ItemType Directory -Force $unpackConfigured | Out-Null
+          & $makeappx.FullName unpack /o /p "$configured" /d "$unpackConfigured" | Out-Host
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $manifest = Join-Path $unpackConfigured "AppxManifest.xml"
+          if (!(Test-Path $manifest)) { Write-Error "AppxManifest.xml missing after unpack of reconfigured package."; exit 1 }
+          $env:STORE_APPX_EXPECTED_IDENTITY_NAME = "Doer.ConfigurationVerification"
+          $env:STORE_APPX_EXPECTED_PUBLISHER = "CN=bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
+          $env:STORE_APPX_EXPECTED_PUBLISHER_DISPLAY_NAME = "Doer Configuration Verification"
+          $env:STORE_APPX_EXPECTED_DISPLAY_NAME = "Doer Configuration Verification"
+          $env:STORE_APPX_EXPECTED_APPLICATION_ID = "Doer"
+          node scripts/validate-store-appx-manifest.ts "$manifest" --app-version "$env:APP_VERSION" --assets-dir (Join-Path $unpackConfigured "assets")
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          [xml]$xml = Get-Content -LiteralPath $manifest -Raw -Encoding UTF8
+          $ns = New-Object Xml.XmlNamespaceManager($xml.NameTable)
+          $ns.AddNamespace('m', 'http://schemas.microsoft.com/appx/manifest/foundation/windows10')
+          $id = $xml.SelectSingleNode('/m:Package/m:Identity', $ns)
+          if ($id.GetAttribute('ProcessorArchitecture') -ne 'x64') { Write-Error "Reconfigured package ProcessorArchitecture is not x64."; exit 1 }
+          $tdf = $xml.SelectSingleNode('/m:Package/m:Dependencies/m:TargetDeviceFamily', $ns)
+          if ($null -eq $tdf -or $tdf.GetAttribute('MinVersion') -ne '10.0.19041.0') { Write-Error "Reconfigured package MinVersion is not 10.0.19041.0."; exit 1 }
+          if (Test-Path (Join-Path $unpackConfigured "AppxSignature.p7x")) { Write-Error "Reconfigured package must be unsigned (AppxSignature.p7x present)."; exit 1 }
+          $skip = @('AppxBlockMap.xml', '[Content_Types].xml', 'AppxSignature.p7x', 'AppxManifest.xml')
+          function PayloadHashes([string]$root) {
+            $map = @{}
+            foreach ($f in (Get-ChildItem -Path $root -Recurse -File)) {
+              $rel = $f.FullName.Substring($root.Length).TrimStart([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+              if ($rel -in $skip) { continue }
+              if ($rel.StartsWith("AppxMetadata" + [IO.Path]::DirectorySeparatorChar)) { continue }
+              $map[$rel] = (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash
+            }
+            return $map
+          }
+          $origRoot = Join-Path $PWD "unpack"
+          $orig = PayloadHashes $origRoot
+          $new = PayloadHashes $unpackConfigured
+          $missing = @($orig.Keys | Where-Object { -not $new.ContainsKey($_) })
+          $extra = @($new.Keys | Where-Object { -not $orig.ContainsKey($_) })
+          if ($missing.Count -gt 0) { Write-Error ("Reconfigured package is missing payload files: " + ($missing -join ", ")); exit 1 }
+          if ($extra.Count -gt 0) { Write-Error ("Reconfigured package has unexpected payload files: " + ($extra -join ", ")); exit 1 }
+          foreach ($k in $orig.Keys) {
+            if ($orig[$k] -ne $new[$k]) { Write-Error "Payload file changed by reconfiguration: $k"; exit 1 }
+          }
+          Write-Host "Reconfigured synthetic package valid: same payload, Doer.ConfigurationVerification, unsigned."
 
       - name: Collect Store package and evidence
         shell: bash
