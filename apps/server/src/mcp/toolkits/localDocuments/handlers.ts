@@ -1,7 +1,6 @@
 import * as NodeCrypto from "node:crypto";
 import {
   base64ToBytes,
-  bytesToBase64,
   parseSpreadsheet,
   replaceSpreadsheetCell,
 } from "@t3tools/shared/spreadsheetWorkbook";
@@ -14,6 +13,8 @@ import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import { ServerSettingsService } from "../../../serverSettings.ts";
 import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { WorkspaceFileSystem } from "../../../workspace/WorkspaceFileSystem.ts";
+import { replaceLocalDocument } from "../../../integrations/localDocumentWrite.ts";
+import { withWorkspaceLease } from "../../../workspace/workspaceLease.ts";
 import { LocalDocumentError, LocalDocumentsToolkit } from "./tools.ts";
 
 type Kind = "local-spreadsheets" | "local-presentations";
@@ -81,23 +82,34 @@ const make = Effect.gen(function* () {
     edit: (bytes: Uint8Array) => Promise<Uint8Array>,
   ) =>
     Effect.gen(function* () {
-      const current = yield* read(kind, path);
-      if (current.sha256 !== expectedSha256)
-        return yield* failure("File changed since inspection. Inspect it again.");
-      const updated = yield* Effect.tryPromise({
-        try: () => edit(current.bytes),
-        catch: (cause) =>
-          failure(cause instanceof Error ? cause.message : "Could not edit this file."),
-      });
-      yield* files
-        .writeFile({
-          cwd: current.cwd,
-          relativePath: path,
-          encoding: "base64",
-          contents: bytesToBase64(updated),
-        })
-        .pipe(Effect.mapError(() => failure("Could not save this file.")));
-      return { sha256: sha256(updated) };
+      const cwd = yield* workspace(kind);
+      return yield* withWorkspaceLease(
+        cwd,
+        Effect.gen(function* () {
+          const current = yield* read(kind, path);
+          if (current.sha256 !== expectedSha256)
+            return yield* failure("File changed since inspection. Inspect it again.");
+          const updated = yield* Effect.tryPromise({
+            try: () => edit(current.bytes),
+            catch: (cause) =>
+              failure(cause instanceof Error ? cause.message : "Could not edit this file."),
+          });
+          const saved = yield* Effect.tryPromise({
+            try: () =>
+              replaceLocalDocument({
+                cwd: current.cwd,
+                relativePath: path,
+                expectedSha256,
+                contents: updated,
+              }),
+            catch: () =>
+              failure(
+                "Could not save the document. It may have changed or be open in another app. Inspect it again; the original was preserved.",
+              ),
+          });
+          return { sha256: sha256(updated), backupPath: saved.backupPath };
+        }),
+      );
     });
 
   return LocalDocumentsToolkit.of({

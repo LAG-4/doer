@@ -6,9 +6,46 @@ import {
   exchangeGmailCode,
   refreshGmailToken,
   sendGmailMessage,
+  revokeGmailToken,
+  GMAIL_SEND_SCOPE,
 } from "./gmailClient.ts";
 
 describe("Gmail connector request boundaries", () => {
+  it("records granted scopes and keeps a rotated refresh token", async () => {
+    const request = (async () =>
+      Response.json({
+        access_token: "a",
+        refresh_token: "rotated",
+        expires_in: 3600,
+        scope: `openid email ${GMAIL_SEND_SCOPE}`,
+      })) as typeof fetch;
+    const tokens = await refreshGmailToken("client", "secret", "old", request, 0);
+    expect(tokens.refreshToken).toBe("rotated");
+    expect(tokens.scopes).toContain(GMAIL_SEND_SCOPE);
+  });
+  it("revokes with a POST body and treats already revoked credentials as disconnected", async () => {
+    const request = (async (url, init) => {
+      expect(String(url)).toBe("https://oauth2.googleapis.com/revoke");
+      expect(init?.method).toBe("POST");
+      expect(init?.body).toBeInstanceOf(URLSearchParams);
+      expect((init!.body as URLSearchParams).get("token")).toBe("refresh");
+      return new Response(null, { status: 200 });
+    }) as typeof fetch;
+    await revokeGmailToken("refresh", request);
+    await revokeGmailToken("refresh", (async () =>
+      Response.json({ error: "invalid_token" }, { status: 400 })) as typeof fetch);
+    await expect(
+      revokeGmailToken(
+        "refresh",
+        (async () => new Response(null, { status: 503 })) as typeof fetch,
+      ),
+    ).rejects.toThrow("could not be revoked");
+  });
+  it("rejects extra recipients hidden inside one address", () => {
+    expect(() =>
+      encodeGmailMessage({ to: ["a@example.com,b@example.com"], subject: "HI", body: "Test" }),
+    ).toThrow("Invalid recipient");
+  });
   it("starts a send-only PKCE authorization without granting mailbox read access", () => {
     const attempt = createGmailOAuthAttempt("client", "http://127.0.0.1:9000/callback");
     const url = new URL(attempt.authorizationUrl);
@@ -46,6 +83,7 @@ describe("Gmail connector request boundaries", () => {
       accessToken: "access",
       refreshToken: "refresh",
       expiresAt: 3601000,
+      scopes: [],
     });
     expect(calls[0]?.body.get("code_verifier")).toBe("verifier");
     expect(calls[0]?.body.get("client_secret")).toBe("secret");

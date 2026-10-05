@@ -116,6 +116,7 @@ import * as DeviceService from "./device/DeviceService.ts";
 import * as ComputerService from "./computer/ComputerService.ts";
 import { HTTP_ROUTER_CONFIG, makeRoutesLayer } from "./server.ts";
 import { GmailConnection } from "./integrations/GmailConnection.ts";
+import * as GmailSendApproval from "./integrations/GmailSendApproval.ts";
 import {
   isThreadDetailEvent,
   resolveAvailableEditorsForConfig,
@@ -783,6 +784,7 @@ const buildAppUnderTest = (options?: {
               send: () => Effect.die("Gmail send is not available in this test"),
             }),
           ),
+          GmailSendApproval.layer,
           Layer.mock(Keybindings.Keybindings)({
             loadConfigState: Effect.succeed({
               keybindings: [],
@@ -2443,6 +2445,27 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         const state = (yield* response.json) as { readonly authenticated: boolean };
         assert.equal(state.authenticated, false);
       }
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("requires owner permissions to connect or disconnect Gmail", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+      const { body } = yield* exchangeAccessToken(defaultDesktopBootstrapToken, {
+        scope: "orchestration:read orchestration:operate",
+      });
+      for (const endpoint of ["connect", "disconnect"]) {
+        const response = yield* HttpClient.post(`/api/integrations/gmail/${endpoint}`, {
+          headers: { authorization: `Bearer ${body.access_token}` },
+        });
+        assert.equal(response.status, 403);
+      }
+      const cookie = yield* getAuthenticatedSessionCookieHeader();
+      const disconnect = yield* HttpClient.post("/api/integrations/gmail/disconnect", {
+        headers: { cookie },
+      });
+      assert.equal(disconnect.status, 200);
+      assert.deepEqual(yield* disconnect.json, { disconnected: true });
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

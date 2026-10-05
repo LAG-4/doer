@@ -1,4 +1,5 @@
 import { withWorkspaceLease } from "../../workspace/workspaceLease.ts";
+import { GmailSendApproval, isGmailSendApproval } from "../../integrations/GmailSendApproval.ts";
 import {
   type ChatAttachment,
   CommandId,
@@ -1609,6 +1610,35 @@ const make = Effect.gen(function* () {
   const processApprovalResponseRequested = Effect.fn("processApprovalResponseRequested")(function* (
     event: Extract<ProviderIntentEvent, { type: "thread.approval-response-requested" }>,
   ) {
+    if (isGmailSendApproval(event.payload.requestId)) {
+      const gmailApprovals = yield* Effect.serviceOption(GmailSendApproval);
+      const resolved =
+        Option.isSome(gmailApprovals) &&
+        (yield* gmailApprovals.value.respond(
+          event.payload.threadId,
+          event.payload.requestId,
+          event.payload.decision,
+        ));
+      if (!resolved) {
+        // A restarted server has no live send to approve. Close the stale card without sending.
+        yield* orchestrationEngine.dispatch({
+          type: "thread.activity.append",
+          commandId: yield* serverCommandId("gmail-stale-review"),
+          threadId: event.payload.threadId,
+          createdAt: event.payload.createdAt,
+          activity: {
+            id: yield* serverEventId(),
+            createdAt: event.payload.createdAt,
+            turnId: null,
+            tone: "info",
+            kind: "approval.resolved",
+            summary: "Email review expired; no email was sent",
+            payload: { requestId: event.payload.requestId, decision: "decline" },
+          },
+        });
+      }
+      return;
+    }
     const thread = yield* resolveThreadShell(event.payload.threadId);
     if (!thread) {
       return;
@@ -1810,6 +1840,10 @@ const make = Effect.gen(function* () {
         return;
       }
       case "thread.turn-interrupt-requested":
+        {
+          const reviews = yield* Effect.serviceOption(GmailSendApproval);
+          if (Option.isSome(reviews)) yield* reviews.value.cancelThread(event.payload.threadId);
+        }
         yield* processTurnInterruptRequested(event);
         return;
       case "thread.approval-response-requested":
@@ -1819,6 +1853,10 @@ const make = Effect.gen(function* () {
         yield* processUserInputResponseRequested(event);
         return;
       case "thread.session-stop-requested":
+        {
+          const reviews = yield* Effect.serviceOption(GmailSendApproval);
+          if (Option.isSome(reviews)) yield* reviews.value.cancelThread(event.payload.threadId);
+        }
         yield* processSessionStopRequested(event);
         return;
       case "thread.settled": {

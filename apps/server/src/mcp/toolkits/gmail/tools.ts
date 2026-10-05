@@ -1,6 +1,7 @@
 import * as McpSchema from "effect/Schema";
 import { Tool, Toolkit } from "effect/unstable/ai";
-import { McpServerClient } from "effect/unstable/ai/McpSchema";
+import { GmailSendApproval } from "../../../integrations/GmailSendApproval.ts";
+import { OrchestrationEngineService } from "../../../orchestration/Services/OrchestrationEngine.ts";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import { ServerSettingsService } from "../../../serverSettings.ts";
@@ -18,7 +19,7 @@ const SendEmailInput = McpSchema.Struct({
 
 const SendEmailTool = Tool.make("gmail_send_email", {
   description:
-    "Send a plain-text email from the user's connected Gmail account. Only call this for an email the user explicitly requested with its exact recipients, subject, and body, or after they approved those exact details in the conversation. Ask for missing details before calling. If Gmail is disconnected, ask them to connect it in Settings → Tools.",
+    "Request sending a plain-text email from the user's connected Gmail account. Doer displays the exact email for a one-time user approval before sending. Ask for missing details before calling. Do not retry after uncertain delivery: ask the user to check Gmail's Sent folder first. If disconnected, ask them to connect Gmail in Settings → Tools.",
   parameters: SendEmailInput,
   success: McpSchema.Struct({
     id: McpSchema.String,
@@ -27,7 +28,8 @@ const SendEmailTool = Tool.make("gmail_send_email", {
   failure: GmailToolError,
   dependencies: [
     McpInvocationContext.McpInvocationContext,
-    McpServerClient,
+    GmailSendApproval,
+    OrchestrationEngineService,
     ServerSettingsService,
     ProjectionSnapshotQuery,
   ],

@@ -36,6 +36,18 @@ jobs:
       is_prerelease: ${{ steps.release_meta.outputs.is_prerelease }}
       make_latest: ${{ steps.release_meta.outputs.make_latest }}
     steps:
+      - name: Validate public Gmail configuration
+        if: vars.DOER_GMAIL_PUBLIC_READY == 'true'
+        shell: bash
+        env:
+          CLIENT_ID: ${{ secrets.DOER_RELEASE_GOOGLE_OAUTH_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.DOER_RELEASE_GOOGLE_OAUTH_CLIENT_SECRET }}
+        run: |
+          if [[ -z "$CLIENT_ID" || -z "$CLIENT_SECRET" ]]; then
+            echo "Public Gmail requires the verified production Desktop OAuth client credentials." >&2
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v6
         with:
@@ -144,166 +156,23 @@ jobs:
       - name: Test
         run: vp run test
 
-  relay_public_config:
-    name: Resolve T3 Connect public config
-    # Consumes only the release tag commit, not preflight's resolved version,
-    # so it runs alongside preflight instead of after it.
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    environment:
-      name: production
-    outputs:
-      clerk_publishable_key: ${{ steps.public_config.outputs.clerk_publishable_key }}
-      clerk_jwt_template: ${{ steps.public_config.outputs.clerk_jwt_template }}
-      clerk_cli_oauth_client_id: ${{ steps.public_config.outputs.clerk_cli_oauth_client_id }}
-      relay_url: ${{ steps.public_config.outputs.relay_url }}
-    env:
-      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      RELAY_DOMAIN: ${{ vars.RELAY_DOMAIN }}
-      RELAY_API_ZONE_NAME: ${{ vars.RELAY_API_ZONE_NAME }}
-      CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
-      CLERK_JWT_TEMPLATE: ${{ vars.CLERK_JWT_TEMPLATE }}
-      CLERK_CLI_OAUTH_CLIENT_ID: ${{ vars.CLERK_CLI_OAUTH_CLIENT_ID }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
-
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: |
-            args:
-              - --filter=t3code-relay...
-
-      # The deployed stack's outputs, read from Alchemy's state store without
-      # planning or applying. Select the backend explicitly to avoid loading
-      # the stack's unrelated provider credentials; suppress informational logs
-      # and strip the credential-refresh progress prefix before parsing JSON.
-      # Redacted values are persisted as
-      # {"__redacted__": "<value>"}; the token is masked before it is written.
-      - name: Read production relay tracing config
-        # Fork: skipped when no relay is deployed (no Cloudflare credentials).
-        if: ${{ env.CLOUDFLARE_API_TOKEN != '' }}
-        shell: bash
-        working-directory: infra/relay
-        run: |
-          set -euo pipefail
-          output="$(npx alchemy state read T3CodeRelay/prod/output --backend cloudflare --log-level error --no-input | sed -n '/^{/,$p')"
-          field() {
-            jq -er --arg key "$1" '.[$key] | if type == "object" then .__redacted__ else . end | select(. != null and . != "")' <<<"$output" \
-              || { echo "Relay stack output is missing $1" >&2; exit 1; }
-          }
-          url="$(field clientTracingUrl)"
-          dataset="$(field clientTracingDataset)"
-          token="$(field clientTracingToken)"
-          echo "::add-mask::$token"
-          {
-            echo "T3CODE_RELAY_CLIENT_OTLP_TRACES_URL=$url"
-            echo "T3CODE_RELAY_CLIENT_OTLP_TRACES_DATASET=$dataset"
-            echo "T3CODE_RELAY_CLIENT_OTLP_TRACES_TOKEN=$token"
-          } > "$RUNNER_TEMP/relay-client-tracing.env"
-
-      - name: Upload relay client tracing config
-        if: ${{ env.CLOUDFLARE_API_TOKEN != '' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: relay-client-tracing-config
-          path: ${{ runner.temp }}/relay-client-tracing.env
-          if-no-files-found: error
-          retention-days: 1
-
-      - id: public_config
-        name: Resolve production relay public config
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          relay_domain="${RELAY_DOMAIN:-}"
-          if [[ -z "$relay_domain" && -n "${RELAY_API_ZONE_NAME:-}" ]]; then
-            relay_domain="relay.$RELAY_API_ZONE_NAME"
-          fi
-          # Fork: no relay/Clerk deployment exists yet. An entirely unconfigured
-          # relay resolves to empty outputs so desktop and CLI builds compile
-          # without T3 Connect ("builds without public configuration").
-          # A partially configured relay is a misconfiguration and still fails.
-          required=(
-            relay_domain
-            CLERK_PUBLISHABLE_KEY
-            CLERK_JWT_TEMPLATE
-            CLERK_CLI_OAUTH_CLIENT_ID
-          )
-          missing=()
-          for name in "${required[@]}"; do
-            if [[ -z "${!name:-}" ]]; then
-              missing+=("$name")
-            fi
-          done
-          if (( ${#missing[@]} == ${#required[@]} )); then
-            echo "::notice::No relay configuration found; building without T3 Connect."
-            echo "clerk_publishable_key=" >> "$GITHUB_OUTPUT"
-            echo "clerk_jwt_template=" >> "$GITHUB_OUTPUT"
-            echo "clerk_cli_oauth_client_id=" >> "$GITHUB_OUTPUT"
-            echo "relay_url=" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if (( ${#missing[@]} > 0 )); then
-            printf 'Missing required relay deployment configuration: %s\n' "${missing[*]}" >&2
-            exit 1
-          fi
-
-          echo "clerk_publishable_key=$CLERK_PUBLISHABLE_KEY" >> "$GITHUB_OUTPUT"
-          echo "clerk_jwt_template=$CLERK_JWT_TEMPLATE" >> "$GITHUB_OUTPUT"
-          echo "clerk_cli_oauth_client_id=$CLERK_CLI_OAUTH_CLIENT_ID" >> "$GITHUB_OUTPUT"
-          echo "relay_url=https://$relay_domain" >> "$GITHUB_OUTPUT"
-
-  # The WSL backend runs the self-contained Linux CLI archive inside the
-  # distro (upstream builds it with scripts/build-cli-archive.ts and embeds it
-  # as wsl-runtime.tar.gz). The Linux x64 matrix entry builds that archive and
-  # uploads it as `cli-linux-x64`; the Windows entry downloads it and hands it
-  # to the desktop packaging step via --wsl-runtime.
-  build:
-    name: Build ${{ matrix.label }}
-    # The Windows entry consumes the `cli-linux-x64` artifact built by the
-    # Linux x64 entry of this same matrix. Matrix entries run in parallel, so
-    # the Windows-only download step below fails that single platform if the
-    # archive is missing.
-    needs: [preflight, relay_public_config]
-    if: ${{ !cancelled() && needs.preflight.result == 'success' && needs.relay_public_config.result == 'success' }}
+  # Finish the Linux build first so Windows can embed its WSL runtime.
+  # Matrix entries cannot depend on another entry in the same matrix.
+  wsl_prebuild:
+    name: Build Linux and WSL runtime
+    needs: [preflight]
+    if: ${{ !cancelled() && needs.preflight.result == 'success' }}
     runs-on: ${{ matrix.runner }}
     # Native rebuilds (Rust, node-gyp, VS setup) are slow on free runners;
     # give Windows especially plenty of headroom.
     timeout-minutes: 60
-    env:
-      T3CODE_CLERK_PUBLISHABLE_KEY: ${{ needs.relay_public_config.outputs.clerk_publishable_key }}
-      T3CODE_CLERK_JWT_TEMPLATE: ${{ needs.relay_public_config.outputs.clerk_jwt_template }}
-      T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ needs.relay_public_config.outputs.clerk_cli_oauth_client_id }}
-      T3CODE_RELAY_URL: ${{ needs.relay_public_config.outputs.relay_url }}
+    env: &gmail_release_config
+      DOER_RELEASE_GOOGLE_OAUTH_CLIENT_ID: ${{ vars.DOER_GMAIL_PUBLIC_READY == 'true' && secrets.DOER_RELEASE_GOOGLE_OAUTH_CLIENT_ID || '' }}
+      DOER_RELEASE_GOOGLE_OAUTH_CLIENT_SECRET: ${{ vars.DOER_GMAIL_PUBLIC_READY == 'true' && secrets.DOER_RELEASE_GOOGLE_OAUTH_CLIENT_SECRET || '' }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - label: macOS arm64
-            runner: macos-15
-            platform: mac
-            target: dmg
-            arch: arm64
-            rust_target: aarch64-apple-darwin
-            resource_key: darwin-arm64
-          - label: macOS x64
-            runner: macos-15
-            platform: mac
-            target: dmg
-            arch: x64
-            rust_target: x86_64-apple-darwin
-            resource_key: darwin-x64
           - label: Linux x64
             runner: ubuntu-24.04
             platform: linux
@@ -311,19 +180,7 @@ jobs:
             arch: x64
             rust_target: x86_64-unknown-linux-gnu
             resource_key: linux-x64
-          - label: Windows x64
-            runner: windows-2025
-            platform: win
-            target: nsis
-            arch: x64
-            rust_target: x86_64-pc-windows-msvc
-            resource_key: win32-x64
-          # - label: Windows arm64
-          #   runner: windows-11-arm
-          #   platform: win
-          #   target: nsis
-          #   arch: arm64
-    steps:
+    steps: &desktop_build_steps
       - name: Checkout
         uses: actions/checkout@v6
         with:
@@ -388,23 +245,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.rust_target }}
-
-      - name: Download relay client tracing config
-        # Fork: no tracing artifact exists when no relay is deployed.
-        if: ${{ needs.relay_public_config.outputs.relay_url != '' }}
-        uses: actions/download-artifact@v8
-        with:
-          name: relay-client-tracing-config
-          path: ${{ runner.temp }}/relay-client-tracing
-
-      - name: Load relay client tracing config
-        if: ${{ needs.relay_public_config.outputs.relay_url != '' }}
-        shell: bash
-        run: |
-          config_path="$RUNNER_TEMP/relay-client-tracing/relay-client-tracing.env"
-          tracing_token="$(sed -n 's/^T3CODE_RELAY_CLIENT_OTLP_TRACES_TOKEN=//p' "$config_path")"
-          echo "::add-mask::$tracing_token"
-          cat "$config_path" >> "$GITHUB_ENV"
 
       - name: Align package versions to release version
         run: node scripts/update-release-package-versions.ts "${{ needs.preflight.outputs.version }}"
@@ -575,7 +415,7 @@ jobs:
               echo "macOS signing disabled (missing one or more Apple signing secrets)."
             fi
           elif [[ "${{ matrix.platform }}" == "win" ]]; then
-            # Embed the Linux CLI archive built by the Linux x64 matrix entry
+            # Embed the Linux CLI archive produced by wsl_prebuild
             # as the WSL runtime (the WSL backend runs this archive inside the
             # distro). Required for a working WSL backend on Windows.
             args+=(--wsl-runtime "$GITHUB_WORKSPACE"/wsl-runtime/t3-*-linux-x64.tar.gz)
@@ -707,20 +547,52 @@ jobs:
           path: resource-monitor-publish/${{ matrix.resource_key }}/*
           if-no-files-found: error
 
+  build:
+    name: Build ${{ matrix.label }}
+    needs: [preflight, wsl_prebuild]
+    if: ${{ !cancelled() && needs.preflight.result == 'success' && needs.wsl_prebuild.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env: *gmail_release_config
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS arm64
+            runner: macos-15
+            platform: mac
+            target: dmg
+            arch: arm64
+            rust_target: aarch64-apple-darwin
+            resource_key: darwin-arm64
+          - label: macOS x64
+            runner: macos-15
+            platform: mac
+            target: dmg
+            arch: x64
+            rust_target: x86_64-apple-darwin
+            resource_key: darwin-x64
+          - label: Windows x64
+            runner: windows-2025
+            platform: win
+            target: nsis
+            arch: x64
+            rust_target: x86_64-pc-windows-msvc
+            resource_key: win32-x64
+    steps: *desktop_build_steps
+
   publish_cli:
     name: Publish CLI to npm
-    needs: [preflight, relay_public_config, quality, build]
-    if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' && needs.relay_public_config.result == 'success' && needs.quality.result == 'success' && needs.build.result == 'success' }}
+    needs: [preflight, quality, wsl_prebuild, build]
+    if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' && needs.quality.result == 'success' && needs.wsl_prebuild.result == 'success' && needs.build.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
     env:
       NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      T3CODE_CLERK_PUBLISHABLE_KEY: ${{ needs.relay_public_config.outputs.clerk_publishable_key }}
-      T3CODE_CLERK_JWT_TEMPLATE: ${{ needs.relay_public_config.outputs.clerk_jwt_template }}
-      T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ needs.relay_public_config.outputs.clerk_cli_oauth_client_id }}
-      T3CODE_RELAY_URL: ${{ needs.relay_public_config.outputs.relay_url }}
+      DOER_RELEASE_GOOGLE_OAUTH_CLIENT_ID: ${{ vars.DOER_GMAIL_PUBLIC_READY == 'true' && secrets.DOER_RELEASE_GOOGLE_OAUTH_CLIENT_ID || '' }}
+      DOER_RELEASE_GOOGLE_OAUTH_CLIENT_SECRET: ${{ vars.DOER_GMAIL_PUBLIC_READY == 'true' && secrets.DOER_RELEASE_GOOGLE_OAUTH_CLIENT_SECRET || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -740,23 +612,6 @@ jobs:
               - --filter=@lag4/doer-cli...
               - --filter=@t3tools/web...
               - --filter=@t3tools/scripts...
-
-      - name: Download relay client tracing config
-        # Fork: no tracing artifact exists when no relay is deployed.
-        if: ${{ needs.relay_public_config.outputs.relay_url != '' }}
-        uses: actions/download-artifact@v8
-        with:
-          name: relay-client-tracing-config
-          path: ${{ runner.temp }}/relay-client-tracing
-
-      - name: Load relay client tracing config
-        if: ${{ needs.relay_public_config.outputs.relay_url != '' }}
-        shell: bash
-        run: |
-          config_path="$RUNNER_TEMP/relay-client-tracing/relay-client-tracing.env"
-          tracing_token="$(sed -n 's/^T3CODE_RELAY_CLIENT_OTLP_TRACES_TOKEN=//p' "$config_path")"
-          echo "::add-mask::$tracing_token"
-          cat "$config_path" >> "$GITHUB_ENV"
 
       - name: Align package versions to release version
         run: node scripts/update-release-package-versions.ts "${{ needs.preflight.outputs.version }}"

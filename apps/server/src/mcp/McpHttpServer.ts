@@ -36,7 +36,6 @@ import { ScheduledTasksToolkitHandlersLive } from "./toolkits/scheduledTasks/han
 import { ScheduledTasksToolkit } from "./toolkits/scheduledTasks/tools.ts";
 import { GmailToolkitHandlersLive } from "./toolkits/gmail/handlers.ts";
 import { GmailToolkit } from "./toolkits/gmail/tools.ts";
-import { layer as GmailConnectionLive } from "../integrations/GmailConnection.ts";
 import { LocalDocumentsToolkitHandlersLive } from "./toolkits/localDocuments/handlers.ts";
 import { LocalDocumentsToolkit } from "./toolkits/localDocuments/tools.ts";
 import {
@@ -631,7 +630,6 @@ export const ScheduledTasksToolkitRegistrationLive = McpServer.toolkit(Scheduled
 
 export const GmailToolkitRegistrationLive = McpServer.toolkit(GmailToolkit).pipe(
   Layer.provide(GmailToolkitHandlersLive),
-  Layer.provide(GmailConnectionLive),
 );
 
 export const LocalDocumentsToolkitRegistrationLive = McpServer.toolkit(LocalDocumentsToolkit).pipe(

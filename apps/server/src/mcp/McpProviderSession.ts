@@ -31,12 +31,15 @@ export function withAgentDeviceEnvironment(
   return withLauncherEnvironment(base, config?.agentDeviceEnvironment);
 }
 
-/** Provider env with the computer-use variables applied over `base`, or `base` untouched. */
+/** Apply computer-use variables without giving providers the Gmail vault key. */
 export function withAgentComputerEnvironment(
   base: NodeJS.ProcessEnv,
   config: Pick<McpProviderSessionConfig, "agentComputerEnvironment"> | undefined,
 ): NodeJS.ProcessEnv {
-  return withLauncherEnvironment(base, config?.agentComputerEnvironment);
+  const environment = { ...withLauncherEnvironment(base, config?.agentComputerEnvironment) };
+  delete environment.DOER_GMAIL_ENCRYPTION_KEY;
+  delete environment.DOER_GOOGLE_OAUTH_CLIENT_SECRET;
+  return environment;
 }
 
 function withLauncherEnvironment(

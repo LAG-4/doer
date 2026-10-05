@@ -1,7 +1,20 @@
 import { describe, expect, it } from "vite-plus/test";
-import { withAgentDeviceEnvironment } from "./McpProviderSession.ts";
+import { withAgentDeviceEnvironment, withAgentComputerEnvironment } from "./McpProviderSession.ts";
 
 describe("device CLI environment", () => {
+  it("keeps Gmail vault keys and OAuth credentials out of provider subprocesses", () => {
+    const base = {
+      PATH: "/usr/bin",
+      PROVIDER_KEY: "provider",
+      DOER_GMAIL_ENCRYPTION_KEY: "vault",
+      DOER_GOOGLE_OAUTH_CLIENT_SECRET: "oauth",
+    };
+    expect(withAgentComputerEnvironment(base, undefined)).toEqual({
+      PATH: "/usr/bin",
+      PROVIDER_KEY: "provider",
+    });
+    expect(base.DOER_GMAIL_ENCRYPTION_KEY).toBe("vault");
+  });
   it("preserves provider credentials and commands while routing devices to the owned daemon", () => {
     const environment = withAgentDeviceEnvironment(
       { PATH: "/provider/bin:/usr/bin", PROVIDER_KEY: "fixture" },

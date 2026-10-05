@@ -43,7 +43,7 @@ const replaceSpreadsheetCell = Tool.make("replace_spreadsheet_cell", {
     cell: Schema.String,
     value: Schema.String,
   }),
-  success: Schema.Struct({ sha256: Schema.String }),
+  success: Schema.Struct({ sha256: Schema.String, backupPath: Schema.String }),
   failure: LocalDocumentError,
   dependencies,
 })
@@ -74,7 +74,7 @@ const replacePresentationText = Tool.make("replace_presentation_text", {
     oldText: Schema.String,
     newText: Schema.String,
   }),
-  success: Schema.Struct({ sha256: Schema.String }),
+  success: Schema.Struct({ sha256: Schema.String, backupPath: Schema.String }),
   failure: LocalDocumentError,
   dependencies,
 })

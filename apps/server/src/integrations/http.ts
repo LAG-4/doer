@@ -1,16 +1,22 @@
 import {
-  AuthOrchestrationOperateScope,
+  AuthAccessWriteScope,
   AuthOrchestrationReadScope,
   EnvironmentHttpApi,
   EnvironmentHttpConflictError,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
+import {
+  HttpMiddleware,
+  HttpRouter,
+  HttpServerRequest,
+  HttpServerResponse,
+} from "effect/unstable/http";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
 import { annotateEnvironmentRequest, requireEnvironmentScope } from "../auth/http.ts";
 import { GmailConnection } from "./GmailConnection.ts";
+import { GmailSendApproval } from "./GmailSendApproval.ts";
 
 export const integrationsHttpApiLayer = HttpApiBuilder.group(
   EnvironmentHttpApi,
@@ -30,7 +36,7 @@ export const integrationsHttpApiLayer = HttpApiBuilder.group(
         "gmailBegin",
         Effect.fn("integrations.gmailBegin")(function* (args) {
           yield* annotateEnvironmentRequest(args.endpoint.name);
-          yield* requireEnvironmentScope(AuthOrchestrationOperateScope);
+          yield* requireEnvironmentScope(AuthAccessWriteScope);
           const authorizationUrl = yield* gmail.begin.pipe(
             Effect.mapError(
               (error) => new EnvironmentHttpConflictError({ message: error.message }),
@@ -43,9 +49,22 @@ export const integrationsHttpApiLayer = HttpApiBuilder.group(
         "gmailDisconnect",
         Effect.fn("integrations.gmailDisconnect")(function* (args) {
           yield* annotateEnvironmentRequest(args.endpoint.name);
-          yield* requireEnvironmentScope(AuthOrchestrationOperateScope);
-          yield* gmail.disconnect;
-          return { disconnected: true };
+          yield* requireEnvironmentScope(AuthAccessWriteScope);
+          const reviews = yield* GmailSendApproval;
+          yield* reviews.cancelAll;
+          return yield* gmail.disconnect.pipe(
+            Effect.as({ disconnected: true }),
+            // The existing wire contract has no disconnect conflict variant.
+            // Keep it compatible while reporting a failed revocation honestly.
+            Effect.catch((error) =>
+              Effect.succeed(
+                HttpServerResponse.jsonUnsafe(
+                  { _tag: "EnvironmentHttpConflictError", message: error.message },
+                  { status: 409, headers: { "cache-control": "no-store" } },
+                ),
+              ),
+            ),
+          );
         }),
       );
   }),
@@ -63,7 +82,10 @@ export const gmailCallbackRouteLayer = HttpRouter.add(
     const state = url.value.searchParams.get("state");
     const code = url.value.searchParams.get("code");
     if (!state || !code)
-      return HttpServerResponse.text("Gmail sign-in was cancelled.", { status: 400 });
+      return HttpServerResponse.text("Gmail sign-in was cancelled. Return to Doer to try again.", {
+        status: 400,
+        headers: { "cache-control": "no-store", "referrer-policy": "no-referrer" },
+      });
     const gmail = yield* GmailConnection;
     const completed = yield* gmail.complete(state, code).pipe(
       Effect.map(() => true),
@@ -75,15 +97,26 @@ export const gmailCallbackRouteLayer = HttpRouter.add(
     return completed
       ? HttpServerResponse.text(
           "<!doctype html><title>Gmail connected</title><p>Gmail is connected. Return to Doer.</p>",
-          { contentType: "text/html; charset=utf-8", headers: { "cache-control": "no-store" } },
+          {
+            contentType: "text/html; charset=utf-8",
+            headers: {
+              "cache-control": "no-store",
+              "referrer-policy": "no-referrer",
+              "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+            },
+          },
         )
       : HttpServerResponse.text(
           "<!doctype html><title>Gmail connection failed</title><p>Gmail sign-in failed. Return to Doer and try again.</p>",
           {
             status: 400,
             contentType: "text/html; charset=utf-8",
-            headers: { "cache-control": "no-store" },
+            headers: {
+              "cache-control": "no-store",
+              "referrer-policy": "no-referrer",
+              "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+            },
           },
         );
-  }),
+  }).pipe(HttpMiddleware.withLoggerDisabled),
 );
