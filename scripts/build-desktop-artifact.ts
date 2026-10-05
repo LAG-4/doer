@@ -28,6 +28,8 @@ import {
   resolveWebAssetBrandForChannel,
   type WebAssetBrand,
 } from "./lib/brand-assets.ts";
+import { STORE_APPX_ASSETS } from "./lib/store-appx-assets.ts";
+import { resolveStoreAppxManifestVersion } from "./lib/store-appx-version.ts";
 import { getDefaultBuildArch } from "./lib/build-target-arch.ts";
 import {
   findInlinedExternalPackages,
@@ -919,6 +921,7 @@ interface ResolvedBuildOptions {
   readonly mockUpdates: boolean;
   readonly mockUpdateServerPort: number | undefined;
   readonly wslRuntime: string | undefined;
+  readonly storeAppxIdentity: DesktopStoreAppxIdentity | undefined;
 }
 
 interface StagePackageJson {
@@ -1554,6 +1557,20 @@ const BuildEnvConfig = Config.all({
   // by the build_linux_cli CI job. The Windows build embeds it verbatim as the
   // WSL runtime.
   wslRuntime: Config.String("T3CODE_DESKTOP_WSL_RUNTIME").pipe(Config.option),
+  // Store AppX package identity. Read only when the target is appx; NSIS and
+  // other targets never see these values, so unrelated repo vars cannot leak
+  // into a direct-download build. The Store workflow sets them from explicit
+  // manual inputs (step env overrides repo vars). The trio alone only carries
+  // the submitted values; matching them to a Partner Center listing happens at
+  // upload/certification time, not here.
+  appxIdentityName: Config.String("T3CODE_DESKTOP_APPX_IDENTITY_NAME").pipe(Config.option),
+  appxPublisher: Config.String("T3CODE_DESKTOP_APPX_PUBLISHER").pipe(Config.option),
+  appxPublisherDisplayName: Config.String("T3CODE_DESKTOP_APPX_PUBLISHER_DISPLAY_NAME").pipe(
+    Config.option,
+  ),
+  // Store manifest DisplayName: must equal the reserved packaged app name
+  // (which may differ from the Win32 "Doer" name or the exe product name).
+  appxDisplayName: Config.String("T3CODE_DESKTOP_APPX_DISPLAY_NAME").pipe(Config.option),
 });
 
 const MockUpdateServerPortSchema = Schema.NumberFromString.check(
@@ -1648,6 +1665,25 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
   const wslRuntime =
     Option.getOrUndefined(input.wslRuntime) ?? Option.getOrUndefined(env.wslRuntime);
 
+  // Fail closed before staging anything: appx without a valid Partner Center
+  // identity (or on a non-Windows platform) never reaches electron-builder.
+  // Non-appx targets skip this entirely and never read the identity vars.
+  if (isStoreAppxTarget(target) && platform !== "win") {
+    return yield* new UnsupportedStoreAppxTargetError({ platform, target });
+  }
+  const storeAppxIdentity = isStoreAppxTarget(target)
+    ? yield* Effect.try({
+        try: () =>
+          resolveStoreAppxIdentity({
+            identityName: Option.getOrUndefined(env.appxIdentityName),
+            publisher: Option.getOrUndefined(env.appxPublisher),
+            publisherDisplayName: Option.getOrUndefined(env.appxPublisherDisplayName),
+            displayName: Option.getOrUndefined(env.appxDisplayName),
+          }),
+        catch: StoreAppxIdentityResolutionError.fromCause,
+      })
+    : undefined;
+
   return {
     platform,
     target,
@@ -1661,6 +1697,7 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
     mockUpdates,
     mockUpdateServerPort,
     wslRuntime,
+    storeAppxIdentity,
   } satisfies ResolvedBuildOptions;
 });
 
@@ -2621,6 +2658,270 @@ export function resolveDesktopProductName(version: string): string {
     : (desktopPackageJson.productName ?? "Doer");
 }
 
+// Microsoft Store packages are built with electron-builder's stable `appx`
+// target (v26; the v27 `msix` target is unreleased, so no upgrade). The
+// package is uploaded UNSIGNED: Microsoft signs it after certification, so no
+// CA certificate is required. Identity values are supplied explicitly (Store
+// workflow inputs); resolution fails closed on any missing value, and the
+// values are only checked for shape here — confirming they belong to a Partner
+// Center listing happens at upload/certification, not in this script.
+export interface StoreAppxIdentityInput {
+  readonly identityName?: string | undefined;
+  readonly publisher?: string | undefined;
+  readonly publisherDisplayName?: string | undefined;
+  // Manifest DisplayName: the reserved packaged app name, which may differ
+  // from the Win32 name and from the exe product name (left untouched).
+  readonly displayName?: string | undefined;
+}
+
+export interface DesktopStoreAppxIdentity {
+  readonly identityName: string;
+  readonly publisher: string;
+  readonly publisherDisplayName: string;
+  readonly displayName: string;
+}
+
+// Stable application id: never derived from Identity.Name, so numeric-prefix
+// Partner Center names (e.g. 12345Publisher.App) stay valid.
+export const STORE_APPX_APPLICATION_ID = "Doer";
+
+// Conservative floor matching the Electron/Node runtime (not the builder's
+// old 10.0.14316.0 default). No Windows 10 S claim: providers launch
+// external CLIs, which S mode forbids.
+export const STORE_APPX_MIN_VERSION = "10.0.19041.0";
+
+// Staged manifest-rewrite hook filename (written into the stage root during
+// the build; referenced by absolute path so hook resolution never depends on
+// the builder's working directory).
+export const STORE_APPX_MANIFEST_HOOK_FILENAME = "store-appx-manifest-hook.cjs";
+
+/**
+ * Render the appxManifestCreated hook electron-builder v26 runs after writing
+ * AppxManifest.xml and before makeappx packs it (config accepts the hook as a
+ * file path, which survives JSON serialization; a function would not). The
+ * hook rewrites the package Identity Version to the mapped Store quad,
+ * because AppInfo.getVersionInWeirdWindowsForm derives the manifest version
+ * from the app version (0.0.56 -> invalid 0.0.56.0) and offers no Store-safe
+ * override. It also rewrites Identity Name/Publisher, Properties
+ * DisplayName/PublisherDisplayName, and the VisualElements DisplayName to the
+ * validated Partner Center values with XML escaping, because v26
+ * writeManifest injects displayName/publisherDisplayName/publisher raw — a
+ * valid reserved name containing & would otherwise pack an invalid manifest.
+ * The version mapping stays shared (resolveStoreAppxManifestVersion at the
+ * call site): the hook only carries the already-mapped quad. Fails the build
+ * if any required Identity/version node is absent, and CI re-validates the
+ * unpacked manifest, so a silently skipped rewrite cannot ship.
+ */
+export function renderStoreAppxManifestHook(
+  manifestVersion: string,
+  identity: DesktopStoreAppxIdentity,
+): string {
+  const version = JSON.stringify(manifestVersion);
+  const identityName = JSON.stringify(escapeXml(identity.identityName));
+  const publisher = JSON.stringify(escapeXml(identity.publisher));
+  const displayName = JSON.stringify(escapeXml(identity.displayName));
+  const publisherDisplayName = JSON.stringify(escapeXml(identity.publisherDisplayName));
+  return `"use strict";
+// Generated by scripts/build-desktop-artifact.ts — do not edit by hand.
+const fs = require("node:fs");
+const STORE_VERSION = ${version};
+const STORE_IDENTITY_NAME = ${identityName};
+const STORE_PUBLISHER = ${publisher};
+const STORE_DISPLAY_NAME = ${displayName};
+const STORE_PUBLISHER_DISPLAY_NAME = ${publisherDisplayName};
+module.exports = async function storeAppxManifestCreated(manifestPath) {
+  let xml = fs.readFileSync(manifestPath, "utf8");
+  const replaceOnce = (pattern, value, node) => {
+    let replaced = false;
+    const next = xml.replace(pattern, (match, open, close) => {
+      replaced = true;
+      return open + value + close;
+    });
+    if (!replaced) {
+      throw new Error(
+        "store-appx-manifest-hook: <" + node + "> not found in " + manifestPath,
+      );
+    }
+    xml = next;
+  };
+  replaceOnce(
+    /(<Identity\\b[^>]*\\bVersion\\s*=\\s*["'])[^"']*(["'])/,
+    STORE_VERSION,
+    "Identity Version",
+  );
+  replaceOnce(
+    /(<Identity\\b[^>]*\\bName\\s*=\\s*["'])[^"']*(["'])/,
+    STORE_IDENTITY_NAME,
+    "Identity Name",
+  );
+  replaceOnce(
+    /(<Identity\\b[^>]*\\bPublisher\\s*=\\s*["'])[^"']*(["'])/,
+    STORE_PUBLISHER,
+    "Identity Publisher",
+  );
+  replaceOnce(/(<DisplayName>)[^<]*(<\\/DisplayName>)/, STORE_DISPLAY_NAME, "DisplayName");
+  replaceOnce(
+    /(<PublisherDisplayName>)[^<]*(<\\/PublisherDisplayName>)/,
+    STORE_PUBLISHER_DISPLAY_NAME,
+    "PublisherDisplayName",
+  );
+  replaceOnce(
+    /(<uap:VisualElements\\b[^>]*\\bDisplayName\\s*=\\s*["'])[^"']*(["'])/,
+    STORE_DISPLAY_NAME,
+    "uap:VisualElements DisplayName",
+  );
+  fs.writeFileSync(manifestPath, xml);
+};
+`;
+}
+
+export function isStoreAppxTarget(target: string): boolean {
+  return target === "appx";
+}
+
+export class MissingStoreAppxIdentityError extends Schema.TaggedError<MissingStoreAppxIdentityError>()(
+  "MissingStoreAppxIdentityError",
+  {
+    field: Schema.Literals(["identityName", "publisher", "publisherDisplayName", "displayName"]),
+  },
+) {
+  override get message(): string {
+    return `Store AppX build is missing the package ${this.field} from Partner Center; refusing to reuse any default.`;
+  }
+}
+
+export class InvalidStoreAppxIdentityError extends Schema.TaggedError<InvalidStoreAppxIdentityError>()(
+  "InvalidStoreAppxIdentityError",
+  {
+    field: Schema.Literals(["identityName", "publisher", "publisherDisplayName", "displayName"]),
+    reason: Schema.Literals(["charset", "length", "publisher-format"]),
+  },
+) {
+  override get message(): string {
+    return `Store AppX package ${this.field} is invalid (${this.reason}); use the exact Partner Center package identity values.`;
+  }
+}
+
+export class UnsupportedStoreAppxTargetError extends Schema.TaggedError<UnsupportedStoreAppxTargetError>()(
+  "UnsupportedStoreAppxTargetError",
+  {
+    platform: Schema.String,
+    target: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Store AppX target is only valid for Windows (got platform '${this.platform}', target '${this.target}').`;
+  }
+}
+
+export class SignedStoreAppxUnsupportedError extends Schema.TaggedError<SignedStoreAppxUnsupportedError>()(
+  "SignedStoreAppxUnsupportedError",
+  {},
+) {
+  override get message(): string {
+    return "Store AppX builds must be unsigned: Microsoft signs the package after certification, and pre-signing with another publisher breaks Store association.";
+  }
+}
+
+export class StoreAppxAssetRenderError extends Schema.TaggedError<StoreAppxAssetRenderError>()(
+  "StoreAppxAssetRenderError",
+  {
+    asset: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return `Failed to render the Store AppX tile ${this.asset} from the Doer icon source.`;
+  }
+}
+
+export class InvalidStoreAppxManifestVersionError extends Schema.TaggedError<InvalidStoreAppxManifestVersionError>()(
+  "InvalidStoreAppxManifestVersionError",
+  {
+    appVersion: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return `Cannot map app version ${this.appVersion} to a Store package version.`;
+  }
+}
+
+export const StoreAppxIdentityError = Schema.Union([
+  MissingStoreAppxIdentityError,
+  InvalidStoreAppxIdentityError,
+]);
+export type StoreAppxIdentityError = typeof StoreAppxIdentityError.Type;
+export const isStoreAppxIdentityError = Schema.is(StoreAppxIdentityError);
+
+export class StoreAppxIdentityResolutionError extends Schema.TaggedError<StoreAppxIdentityResolutionError>()(
+  "StoreAppxIdentityResolutionError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  static fromCause(cause: unknown): StoreAppxIdentityError | StoreAppxIdentityResolutionError {
+    return isStoreAppxIdentityError(cause)
+      ? cause
+      : new StoreAppxIdentityResolutionError({ cause });
+  }
+
+  override get message(): string {
+    return "Failed to resolve the Store AppX package identity.";
+  }
+}
+
+// Exact v26 AppxTarget.js Identity.Name rule: /^[a-zA-Z0-9.-]+$/, 3..50.
+// (Application.Id has the stricter leading-alpha rule, but an explicit
+// applicationId is set below, so Identity.Name must NOT be conflated with it:
+// real Partner Center names commonly start numeric and contain hyphens.)
+const STORE_APPX_IDENTITY_NAME_PATTERN = /^[a-zA-Z0-9.-]+$/u;
+
+export function resolveStoreAppxIdentity(input: StoreAppxIdentityInput): DesktopStoreAppxIdentity {
+  const identityName = input.identityName?.trim() ?? "";
+  const publisher = input.publisher?.trim() ?? "";
+  const publisherDisplayName = input.publisherDisplayName?.trim() ?? "";
+  const displayName = input.displayName?.trim() ?? "";
+
+  if (identityName.length === 0) {
+    throw new MissingStoreAppxIdentityError({ field: "identityName" });
+  }
+  if (publisher.length === 0) {
+    throw new MissingStoreAppxIdentityError({ field: "publisher" });
+  }
+  if (publisherDisplayName.length === 0) {
+    throw new MissingStoreAppxIdentityError({ field: "publisherDisplayName" });
+  }
+  if (displayName.length === 0) {
+    throw new MissingStoreAppxIdentityError({ field: "displayName" });
+  }
+  if (
+    identityName.length < 3 ||
+    identityName.length > 50 ||
+    !STORE_APPX_IDENTITY_NAME_PATTERN.test(identityName)
+  ) {
+    throw new InvalidStoreAppxIdentityError({
+      field: "identityName",
+      reason: identityName.length < 3 || identityName.length > 50 ? "length" : "charset",
+    });
+  }
+  // Store publisher IDs are `CN=<guid>`; anything else is malformed input.
+  if (!publisher.startsWith("CN=") || publisher.length <= 3) {
+    throw new InvalidStoreAppxIdentityError({ field: "publisher", reason: "publisher-format" });
+  }
+  if (publisherDisplayName.length > 256) {
+    throw new InvalidStoreAppxIdentityError({
+      field: "publisherDisplayName",
+      reason: "length",
+    });
+  }
+  if (displayName.length > 256) {
+    throw new InvalidStoreAppxIdentityError({ field: "displayName", reason: "length" });
+  }
+
+  return { identityName, publisher, publisherDisplayName, displayName };
+}
+
 export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   platform: typeof BuildPlatform.Type,
   target: string,
@@ -2639,7 +2940,26 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   // source file was never written fails the electron-builder step.
   wslRuntimeBundled = false,
   arch?: typeof BuildArch.Type,
+  // Store AppX only. Validated here (not just at option resolution) so direct
+  // callers cannot emit an appx config with a missing or malformed identity.
+  storeAppxIdentity?: DesktopStoreAppxIdentity,
+  // Absolute path to the staged appxManifestCreated hook that rewrites the
+  // manifest Identity Version to the mapped Store quad. The build flow always
+  // stages it; CI re-validates the unpacked manifest version.
+  storeAppxManifestHookPath?: string,
 ) {
+  if (isStoreAppxTarget(target) && platform !== "win") {
+    return yield* new UnsupportedStoreAppxTargetError({ platform, target });
+  }
+  const storeAppx = isStoreAppxTarget(target)
+    ? yield* Effect.try({
+        try: () => resolveStoreAppxIdentity(storeAppxIdentity ?? {}),
+        catch: StoreAppxIdentityResolutionError.fromCause,
+      })
+    : undefined;
+  if (isStoreAppxTarget(target) && signed) {
+    return yield* new SignedStoreAppxUnsupportedError();
+  }
   const buildConfig: Record<string, unknown> = {
     appId: DESKTOP_APP_ID,
     productName: resolveDesktopProductName(version),
@@ -2652,6 +2972,18 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
         : platform === "linux"
           ? LINUX_FILE_EXCLUSIONS
           : []),
+      // The staged manifest hook and the Store tile set are builder inputs,
+      // not app content: keep them out of app.asar (the hook is referenced by
+      // absolute path, the tiles are mapped in as package assets).
+      ...(isStoreAppxTarget(target)
+        ? [
+            `!${STORE_APPX_MANIFEST_HOOK_FILENAME}`,
+            "!apps/desktop/resources/appx",
+            "!apps/desktop/resources/appx/**/*",
+            "!apps/desktop/prod-resources/appx",
+            "!apps/desktop/prod-resources/appx/**/*",
+          ]
+        : []),
     ],
     directories: {
       buildResources: "apps/desktop/resources",
@@ -2671,7 +3003,11 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     ],
   };
   const updateChannel = resolveDesktopUpdateChannel(version);
-  if (!isDesktopPreviewVersion(version)) {
+  // Store AppX packages must never carry an electron-updater feed: the Store
+  // owns updates, and an embedded app-update.yml would let a packaged build
+  // reach for NSIS self-updates. The runtime gate (DesktopUpdates) is the
+  // primary defense; omitting the feed here is belt and braces.
+  if (!isDesktopPreviewVersion(version) && !isStoreAppxTarget(target)) {
     const publishConfig = yield* resolveGitHubPublishConfig(updateChannel);
     if (publishConfig) {
       buildConfig.publish = [publishConfig];
@@ -2793,10 +3129,6 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
 
   if (platform === "win") {
     buildConfig.npmRebuild = false;
-    // Keep blockmap-based differential downloads enabled while changing the
-    // installed file topology. The optimization is in the payload shape, not
-    // in trading update bandwidth for install speed.
-    buildConfig.nsis = { differentialPackage: true };
     const winConfig: Record<string, unknown> = {
       target: [target],
       icon: "icon.ico",
@@ -2805,8 +3137,35 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       // packaged executable with Electron's stock icon.
       signAndEditExecutable: true,
     };
-    if (signed) {
-      winConfig.azureSignOptions = yield* AzureTrustedSigningOptionsConfig;
+    if (isStoreAppxTarget(target) && storeAppx !== undefined) {
+      // Store identity comes only from the validated Partner Center values
+      // above. `runFullTrust` is auto-added by electron-builder (required for
+      // Electron apps); submission must justify it (local server sidecar,
+      // terminal pty, user-folder file access). Only the production `doer`
+      // scheme is registered: `doer-dev` stays a dev-only scheme and must not
+      // ship in the Store manifest. applicationId is explicit (never derived
+      // from Identity.Name); displayName is the reserved packaged app name.
+      buildConfig.appx = {
+        identityName: storeAppx.identityName,
+        publisher: storeAppx.publisher,
+        publisherDisplayName: storeAppx.publisherDisplayName,
+        applicationId: STORE_APPX_APPLICATION_ID,
+        displayName: storeAppx.displayName,
+        languages: ["en-US"],
+        minVersion: STORE_APPX_MIN_VERSION,
+      };
+      if (storeAppxManifestHookPath !== undefined) {
+        buildConfig.appxManifestCreated = storeAppxManifestHookPath;
+      }
+      buildConfig.protocols = [{ name: "Doer", schemes: ["doer"] }];
+    } else {
+      // Keep blockmap-based differential downloads enabled while changing the
+      // installed file topology. The optimization is in the payload shape, not
+      // in trading update bandwidth for install speed.
+      buildConfig.nsis = { differentialPackage: true };
+      if (signed) {
+        winConfig.azureSignOptions = yield* AzureTrustedSigningOptionsConfig;
+      }
     }
     buildConfig.win = winConfig;
   }
@@ -2819,6 +3178,7 @@ const assertPlatformBuildResources = Effect.fn("assertPlatformBuildResources")(f
   stageResourcesDir: string,
   iconAssets: DesktopBuildIconAssets,
   verbose: boolean,
+  storeAppx?: { readonly iconSourcePng: string } | undefined,
 ) {
   if (platform === "mac") {
     yield* stageMacIcons(stageResourcesDir, iconAssets.macIconPng, verbose);
@@ -2832,6 +3192,43 @@ const assertPlatformBuildResources = Effect.fn("assertPlatformBuildResources")(f
 
   if (platform === "win") {
     yield* stageWindowsIcons(stageResourcesDir, iconAssets.windowsIconIco);
+    if (storeAppx !== undefined) {
+      yield* stageStoreAppxAssets(stageResourcesDir, storeAppx.iconSourcePng);
+    }
+  }
+});
+
+// Render the Store tile/logo set from the Doer icon into the
+// buildResources-relative "appx" dir AppxTarget.computeUserAssets reads.
+// Rendering during the build (never committed binaries, never the builder's
+// vendored Electron samples) is what passes the required WACK branding
+// checks. Tests assert the asset spec (STORE_APPX_ASSETS), never image bytes.
+export const stageStoreAppxAssets = Effect.fn("stageStoreAppxAssets")(function* (
+  stageResourcesDir: string,
+  iconSourcePng: string,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  if (!(yield* fs.exists(iconSourcePng))) {
+    return yield* new DesktopIconSourceMissingError({ platform: "win", sourcePath: iconSourcePng });
+  }
+  const { default: sharp } = yield* Effect.tryPromise({
+    try: () => import("sharp"),
+    catch: (cause) => new StoreAppxAssetRenderError({ asset: "<sharp import>", cause }),
+  });
+  const source = yield* fs.readFile(iconSourcePng);
+  const targetDir = path.join(stageResourcesDir, "appx");
+  yield* fs.makeDirectory(targetDir, { recursive: true });
+  for (const asset of STORE_APPX_ASSETS) {
+    const rendered = yield* Effect.tryPromise({
+      try: () =>
+        sharp(Buffer.from(source))
+          .resize(asset.width, asset.height, { fit: "cover" })
+          .png()
+          .toBuffer(),
+      catch: (cause) => new StoreAppxAssetRenderError({ asset: asset.name, cause }),
+    });
+    yield* fs.writeFile(path.join(targetDir, asset.name), rendered);
   }
 });
 
@@ -3437,6 +3834,17 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
 
   const appVersion = options.version ?? serverPackageJson.version;
   const iconAssets = resolveDesktopBuildIconAssets(appVersion);
+  // Fail closed before staging anything expensive: the Store manifest cannot
+  // carry the app version (major 0, prerelease), so map it now. The mapped
+  // quad is baked into the staged manifest hook; everything else keeps the
+  // app version.
+  const storeAppxManifestVersion =
+    isStoreAppxTarget(options.target) && options.platform === "win"
+      ? yield* Effect.try({
+          try: () => resolveStoreAppxManifestVersion(appVersion),
+          catch: (cause) => new InvalidStoreAppxManifestVersionError({ appVersion, cause }),
+        })
+      : undefined;
   const commitHash = yield* resolveGitCommitHash(repoRoot);
   const mkdir = options.keepStage ? fs.makeTempDirectory : fs.makeTempDirectoryScoped;
   const stageRoot = yield* mkdir({
@@ -3618,6 +4026,11 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       windowsIconIco: path.join(repoRoot, iconAssets.windowsIconIco),
     },
     options.verbose,
+    // Store submissions are stable-only, so tiles always render from the
+    // production icon even if a channel icon were resolved above.
+    isStoreAppxTarget(options.target)
+      ? { iconSourcePng: path.join(repoRoot, BRAND_ASSET_PATHS.productionLinuxIconPng) }
+      : undefined,
   );
 
   // electron-builder is filtering out stageResourcesDir directory in the AppImage for production
@@ -3670,6 +4083,26 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     workspacePatchedDependencies,
     stageDependencies,
   );
+  // Stage the manifest-rewrite hook before the stage package.json is written:
+  // createBuildConfig references it by absolute path (hook resolution must
+  // not depend on the builder's working directory). The hook carries the
+  // mapped Store quad plus the XML-escaped Partner Center identity, so the
+  // packed manifest matches what CI validates.
+  const storeAppxManifestHookPath =
+    storeAppxManifestVersion !== undefined
+      ? path.join(stageAppDir, STORE_APPX_MANIFEST_HOOK_FILENAME)
+      : undefined;
+  if (storeAppxManifestVersion !== undefined && storeAppxManifestHookPath !== undefined) {
+    const storeAppxHookIdentity = options.storeAppxIdentity;
+    if (storeAppxHookIdentity === undefined) {
+      return yield* new MissingStoreAppxIdentityError({ field: "identityName" });
+    }
+    yield* fs.writeFileString(
+      storeAppxManifestHookPath,
+      renderStoreAppxManifestHook(storeAppxManifestVersion, storeAppxHookIdentity),
+    );
+  }
+
   const windowsServerAsarPath =
     options.platform === "win"
       ? path.join(stageAppDir, WINDOWS_SERVER_RESOURCE_SOURCE_DIR, WINDOWS_SERVER_ASAR_RESOURCE)
@@ -3700,6 +4133,8 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
         : undefined,
       bundlesWslRuntime({ platform: options.platform, runtimeArchivePath: options.wslRuntime }),
       options.arch,
+      options.storeAppxIdentity,
+      storeAppxManifestHookPath,
     ),
     dependencies: stageDependencies,
     devDependencies: {

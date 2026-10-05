@@ -248,12 +248,19 @@ function shouldBroadcastDownloadProgress(
 function getAutoUpdateDisabledReason(args: {
   isDevelopment: boolean;
   isPackaged: boolean;
+  isWindowsStore: boolean;
   platform: NodeJS.Platform;
   appImage?: string | undefined;
   isDebPackage: boolean;
   disabledByEnv: boolean;
   hasUpdateFeedConfig: boolean;
 }): string | null {
+  // Store packages are serviced by the Store: electron-updater must never
+  // check, download, or quit-and-install there. Checked first so a packaged
+  // build with an (accidental) update feed still stays off self-update.
+  if (args.isWindowsStore) {
+    return "Automatic updates are managed by the Microsoft Store for the Store package.";
+  }
   if (!args.hasUpdateFeedConfig) {
     return "Automatic updates are not available because no update feed is configured.";
   }
@@ -355,6 +362,7 @@ export const make = Effect.gen(function* () {
       getAutoUpdateDisabledReason({
         isDevelopment: environment.isDevelopment,
         isPackaged: environment.isPackaged,
+        isWindowsStore: environment.isWindowsStore,
         platform: environment.platform,
         appImage: Option.getOrUndefined(config.appImagePath),
         isDebPackage,
@@ -915,20 +923,22 @@ export const make = Effect.gen(function* () {
       const appUpdateYmlConfig = yield* readAppUpdateYml;
       yield* Ref.set(appUpdateYmlConfigRef, appUpdateYmlConfig);
 
+      const settings = yield* desktopSettings.get;
+      const enabled = yield* shouldEnableAutoUpdates;
+      yield* setState(createBaseUpdateState(settings.updateChannel, enabled, environment));
+      // Disabled first: Store packages (and every other disabled reason)
+      // return before any electron-updater wiring, including the mock feed.
+      if (!enabled) {
+        return;
+      }
+      yield* Ref.set(updaterConfiguredRef, true);
+
       if (config.mockUpdates) {
         yield* electronUpdater.setFeedURL({
           provider: "generic",
           url: `http://localhost:${config.mockUpdateServerPort}`,
         } as ElectronUpdater.ElectronUpdaterFeedUrl);
       }
-
-      const settings = yield* desktopSettings.get;
-      const enabled = yield* shouldEnableAutoUpdates;
-      yield* setState(createBaseUpdateState(settings.updateChannel, enabled, environment));
-      if (!enabled) {
-        return;
-      }
-      yield* Ref.set(updaterConfiguredRef, true);
 
       yield* electronUpdater.setAutoDownload(false);
       yield* electronUpdater.setAutoInstallOnAppQuit(false);

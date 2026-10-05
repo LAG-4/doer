@@ -68,6 +68,11 @@ import * as DesktopWslBackend from "./wsl/DesktopWslBackend.ts";
 import * as DesktopWslEnvironment from "./wsl/DesktopWslEnvironment.ts";
 import * as DesktopWslServerTree from "./wsl/DesktopWslServerTree.ts";
 
+// Read in main: renderer also sees process.windowsStore. The cast keeps this
+// compiling whether or not the Electron types declare the flag.
+const isWindowsStorePackage =
+  (process as NodeJS.Process & { windowsStore?: unknown }).windowsStore === true;
+
 const desktopEnvironmentLayer = Layer.unwrap(
   Effect.gen(function* () {
     const metadata = yield* Effect.service(ElectronApp.ElectronApp).pipe(
@@ -81,6 +86,8 @@ const desktopEnvironmentLayer = Layer.unwrap(
       platform,
       processArch,
       ...metadata,
+      // Read once in main; DesktopEnvironment fans it out to the update gate.
+      isWindowsStore: isWindowsStorePackage,
     });
   }),
 );
