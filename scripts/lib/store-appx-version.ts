@@ -36,7 +36,7 @@ export class InvalidStoreAppxVersionError extends Error {
   }
 }
 
-const TRIPLE_PATTERN = /^(\d+)\.(\d+)\.(\d+)$/;
+const TRIPLE_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
 function parseTriple(version: string): [number, number, number] {
   const trimmed = version.trim();
@@ -47,6 +47,8 @@ function parseTriple(version: string): [number, number, number] {
       : "not-semver";
     throw new InvalidStoreAppxVersionError(reason, version);
   }
+  // Canonical triple only (0|[1-9][0-9]*): leading zeros are rejected to
+  // match the Store workflow preflight (bash would read them as octal).
   const match = TRIPLE_PATTERN.exec(trimmed);
   if (
     match === null ||
@@ -69,8 +71,9 @@ function parseTriple(version: string): [number, number, number] {
 
 /**
  * Map an app version to the Store package semver (without the reserved
- * trailing `.0`). 0.0.56 -> "1.0.56"; 1.0.0 -> "2.0.0". Rejects prereleases
- * and out-of-range components. App majors above 65534 cannot map (the Store
+ * trailing `.0`). 0.0.56 -> "1.0.56"; 1.0.0 -> "2.0.0". Rejects prereleases,
+ * leading-zero components (not canonical semver), and out-of-range
+ * components. App majors above 65534 cannot map (the Store
  * major would exceed 65535).
  */
 export function resolveStoreAppxPackageVersion(appVersion: string): string {

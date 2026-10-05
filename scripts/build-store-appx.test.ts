@@ -165,6 +165,11 @@ it.layer(NodeServices.layer)("Store AppX packaging", (it) => {
     assert.throws(() => resolveStoreAppxPackageVersion("0.0.56-nightly.20260101.1"), /prerelease/);
     assert.throws(() => resolveStoreAppxPackageVersion("1.0.0-beta"), /prerelease/);
     assert.throws(() => resolveStoreAppxPackageVersion("1.0.70000"), /out-of-range/);
+    // Canonical triple only: leading zeros diverge from the workflow
+    // preflight (bash octal) and are rejected as not-semver.
+    assert.throws(() => resolveStoreAppxPackageVersion("01.0.56"), /not-semver/);
+    assert.throws(() => resolveStoreAppxPackageVersion("0.01.56"), /not-semver/);
+    assert.throws(() => resolveStoreAppxPackageVersion("0.0.056"), /not-semver/);
   });
 
   it("renders a manifest hook that rewrites the version and escaped identity", () => {
@@ -233,6 +238,7 @@ it.layer(NodeServices.layer)("Store AppX packaging", (it) => {
     }
     assert.instanceOf(failure, Error);
     assert.include((failure as Error).message, "Identity Version");
+    NodeFS.rmSync(dir, { recursive: true, force: true });
   });
 
   it("requires the four own brand assets and detects gaps without imaging", () => {
