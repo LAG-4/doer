@@ -1,8 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off globalDate:off -- Google boundary uses Node encoding and an injectable clock.
 import * as NodeCrypto from "node:crypto";
 
-/** Gmail's send-only scope avoids mailbox read access. Drafts require gmail.compose. */
 export const GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
+export const GMAIL_MODIFY_SCOPE = "https://www.googleapis.com/auth/gmail.modify";
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -36,7 +36,7 @@ export function createGmailOAuthAttempt(clientId: string, redirectUri: string): 
   url.searchParams.set("client_id", clientId);
   url.searchParams.set("redirect_uri", redirectUri);
   url.searchParams.set("response_type", "code");
-  url.searchParams.set("scope", `openid email ${GMAIL_SEND_SCOPE}`);
+  url.searchParams.set("scope", `openid email ${GMAIL_SEND_SCOPE} ${GMAIL_MODIFY_SCOPE}`);
   url.searchParams.set("access_type", "offline");
   url.searchParams.set("prompt", "consent");
   url.searchParams.set("state", state);

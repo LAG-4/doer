@@ -4959,7 +4959,10 @@ describe("agent browser access", () => {
     projectOverride?:
       | boolean
       | { readonly browser?: boolean; readonly device?: boolean; readonly computer?: boolean },
-    options?: { readonly withoutOrchestration?: boolean },
+    options?: {
+      readonly withoutOrchestration?: boolean;
+      readonly connectedTools?: { readonly enabled: boolean; readonly legacyOverride: boolean };
+    },
   ) =>
     Effect.gen(function* () {
       const enableAgentBrowserAccess = typeof access === "boolean" ? access : access.browser;
@@ -5047,9 +5050,24 @@ describe("agent browser access", () => {
             enableAgentBrowserAccess,
             enableAgentDeviceAccess,
             enableAgentComputerAccess,
+            ...(options?.connectedTools
+              ? {
+                  enableGmailAccess: options.connectedTools.enabled,
+                  enableLocalSpreadsheetAccess: options.connectedTools.enabled,
+                  enableLocalPresentationAccess: options.connectedTools.enabled,
+                }
+              : {}),
             projectSettingsOverrides:
               projectOverride === undefined
-                ? {}
+                ? options?.connectedTools
+                  ? {
+                      [projectId]: {
+                        enableGmailAccess: options.connectedTools.legacyOverride,
+                        enableLocalSpreadsheetAccess: options.connectedTools.legacyOverride,
+                        enableLocalPresentationAccess: options.connectedTools.legacyOverride,
+                      },
+                    }
+                  : {}
                 : typeof projectOverride === "boolean"
                   ? { [projectId]: { enableAgentBrowserAccess: projectOverride } }
                   : {
@@ -5093,6 +5111,33 @@ describe("agent browser access", () => {
   // The capability on the credential is the observable that matters: a session
   // always gets a credential (the pull request toolkit is never withheld), and
   // `preview` on it is what actually grants or denies the browser tools.
+  it.effect(
+    "connected tool credentials follow the computer switches despite legacy Space overrides",
+    () =>
+      Effect.gen(function* () {
+        for (const enabled of [false, true]) {
+          const threadId = asThreadId(`thread-shared-tools-${enabled}`);
+          const issued = yield* startSessionWith(false, threadId, undefined, {
+            withoutOrchestration: true,
+            connectedTools: { enabled, legacyOverride: !enabled },
+          });
+          assert.deepEqual(issued, [
+            {
+              threadId,
+              capabilities: enabled
+                ? [
+                    "automations",
+                    "gmail",
+                    "local-presentations",
+                    "local-spreadsheets",
+                    "pull-requests",
+                  ]
+                : ["automations", "pull-requests"],
+            },
+          ]);
+        }
+      }).pipe(Effect.provide(NodeServices.layer)),
+  );
   it.effect("issues a credential without preview when agent browser access is off", () =>
     Effect.gen(function* () {
       const threadId = asThreadId("thread-browser-off");

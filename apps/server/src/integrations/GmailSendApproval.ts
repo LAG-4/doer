@@ -9,7 +9,8 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-export const isGmailSendApproval = (requestId: string) => requestId.startsWith("gmail-send:");
+export const isGmailSendApproval = (requestId: string) =>
+  requestId.startsWith("gmail-send:") || requestId.startsWith("gmail-change:");
 
 interface PendingEmailApproval {
   readonly requestId: ApprovalRequestId;
@@ -20,7 +21,10 @@ interface PendingEmailApproval {
 export class GmailSendApproval extends Context.Service<
   GmailSendApproval,
   {
-    readonly create: (threadId: ThreadId) => Effect.Effect<PendingEmailApproval>;
+    readonly create: (
+      threadId: ThreadId,
+      operation?: "send" | "change",
+    ) => Effect.Effect<PendingEmailApproval>;
     readonly respond: (
       threadId: ThreadId,
       requestId: ApprovalRequestId,
@@ -48,12 +52,12 @@ export const layer = Layer.effect(
         }
       });
     return GmailSendApproval.of({
-      create: (threadId) =>
+      create: (threadId, operation = "send") =>
         Effect.gen(function* () {
-          // Keep at most one unanswered email per task; superseded reviews fail closed.
+          // Keep at most one unanswered Gmail action per task; superseded reviews fail closed.
           yield* cancel(threadId);
           const uuid = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
-          const requestId = ApprovalRequestId.make(`gmail-send:${uuid}`);
+          const requestId = ApprovalRequestId.make(`gmail-${operation}:${uuid}`);
           const decision = yield* Deferred.make<boolean>();
           pending.set(requestId, { threadId, decision });
           return {
@@ -73,7 +77,7 @@ export const layer = Layer.effect(
           const request = pending.get(requestId);
           if (!request || request.threadId !== threadId) return false;
           pending.delete(requestId);
-          // Session-wide permission can never authorize an email send.
+          // Session-wide permission can never authorize a Gmail action.
           yield* Deferred.succeed(request.decision, decision === "accept");
           return true;
         }),

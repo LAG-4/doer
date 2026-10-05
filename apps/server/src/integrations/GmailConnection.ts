@@ -8,6 +8,7 @@ import * as Semaphore from "effect/Semaphore";
 import { HttpServer } from "effect/unstable/http";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import { ServerSettingsService } from "../serverSettings.ts";
 import {
   createGmailOAuthAttempt,
   exchangeGmailCode,
@@ -15,9 +16,18 @@ import {
   refreshGmailToken,
   revokeGmailToken,
   GMAIL_SEND_SCOPE,
+  GMAIL_MODIFY_SCOPE,
   sendGmailMessage,
   type GmailMessage,
 } from "./gmailClient.ts";
+import {
+  searchGmailMessages,
+  readGmailMessage,
+  listGmailLabels,
+  modifyGmailMessage,
+  type MailSearch,
+  type MailChange,
+} from "./gmailMailbox.ts";
 import {
   decryptTokens,
   encryptTokens,
@@ -61,6 +71,21 @@ export class GmailConnection extends Context.Service<
     readonly begin: Effect.Effect<string, GmailConnectionError>;
     readonly complete: (state: string, code: string) => Effect.Effect<string, GmailConnectionError>;
     readonly disconnect: Effect.Effect<void, GmailConnectionError>;
+    readonly search: (
+      input: MailSearch,
+    ) => Effect.Effect<Awaited<ReturnType<typeof searchGmailMessages>>, GmailConnectionError>;
+    readonly readMessage: (
+      id: string,
+      expectedEmail?: string,
+    ) => Effect.Effect<Awaited<ReturnType<typeof readGmailMessage>>, GmailConnectionError>;
+    readonly listLabels: Effect.Effect<
+      Awaited<ReturnType<typeof listGmailLabels>>,
+      GmailConnectionError
+    >;
+    readonly modify: (
+      input: MailChange,
+      expectedEmail: string,
+    ) => Effect.Effect<Awaited<ReturnType<typeof modifyGmailMessage>>, GmailConnectionError>;
     readonly send: (
       message: GmailMessage,
       expectedEmail?: string,
@@ -73,6 +98,7 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const secrets = yield* ServerSecretStore.ServerSecretStore;
     const httpServer = yield* HttpServer.HttpServer;
+    const settings = yield* ServerSettingsService;
     const clientId =
       process.env.DOER_GOOGLE_OAUTH_CLIENT_ID?.trim() ??
       (typeof __DOER_BUILD_GOOGLE_OAUTH_CLIENT_ID__ === "string"
@@ -218,7 +244,10 @@ export const layer = Layer.effect(
                   : "Google token service could not be reached.",
             }),
         });
-        if (!tokens.scopes.includes(GMAIL_SEND_SCOPE)) {
+        if (
+          !tokens.scopes.includes(GMAIL_SEND_SCOPE) &&
+          !tokens.scopes.includes(GMAIL_MODIFY_SCOPE)
+        ) {
           yield* Effect.tryPromise({
             try: () => revokeGmailToken(tokens.refreshToken ?? tokens.accessToken),
             catch: () =>
@@ -259,6 +288,16 @@ export const layer = Layer.effect(
       }).pipe(mutex.withPermit);
 
     const disconnect = Effect.gen(function* () {
+      // Publish the same switch change to every client before revoking access.
+      // If Google is offline, access stays paused and Disconnect can be retried.
+      yield* settings.updateSettings({ enableGmailAccess: false }).pipe(
+        Effect.mapError(
+          () =>
+            new GmailConnectionError({
+              message: "Could not switch Gmail off. Try Disconnect again.",
+            }),
+        ),
+      );
       pending.clear();
       const connection = yield* read;
       if (connection) {
@@ -289,7 +328,12 @@ export const layer = Layer.effect(
       );
     }).pipe(mutex.withPermit);
 
-    const send = (message: GmailMessage, expectedEmail?: string) =>
+    const withToken = <A>(
+      permission: "send" | "read" | "modify",
+      operation: (token: string) => Promise<A>,
+      failureMessage: string,
+      expectedEmail?: string,
+    ) =>
       Effect.gen(function* () {
         if (!clientId || !clientSecret || !encryptionKey)
           return yield* new GmailConnectionError({ message: "Gmail is not configured." });
@@ -301,7 +345,7 @@ export const layer = Layer.effect(
           (expectedEmail && connection.email !== expectedEmail)
         ) {
           return yield* new GmailConnectionError({
-            message: "The Gmail account changed. Review a new email request before sending.",
+            message: "The Gmail account changed. Reconnect or review a new Gmail request.",
           });
         }
         const now = yield* Clock.currentTimeMillis;
@@ -330,24 +374,53 @@ export const layer = Layer.effect(
             email,
             scopes: refreshed.scopes.length > 0 ? refreshed.scopes : connection.scopes,
           };
-          if (connection.scopes && !connection.scopes.includes(GMAIL_SEND_SCOPE)) {
-            return yield* new GmailConnectionError({
-              message: "Gmail send permission is missing. Disconnect and reconnect.",
-            });
-          }
           yield* save(connection);
         }
+        const scopes = connection.scopes ?? [];
+        const permitted =
+          scopes.includes(GMAIL_MODIFY_SCOPE) ||
+          (permission === "send" &&
+            (scopes.includes(GMAIL_SEND_SCOPE) || connection.scopes === undefined)) ||
+          (permission === "read" &&
+            scopes.includes("https://www.googleapis.com/auth/gmail.readonly"));
+        if (!permitted)
+          return yield* new GmailConnectionError({
+            message: `Gmail ${permission} permission is missing. Disconnect and reconnect Gmail in Settings to grant read and organize access.`,
+          });
         const accessToken = connection.accessToken;
         return yield* Effect.tryPromise({
-          try: () => sendGmailMessage(accessToken, message),
-          catch: () =>
-            new GmailConnectionError({
-              message:
-                "Gmail did not confirm delivery. The email may have been sent. Check Gmail's Sent folder before trying again; Doer will not retry automatically.",
-            }),
+          try: () => operation(accessToken),
+          catch: () => new GmailConnectionError({ message: failureMessage }),
         });
       }).pipe(mutex.withPermit);
 
-    return GmailConnection.of({ status, begin, complete, disconnect, send });
+    const send = (message: GmailMessage, expectedEmail?: string) =>
+      withToken(
+        "send",
+        (token) => sendGmailMessage(token, message),
+        "Gmail did not confirm delivery. The email may have been sent. Check Gmail's Sent folder before trying again; Doer will not retry automatically.",
+        expectedEmail,
+      );
+    const readFailure =
+      "Gmail could not return this mail. Check your connection and permissions; the message may be unavailable or too large.";
+    return GmailConnection.of({
+      status,
+      begin,
+      complete,
+      disconnect,
+      send,
+      search: (input) =>
+        withToken("read", (token) => searchGmailMessages(token, input), readFailure),
+      readMessage: (id, expectedEmail) =>
+        withToken("read", (token) => readGmailMessage(token, id), readFailure, expectedEmail),
+      listLabels: withToken("read", (token) => listGmailLabels(token), readFailure),
+      modify: (input, expectedEmail) =>
+        withToken(
+          "modify",
+          (token) => modifyGmailMessage(token, input),
+          "Gmail did not confirm the change. Check the message in Gmail before retrying; Doer will not retry automatically.",
+          expectedEmail,
+        ),
+    });
   }),
 );

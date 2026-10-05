@@ -2,7 +2,7 @@
 
 ## Google project and consent
 
-Use separate Google Cloud projects for development and production. Public Gmail uses a **Desktop app** OAuth client, the Gmail API, and exactly `openid`, `email`, and `https://www.googleapis.com/auth/gmail.send`. When creating the client, select **This client will be used by an AI-powered agent**: Doer's models request actions on the user's behalf. The send scope is sensitive; public launch requires Google's verification. Adding mailbox read, draft, or broader scopes changes the review requirements.
+Use separate Google Cloud projects for development and production. Gmail uses a **Desktop app** OAuth client, the Gmail API, `openid`, `email`, `https://www.googleapis.com/auth/gmail.send`, and `https://www.googleapis.com/auth/gmail.modify`. When creating the client, select **This client will be used by an AI-powered agent**: Doer's models request actions on the user's behalf. Modify includes reading and organizing mail and is a restricted scope. Public launch requires restricted-scope verification; transmitting or storing restricted data on servers requires Google's security assessment. Review the selected AI providers and actual Gmail data flows before submission. Do not request the permanent-delete `https://mail.google.com/` scope. Existing send-only grants must reconnect to authorize the added scope; changing Cloud configuration does not upgrade saved tokens.
 
 Configure the production Google Auth Platform with:
 
@@ -14,7 +14,7 @@ Configure the production Google Auth Platform with:
 
 Google's support-email chooser only offers the currently signed-in Google account address and Google Groups managed by that account. Give `aryangupta4feb@gmail.com` Editor access to the production project, then sign in to the Console as that account to select it as the support email. Use the same address for developer contact information. IAM Editor access alone does not add it to another account's support-email dropdown.
 
-Deploy and review the public pages before submitting verification; local source changes do not update the live website. Google requires an accurate scope justification and a demonstration video showing consent, Gmail connection, the full message review, approved sending, and disconnect. Describe the need for background tokens and the local host architecture. Do not claim inbox reading or Microsoft 365 access.
+Deploy and review the public pages before submitting verification; local source changes do not update the live website. Google requires an accurate scope justification and a demonstration video showing consent, Gmail connection, search/read, the full message review, approved sending and organizing, and disconnect. Describe background tokens, the local host architecture, and mail returned to models. Do not claim draft editing, attachment downloads, new label creation, permanent deletion, or Microsoft 365 access.
 
 Keep the application in Testing with named testers while preparing the review. Testing refresh tokens for Gmail expire after seven days. Production consent configuration alone does not constitute verification approval. Follow the Console's verification requirements and wait for Google's approval before enabling public Gmail releases.
 

@@ -1,5 +1,4 @@
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
-import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { Link } from "@tanstack/react-router";
 import { MailIcon, PlugIcon, PresentationIcon, Settings2Icon, SheetIcon } from "lucide-react";
 import { useRef, useState } from "react";
@@ -29,7 +28,7 @@ const plugins = [
   {
     key: "enableGmailAccess",
     name: "Gmail",
-    description: "Review and send emails",
+    description: "Read, organize, and send emails",
     icon: MailIcon,
     color: "text-red-500 dark:text-red-400",
   },
@@ -65,7 +64,7 @@ export function ComposerPluginsMenu({
 }) {
   const environment = useEnvironment(environmentId);
   const config = environment?.serverConfig;
-  const settings = config ? resolveProjectSettings(config.settings, projectId).settings : null;
+  const settings = config?.settings ?? null;
   const persist = useAtomCommand(serverEnvironment.updateSettings, "save plugin settings");
   const [saving, setSaving] = useState(false);
   const [requestConnection, setRequestConnection] = useState(false);
@@ -77,9 +76,7 @@ export function ComposerPluginsMenu({
       ? "Choose a Space to use plugins."
       : environment?.connection.phase !== "connected" || !config
         ? "Connect to this computer to change plugins."
-        : config.environment.capabilities.projectSettingsOverrides !== true
-          ? "Update Doer on this computer to use Space plugins."
-          : null;
+        : null;
   const activeCount = settings ? plugins.filter((plugin) => settings[plugin.key]).length : 0;
 
   const toggle = async (key: (typeof plugins)[number]["key"], enabled: boolean) => {
@@ -90,14 +87,7 @@ export function ComposerPluginsMenu({
       const result = await persist({
         environmentId,
         input: {
-          patch: {
-            projectSettingsOverrides: {
-              [projectId]: {
-                ...config.settings.projectSettingsOverrides[projectId],
-                [key]: enabled,
-              },
-            },
-          },
+          patch: { [key]: enabled },
         },
       });
       if (result._tag === "Success" && key === "enableGmailAccess") {
@@ -114,7 +104,8 @@ export function ComposerPluginsMenu({
       <div className="px-2 py-2">
         <div className="text-xs font-medium text-foreground">Plugins</div>
         <p className="mt-1 text-xs leading-4 text-muted-foreground">
-          {unavailableReason ?? "Allow tools in this Space. Changes apply to its tasks."}
+          {unavailableReason ??
+            "Shared with Settings. Changes apply to all Spaces on this computer."}
         </p>
       </div>
       {plugins.map(({ key, name, description, icon: Icon, color }) => (
@@ -145,6 +136,7 @@ export function ComposerPluginsMenu({
             environmentId={environmentId}
             enabled={settings.enableGmailAccess}
             autoConnect={requestConnection}
+            onConnectionAttempted={() => setRequestConnection(false)}
           />
         </div>
       ) : null}
@@ -173,7 +165,7 @@ export function ComposerPluginsMenu({
           <ComposerControl
             size={size}
             className="shrink-0 whitespace-nowrap"
-            aria-label={`Plugins${activeCount ? `, ${activeCount} enabled in this Space` : ""}`}
+            aria-label={`Plugins${activeCount ? `, ${activeCount} enabled on this computer` : ""}`}
           />
         }
       >

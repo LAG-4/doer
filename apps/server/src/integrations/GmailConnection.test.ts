@@ -8,8 +8,11 @@ import * as Schema from "effect/Schema";
 import { HttpServer } from "effect/unstable/http";
 import * as NetAddress from "effect/unstable/net/NetAddress";
 import { ServerSecretStore } from "../auth/ServerSecretStore.ts";
+import { ServerSettingsService } from "../serverSettings.ts";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { ProjectId } from "@t3tools/contracts";
 import { GmailConnection, layer } from "./GmailConnection.ts";
-import { GMAIL_SEND_SCOPE } from "./gmailClient.ts";
+import { GMAIL_SEND_SCOPE, GMAIL_MODIFY_SCOPE } from "./gmailClient.ts";
 import { decryptTokens, encryptTokens, isEncryptedTokenFile } from "./tokenEncryption.ts";
 
 const key = Buffer.alloc(32, 4);
@@ -49,10 +52,16 @@ function harness(initial?: Uint8Array) {
         NodeServices.layer,
       ),
     ),
+    Layer.provideMerge(
+      ServerSettingsService.layerTest({
+        enableGmailAccess: true,
+        projectSettingsOverrides: { [ProjectId.make("legacy-space")]: { enableGmailAccess: true } },
+      }),
+    ),
   );
   return {
     stored: () => stored,
-    run: <A, E>(program: Effect.Effect<A, E, GmailConnection>) =>
+    run: <A, E>(program: Effect.Effect<A, E, GmailConnection | ServerSettingsService>) =>
       program.pipe(Effect.provide(testLayer)),
   };
 }
@@ -68,6 +77,101 @@ afterEach(() => {
 });
 
 describe("Gmail connection lifecycle", () => {
+  it.effect("publishes Gmail off even when revocation fails, and permits a disconnect retry", () =>
+    Effect.gen(function* () {
+      const test = harness(encryptTokens(connectionJson, key));
+      const request = vi.fn(async () => new Response(null, { status: 503 }));
+      vi.stubGlobal("fetch", request);
+      yield* test.run(
+        Effect.gen(function* () {
+          const gmail = yield* GmailConnection;
+          const settings = yield* ServerSettingsService;
+          expect((yield* settings.getSettings).enableGmailAccess).toBe(true);
+          yield* gmail.disconnect.pipe(Effect.flip);
+          const paused = yield* settings.getSettings;
+          expect(paused.enableGmailAccess).toBe(false);
+          expect(
+            resolveProjectSettings(paused, ProjectId.make("legacy-space")).settings
+              .enableGmailAccess,
+          ).toBe(false);
+          expect(test.stored()).toBeDefined();
+          request.mockImplementation(async () => new Response(null, { status: 200 }));
+          yield* gmail.disconnect;
+          expect((yield* gmail.status).connected).toBe(false);
+          expect((yield* settings.getSettings).enableGmailAccess).toBe(false);
+        }),
+      );
+      expect(test.stored()).toBeUndefined();
+    }),
+  );
+  it.effect("requires renewed consent before a send-only account can read or organize mail", () =>
+    Effect.gen(function* () {
+      const test = harness(
+        encryptTokens(
+          yield* Schema.encodeEffect(jsonCodec)({
+            ...connection,
+            expiresAt: Number.MAX_SAFE_INTEGER,
+          }),
+          key,
+        ),
+      );
+      const request = vi.fn(async () => Response.json({ id: "abc123" }));
+      vi.stubGlobal("fetch", request);
+      yield* test.run(
+        Effect.gen(function* () {
+          const gmail = yield* GmailConnection;
+          expect((yield* gmail.search({ query: "is:unread" }).pipe(Effect.flip)).message).toContain(
+            "Disconnect and reconnect",
+          );
+          expect(
+            (yield* gmail
+              .modify({ messageId: "abc123", action: "archive" }, connection.email)
+              .pipe(Effect.flip)).message,
+          ).toContain("permission is missing");
+        }),
+      );
+      expect(request).not.toHaveBeenCalled();
+    }),
+  );
+  it.effect(
+    "uses the encrypted modify grant for API reads and rejects changes to a different account",
+    () =>
+      Effect.gen(function* () {
+        const test = harness(
+          encryptTokens(
+            yield* Schema.encodeEffect(jsonCodec)({
+              ...connection,
+              expiresAt: Number.MAX_SAFE_INTEGER,
+              scopes: [GMAIL_MODIFY_SCOPE],
+            }),
+            key,
+          ),
+        );
+        const request = vi.fn(async () =>
+          Response.json({
+            id: "abc123",
+            payload: {
+              mimeType: "text/plain",
+              body: { data: Buffer.from("hello").toString("base64url") },
+            },
+          }),
+        );
+        vi.stubGlobal("fetch", request);
+        yield* test.run(
+          Effect.gen(function* () {
+            const gmail = yield* GmailConnection;
+            expect((yield* gmail.readMessage("abc123")).body).toBe("hello");
+            expect(
+              (yield* gmail
+                .modify({ messageId: "abc123", action: "archive" }, "other@example.com")
+                .pipe(Effect.flip)).message,
+            ).toContain("account changed");
+            yield* gmail.modify({ messageId: "abc123", action: "archive" }, connection.email);
+          }),
+        );
+        expect(request).toHaveBeenCalledTimes(2);
+      }),
+  );
   it.effect("revokes an unused grant if account identification fails", () =>
     Effect.gen(function* () {
       const test = harness();

@@ -1,6 +1,7 @@
+import { useRef, useState } from "react";
 import { Switch } from "../ui/switch";
 import { GmailConnectionControl } from "./GmailConnectionControl";
-import { useSettingsScope } from "./SettingsScopeContext";
+import { ComputerSettingsScope, useSettingsScope } from "./SettingsScopeContext";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 import {
   useScopedSettings,
@@ -9,9 +10,36 @@ import {
 } from "./useScopedSettings";
 
 export function ConnectedToolsSettings() {
+  return (
+    <ComputerSettingsScope>
+      <ConnectedToolsControls />
+    </ComputerSettingsScope>
+  );
+}
+
+function ConnectedToolsControls() {
   const { target } = useSettingsScope();
   const settings = useScopedSettings();
   const update = useUpdateScopedSettings();
+  const [requestConnection, setRequestConnection] = useState(false);
+  const savingRef = useRef(false);
+  const [saving, setSaving] = useState(false);
+  const toggle = async (
+    key: "enableGmailAccess" | "enableLocalSpreadsheetAccess" | "enableLocalPresentationAccess",
+    value: boolean,
+  ) => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      if (await update({ [key]: value })) {
+        if (key === "enableGmailAccess") setRequestConnection(value);
+      }
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  };
   const mixedGmail = useScopedSettingsMixed(["enableGmailAccess"]);
   const mixedSpreadsheets = useScopedSettingsMixed(["enableLocalSpreadsheetAccess"]);
   const mixedPresentations = useScopedSettingsMixed(["enableLocalPresentationAccess"]);
@@ -25,9 +53,11 @@ export function ConnectedToolsSettings() {
         title="Gmail"
         description={
           <>
-            Send-only Gmail access. Review the sender, recipients and full message before each send.
-            One account is shared by your Spaces and trusted paired devices on this computer.
-            Switching off pauses access; Disconnect removes Google access.{" "}
+            Search and read mail, organize existing labels, and send emails. Mail used in tasks may
+            be sent to your chosen AI provider. Review each send and mailbox change before
+            approving. One account is shared by your Spaces and trusted paired devices on this
+            computer. Switches are shared with chat. Switching off pauses access; Disconnect
+            switches Gmail off and removes Google access.{" "}
             <a
               className="underline"
               href="https://doer.lagaryan.click/privacy-policy"
@@ -44,12 +74,15 @@ export function ConnectedToolsSettings() {
               key={target?.environmentId}
               environmentId={target?.environmentId ?? null}
               enabled={settings.enableGmailAccess}
+              autoConnect={requestConnection}
+              onConnectionAttempted={() => setRequestConnection(false)}
             />
             <Switch
               aria-label="Gmail"
+              disabled={saving}
               mixed={mixedGmail}
               checked={mixedGmail ? false : settings.enableGmailAccess}
-              onCheckedChange={(value) => update({ enableGmailAccess: value })}
+              onCheckedChange={(value) => void toggle("enableGmailAccess", value)}
             />
           </div>
         }
@@ -64,9 +97,10 @@ export function ConnectedToolsSettings() {
         control={
           <Switch
             aria-label="Spreadsheets"
+            disabled={saving}
             mixed={mixedSpreadsheets}
             checked={mixedSpreadsheets ? false : settings.enableLocalSpreadsheetAccess}
-            onCheckedChange={(value) => update({ enableLocalSpreadsheetAccess: value })}
+            onCheckedChange={(value) => void toggle("enableLocalSpreadsheetAccess", value)}
           />
         }
       />
@@ -80,9 +114,10 @@ export function ConnectedToolsSettings() {
         control={
           <Switch
             aria-label="Presentations"
+            disabled={saving}
             mixed={mixedPresentations}
             checked={mixedPresentations ? false : settings.enableLocalPresentationAccess}
-            onCheckedChange={(value) => update({ enableLocalPresentationAccess: value })}
+            onCheckedChange={(value) => void toggle("enableLocalPresentationAccess", value)}
           />
         }
       />

@@ -50,13 +50,21 @@ const thread: OrchestrationThreadShell = {
 
 function scenario(
   decision: ProviderApprovalDecision,
-  options: { disableAfterReview?: boolean; capability?: boolean; stopAfterReview?: boolean } = {},
+  options: {
+    disableAfterReview?: boolean;
+    capability?: boolean;
+    stopAfterReview?: boolean;
+    operation?: "send" | "change" | "read";
+  } = {},
 ) {
   return Effect.gen(function* () {
     const approvals = yield* GmailSendApproval.GmailSendApproval;
     const input = { to: ["recipient@example.com"], subject: "HI", body: "Exact message" };
     const commands: OrchestrationCommand[] = [];
     const sent: { message: typeof input; sender: string | undefined }[] = [];
+    const change = { messageId: "abc123", action: "archive" as const };
+    const changed: { messageId: string; sender: string }[] = [];
+    let reads = 0;
     let enabled = true;
     let threadRow = thread;
     const dependencies = Layer.mergeAll(
@@ -67,6 +75,29 @@ function scenario(
           Effect.sync(() => {
             sent.push({ message: { ...message, to: [...message.to] }, sender });
             return { id: "sent-id" };
+          }),
+        readMessage: () =>
+          Effect.sync(() => {
+            reads++;
+            return {
+              id: "abc123",
+              threadId: "mail-thread",
+              from: "merchant@example.com",
+              to: "sender@example.com",
+              subject: "Invoice",
+              date: "",
+              snippet: "Your bill",
+              labelIds: ["INBOX"],
+              body: "Untrusted mail",
+              bodyFormat: "text" as const,
+              truncated: false,
+              attachments: [],
+            };
+          }),
+        modify: (message, sender) =>
+          Effect.sync(() => {
+            changed.push({ messageId: message.messageId, sender });
+            return { id: message.messageId, labelIds: [] };
           }),
       }),
       Layer.mock(ProjectionSnapshotQuery)({
@@ -87,9 +118,16 @@ function scenario(
               command.activity.kind === "approval.requested"
             ) {
               const payload = command.activity.payload as Record<string, unknown>;
-              expect(payload.detail).toBe(
-                "From: sender@example.com\nTo: recipient@example.com\nSubject: HI\n\nExact message",
-              );
+              if (options.operation === "change") {
+                expect(String(payload.requestId)).toContain("gmail-change:");
+                expect(payload.detail).toBe(
+                  "Account: sender@example.com\nMessage ID: abc123\nFrom: merchant@example.com\nSubject: Invoice\nAction: archive\n\nYour bill",
+                );
+                change.messageId = "hidden-message";
+              } else
+                expect(payload.detail).toBe(
+                  "From: sender@example.com\nTo: recipient@example.com\nSubject: HI\n\nExact message",
+                );
               // A changed caller input must not change what was reviewed.
               input.to.push("hidden@example.com");
               input.body = "Changed after review";
@@ -121,9 +159,15 @@ function scenario(
     const toolkit = yield* GmailToolkit.pipe(
       Effect.provide(GmailToolkitHandlersLive.pipe(Layer.provide(dependencies))),
     );
-    const result = yield* toolkit.handle("gmail_send_email", input).pipe(
-      Stream.unwrap,
-      Stream.runCollect,
+    const invocation =
+      options.operation === "change"
+        ? toolkit.handle("gmail_modify_message", change).pipe(Stream.unwrap, Stream.runDrain)
+        : options.operation === "read"
+          ? toolkit
+              .handle("gmail_read_message", { messageId: "abc123" })
+              .pipe(Stream.unwrap, Stream.runDrain)
+          : toolkit.handle("gmail_send_email", input).pipe(Stream.unwrap, Stream.runDrain);
+    const result = yield* invocation.pipe(
       Effect.result,
       Effect.provideService(McpInvocationContext.McpInvocationContext, {
         environmentId: EnvironmentId.make("host"),
@@ -137,11 +181,45 @@ function scenario(
       }),
       Effect.provide(dependencies),
     );
-    return { result, commands, sent };
+    return { result, commands, sent, changed, reads };
   }).pipe(Effect.provide(GmailSendApproval.layer.pipe(Layer.provide(NodeServices.layer))));
 }
 
 describe("Gmail tool email review", () => {
+  it.effect("reads without a mailbox change and refuses reads when the capability is absent", () =>
+    Effect.gen(function* () {
+      const allowed = yield* scenario("accept", { operation: "read" });
+      expect(allowed.result._tag).toBe("Success");
+      expect(allowed.reads).toBe(1);
+      expect(allowed.commands).toHaveLength(0);
+      expect(allowed.sent).toHaveLength(0);
+      expect(allowed.changed).toHaveLength(0);
+      const denied = yield* scenario("accept", { operation: "read", capability: false });
+      expect(denied.result._tag).toBe("Failure");
+      expect(denied.reads).toBe(0);
+    }),
+  );
+  it.effect("organizes only the exact reviewed message with one-use approval", () =>
+    Effect.gen(function* () {
+      const allowed = yield* scenario("accept", { operation: "change" });
+      expect(allowed.result._tag).toBe("Success");
+      expect(allowed.changed).toEqual([{ messageId: "abc123", sender: "sender@example.com" }]);
+      for (const decision of ["decline", "acceptForSession"] as const) {
+        const denied = yield* scenario(decision, { operation: "change" });
+        expect(denied.result._tag).toBe("Failure");
+        expect(denied.changed).toHaveLength(0);
+      }
+      for (const options of [
+        { disableAfterReview: true },
+        { stopAfterReview: true },
+        { capability: false },
+      ]) {
+        const denied = yield* scenario("accept", { operation: "change", ...options });
+        expect(denied.result._tag).toBe("Failure");
+        expect(denied.changed).toHaveLength(0);
+      }
+    }),
+  );
   it.effect(
     "sends only the reviewed content and sender in a full-access custom provider task",
     () =>

@@ -1,6 +1,6 @@
-import type { EnvironmentId, GmailConnectionStatus } from "@t3tools/contracts";
+import type { EnvironmentId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { isElectron } from "../../env";
 import { PrimaryEnvironmentHttpClient } from "../../environments/primary/httpClient";
 import { runPrimaryHttp } from "../../lib/runtime";
@@ -8,6 +8,7 @@ import { usePrimaryEnvironmentId } from "../../state/environments";
 import { readLocalApi } from "../../localApi";
 import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
+import { getGmailConnectionState } from "./gmailConnectionState";
 
 const gmailRequest = <A, E>(
   request: (client: PrimaryEnvironmentHttpClient["Service"]) => Effect.Effect<A, E>,
@@ -16,17 +17,23 @@ const gmailRequest = <A, E>(
 export function GmailConnectionControl({
   enabled,
   environmentId,
-  autoConnect = true,
+  autoConnect = false,
+  onConnectionAttempted,
 }: {
   enabled: boolean;
   environmentId: EnvironmentId | null;
   autoConnect?: boolean;
+  onConnectionAttempted?: () => void;
 }) {
-  const [status, setStatus] = useState<GmailConnectionStatus | null>(null);
-  const [busy, setBusy] = useState(false);
+  const state = useMemo(() => getGmailConnectionState(environmentId), [environmentId]);
+  const { status, busy } = useSyncExternalStore(
+    state.subscribe,
+    state.getSnapshot,
+    state.getSnapshot,
+  );
   const attempted = useRef(false);
-  const operation = useRef(0);
-  const connecting = useRef(false);
+  const operation = useRef<number | null>(null);
+  const signingIn = useRef(false);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const onPrimary = environmentId !== null && environmentId === primaryEnvironmentId;
   const onHostComputer =
@@ -36,60 +43,70 @@ export function GmailConnectionControl({
 
   const refresh = useCallback(async () => {
     if (!onPrimary) return;
-    try {
-      const next = await gmailRequest((client) => client.integrations.gmailStatus({ headers: {} }));
-      setStatus(next);
-    } catch {
-      setStatus(null);
-    }
-  }, [onPrimary]);
+    await state.refresh(() =>
+      gmailRequest((client) => client.integrations.gmailStatus({ headers: {} })),
+    );
+  }, [onPrimary, state]);
 
   useEffect(() => {
     void refresh();
+    // The switch can be changed by another paired client, including Disconnect.
+    // eslint-disable-next-line react/exhaustive-effect-dependencies
+  }, [enabled, refresh]);
+
+  useEffect(() => {
+    window.addEventListener("focus", refresh);
     return () => {
-      operation.current += 1;
-      connecting.current = false;
+      window.removeEventListener("focus", refresh);
+      state.cancelOperation(operation.current);
+      operation.current = null;
     };
-  }, [refresh]);
+  }, [refresh, state]);
+
+  useEffect(() => {
+    if (!enabled && signingIn.current) state.cancelOperation(operation.current);
+    if (!autoConnect || !enabled) attempted.current = false;
+  }, [autoConnect, enabled, state]);
 
   const connect = useCallback(async () => {
-    if (connecting.current) return;
-    connecting.current = true;
+    if (!onPrimary || !onHostComputer || !enabled) return;
+    const currentOperation = state.beginOperation();
+    if (currentOperation === null) return;
+    operation.current = currentOperation;
+    signingIn.current = true;
     attempted.current = true;
-    const currentOperation = ++operation.current;
-    setBusy(true);
     try {
       const result = await gmailRequest((client) =>
         client.integrations.gmailBegin({ headers: {} }),
       );
+      if (!state.isCurrent(currentOperation)) return;
       const shell = readLocalApi()?.shell;
       if (shell) await shell.openExternal(result.authorizationUrl);
       else window.open(result.authorizationUrl, "_blank", "noopener,noreferrer");
       // The callback completes in the external browser. Poll only during sign-in.
       for (let attempt = 0; attempt < 120; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 2000));
-        if (operation.current !== currentOperation) return;
+        if (!state.isCurrent(currentOperation)) return;
         const next = await gmailRequest((client) =>
           client.integrations.gmailStatus({ headers: {} }),
         );
-        setStatus(next);
+        if (!state.isCurrent(currentOperation)) return;
+        state.setStatus(currentOperation, next);
         if (next.connected) return;
       }
       throw new Error("Sign-in timed out or was cancelled. Connect again to retry.");
     } catch (error) {
-      if (operation.current !== currentOperation) return;
+      if (!state.isCurrent(currentOperation)) return;
       toastManager.add({
         type: "error",
         title: "Gmail connection failed",
         description: error instanceof Error ? error.message : "Try connecting again.",
       });
     } finally {
-      if (operation.current === currentOperation) {
-        connecting.current = false;
-        setBusy(false);
-      }
+      state.endOperation(currentOperation);
+      if (operation.current === currentOperation) signingIn.current = false;
     }
-  }, []);
+  }, [enabled, onHostComputer, onPrimary, state]);
 
   useEffect(() => {
     if (
@@ -98,21 +115,38 @@ export function GmailConnectionControl({
       onPrimary &&
       onHostComputer &&
       status?.configured &&
-      !status.connected &&
+      !busy &&
       !attempted.current
     ) {
       attempted.current = true;
-      void connect();
+      onConnectionAttempted?.();
+      if (!status.connected) void connect();
     }
-  }, [autoConnect, enabled, onPrimary, onHostComputer, status, connect]);
+  }, [
+    autoConnect,
+    enabled,
+    onPrimary,
+    onHostComputer,
+    status,
+    busy,
+    connect,
+    onConnectionAttempted,
+  ]);
 
-  const disconnect = useCallback(async () => {
+  const disconnect = async () => {
     // Disconnect must not trigger the first-connection effect again.
     attempted.current = true;
-    setBusy(true);
+    const currentOperation = state.beginOperation();
+    if (currentOperation === null) return;
+    operation.current = currentOperation;
+    signingIn.current = false;
     try {
       await gmailRequest((client) => client.integrations.gmailDisconnect({ headers: {} }));
-      await refresh();
+      state.setStatus(currentOperation, {
+        configured: state.getSnapshot().status?.configured ?? true,
+        connected: false,
+        email: null,
+      });
     } catch (error) {
       toastManager.add({
         type: "error",
@@ -123,9 +157,10 @@ export function GmailConnectionControl({
             : "Try again while online, or revoke Doer in your Google account connections.",
       });
     } finally {
-      setBusy(false);
+      state.endOperation(currentOperation);
+      void refresh();
     }
-  }, [refresh]);
+  };
 
   if (!onPrimary) return null;
   if (status?.connected) {

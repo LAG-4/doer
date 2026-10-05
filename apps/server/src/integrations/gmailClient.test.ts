@@ -8,6 +8,7 @@ import {
   sendGmailMessage,
   revokeGmailToken,
   GMAIL_SEND_SCOPE,
+  GMAIL_MODIFY_SCOPE,
 } from "./gmailClient.ts";
 
 describe("Gmail connector request boundaries", () => {
@@ -46,11 +47,11 @@ describe("Gmail connector request boundaries", () => {
       encodeGmailMessage({ to: ["a@example.com,b@example.com"], subject: "HI", body: "Test" }),
     ).toThrow("Invalid recipient");
   });
-  it("starts a send-only PKCE authorization without granting mailbox read access", () => {
+  it("requests send and organize access with PKCE without permanent-delete access", () => {
     const attempt = createGmailOAuthAttempt("client", "http://127.0.0.1:9000/callback");
     const url = new URL(attempt.authorizationUrl);
     expect(url.searchParams.get("scope")).toBe(
-      "openid email https://www.googleapis.com/auth/gmail.send",
+      `openid email ${GMAIL_SEND_SCOPE} ${GMAIL_MODIFY_SCOPE}`,
     );
     expect(url.searchParams.get("code_challenge_method")).toBe("S256");
     expect(url.searchParams.get("access_type")).toBe("offline");

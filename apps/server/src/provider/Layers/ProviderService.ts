@@ -879,13 +879,6 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       const computerOverridden = entries.some(
         (entry) => entry.enableAgentComputerAccess !== undefined,
       );
-      const gmailOverridden = entries.some((entry) => entry.enableGmailAccess !== undefined);
-      const spreadsheetsOverridden = entries.some(
-        (entry) => entry.enableLocalSpreadsheetAccess !== undefined,
-      );
-      const presentationsOverridden = entries.some(
-        (entry) => entry.enableLocalPresentationAccess !== undefined,
-      );
       const environment = {
         browser: settings.enableAgentBrowserAccess,
         device: settings.enableAgentDeviceAccess,
@@ -894,15 +887,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         spreadsheets: settings.enableLocalSpreadsheetAccess,
         presentations: settings.enableLocalPresentationAccess,
       };
-      if (
-        !browserOverridden &&
-        !deviceOverridden &&
-        !computerOverridden &&
-        !gmailOverridden &&
-        !spreadsheetsOverridden &&
-        !presentationsOverridden
-      )
-        return environment;
+      if (!browserOverridden && !deviceOverridden && !computerOverridden) return environment;
       // Provider-only runtimes may omit orchestration. An unresolved project
       // must not bypass an explicit project override, but a capability no
       // project overrides keeps its environment value.
@@ -910,9 +895,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         browser: browserOverridden ? false : environment.browser,
         device: deviceOverridden ? false : environment.device,
         computer: computerOverridden ? false : environment.computer,
-        gmail: gmailOverridden ? false : environment.gmail,
-        spreadsheets: spreadsheetsOverridden ? false : environment.spreadsheets,
-        presentations: presentationsOverridden ? false : environment.presentations,
+        gmail: environment.gmail,
+        spreadsheets: environment.spreadsheets,
+        presentations: environment.presentations,
       };
       if (Option.isNone(projectionQuery)) return denied;
       const thread = yield* projectionQuery.value.getThreadShellById(threadId);
