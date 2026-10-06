@@ -24,6 +24,8 @@ vi.mock("../../env", () => ({ isElectron: true }));
 vi.mock("../../state/environments", () => ({
   useEnvironments: () => ({ environments: [], isReady: true }),
   usePrimaryEnvironment: () => null,
+  useEnvironment: () => null,
+  useEnvironmentHttpBaseUrl: () => null,
 }));
 vi.mock("../../hooks/useSettings", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../hooks/useSettings")>()),
@@ -53,6 +55,7 @@ vi.mock("./SettingsScopeContext", () => ({
     targets: [],
   }),
   useOptionalSettingsScope: () => null,
+  ComputerSettingsScope: ({ children }: { children: ReactNode }) => children,
 }));
 
 import { IntegrationsSettingsPanel } from "./IntegrationsSettings";

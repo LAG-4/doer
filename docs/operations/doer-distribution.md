@@ -23,8 +23,14 @@ How Doer ships to users, for free. Agent-oriented rules live in
 2. **Vercel**: the marketing site deploys from the repo (production tracks
    `lite`). Point `doer.lagaryan.click` at the production deployment
    (via Cloudflare as today).
-3. Nothing else. No Apple, Azure, Clerk, Cloudflare Workers, Expo, or Discord
-   accounts are needed. Runners are free GitHub-hosted ones.
+3. **Public Gmail (optional)**: finish the production Google OAuth setup and
+   verification described in [Operating Gmail](google-oauth.md). Keep
+   `DOER_GMAIL_PUBLIC_READY` unset or false until Google approves public access
+   and the packaged app has been checked. Other tools can ship while Gmail is
+   unavailable in the default release.
+
+No Apple, Azure, Clerk, Cloudflare Workers, Expo, or Discord accounts are needed.
+Runners are free GitHub-hosted ones.
 
 ## Keeping the website Doer (not T3)
 

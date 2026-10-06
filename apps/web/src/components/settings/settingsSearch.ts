@@ -594,6 +594,24 @@ export const SETTINGS_SEARCH_ITEMS = [
     providerSettingsOnly: true,
   },
   {
+    id: "gmail-access",
+    title: "Gmail",
+    to: "/settings/integrations",
+    searchTerms: ["email Google account connect sign in send tools"],
+  },
+  {
+    id: "spreadsheet-access",
+    title: "Spreadsheets",
+    to: "/settings/integrations",
+    searchTerms: ["Excel xlsx local files tools"],
+  },
+  {
+    id: "presentation-access",
+    title: "Presentations",
+    to: "/settings/integrations",
+    searchTerms: ["PowerPoint pptx local files slides tools"],
+  },
+  {
     id: "agent-browser-access",
     title: "Agent browser access",
     to: "/settings/integrations",

@@ -38,6 +38,18 @@ export interface ResolvedProjectSettings<Settings extends ServerSettings = Serve
 
 const EMPTY_OVERRIDES: ProjectSettingsOverrides = {};
 
+// These connections belong to the host computer. Keep legacy override fields
+// readable on the wire, but never let them bypass the shared plugin switches.
+export const CONNECTED_TOOL_SETTING_KEYS = [
+  "enableGmailAccess",
+  "enableLocalSpreadsheetAccess",
+  "enableLocalPresentationAccess",
+] as const;
+
+export function isConnectedToolSettingKey(key: string): boolean {
+  return CONNECTED_TOOL_SETTING_KEYS.some((candidate) => candidate === key);
+}
+
 const ENVIRONMENT_SOURCES: ProjectSettingSources = Object.fromEntries(
   PROJECT_SCOPED_SERVER_SETTING_KEYS.map((key) => [key, "environment"]),
 ) as Record<ProjectScopedServerSettingKey, ProjectSettingSource>;
@@ -167,6 +179,7 @@ function resolveProjectOverrides(
   };
   const effective: Record<string, unknown> = { ...settings };
   for (const key of PROJECT_SCOPED_SERVER_SETTING_KEYS) {
+    if (isConnectedToolSettingKey(key)) continue;
     if (!Object.hasOwn(overrides, key)) continue;
     const value = overrides[key];
     // A forward-compatible decode leaves an unknown value as a present

@@ -14,6 +14,7 @@ import {
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import {
   clearProjectSettingsOverrides,
+  isConnectedToolSettingKey,
   resolveProjectSettings,
   resolveWorktreeCleanup,
   type ProjectSettingSource,
@@ -41,7 +42,14 @@ const CLIENT_KEYS = new Set<string>(Object.keys(ClientSettingsSchema.fields));
 const PROJECT_SCOPED_KEYS = new Set<string>(PROJECT_SCOPED_SERVER_SETTING_KEYS);
 
 export function isProjectScopedSettingKey(key: string): key is ProjectScopedServerSettingKey {
-  return PROJECT_SCOPED_KEYS.has(key);
+  return PROJECT_SCOPED_KEYS.has(key) && !isConnectedToolSettingKey(key);
+}
+
+/** A Space selection still limits which computers are edited, never the plugin's scope. */
+export function computerSettingsScope(scope: ResolvedSettingsScope): ResolvedSettingsScope {
+  return scope.kind === "project" || scope.kind === "checkout"
+    ? { kind: "all", label: scope.label, members: [], environmentIds: scope.environmentIds }
+    : scope;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

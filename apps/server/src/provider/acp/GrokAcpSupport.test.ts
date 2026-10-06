@@ -62,6 +62,7 @@ describe("buildGrokAcpSpawnInput", () => {
         XAI_API_KEY: "secret",
         GROK_OAUTH2_REFERRER: "t3code",
       },
+      extendEnv: false,
     });
   });
 
@@ -73,6 +74,28 @@ describe("buildGrokAcpSpawnInput", () => {
       "approval-required",
     );
     expect(spawn.args).toEqual(["--permission-mode", "default", "agent", "stdio"]);
+  });
+
+  it("isolates an explicitly supplied full provider environment from ambient secrets", () => {
+    const spawn = buildGrokAcpSpawnInput({ binaryPath: "/usr/local/bin/grok" }, "/tmp/project", {
+      GROK_SENTINEL_KEEP: "keep-me",
+      DOER_GMAIL_ENCRYPTION_KEY: "ambient-vault",
+      DOER_GOOGLE_OAUTH_CLIENT_SECRET: "ambient-oauth",
+    });
+    expect(spawn.extendEnv).toBe(false);
+    expect(spawn.env?.GROK_SENTINEL_KEEP).toBe("keep-me");
+  });
+
+  it("keeps inherited behavior when no environment argument is supplied", () => {
+    // The referrer env object always exists, so isolation keys off the
+    // environment argument — absent here, hence inherited launch.
+    const spawn = buildGrokAcpSpawnInput(
+      { binaryPath: "/usr/local/bin/grok" },
+      "/tmp/project",
+      undefined,
+      "approval-required",
+    );
+    expect(spawn.extendEnv).toBe(true);
   });
 });
 

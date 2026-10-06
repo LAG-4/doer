@@ -615,9 +615,42 @@ class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
     }),
   ) {}
 
+export const GmailConnectionStatus = Schema.Struct({
+  configured: Schema.Boolean,
+  connected: Schema.Boolean,
+  email: Schema.NullOr(Schema.String),
+});
+export type GmailConnectionStatus = typeof GmailConnectionStatus.Type;
+
+export const GmailAuthorizationResult = Schema.Struct({ authorizationUrl: Schema.String });
+
+class EnvironmentIntegrationsHttpApi extends HttpApiGroup.make("integrations")
+  .add(
+    HttpApiEndpoint.get("gmailStatus", "/api/integrations/gmail", {
+      headers: OptionalBearerHeaders,
+      success: GmailConnectionStatus,
+      error: EnvironmentScopedOperationErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("gmailBegin", "/api/integrations/gmail/connect", {
+      headers: OptionalBearerHeaders,
+      success: GmailAuthorizationResult,
+      error: [...EnvironmentScopedOperationErrors, EnvironmentHttpConflictError],
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("gmailDisconnect", "/api/integrations/gmail/disconnect", {
+      headers: OptionalBearerHeaders,
+      success: Schema.Struct({ disconnected: Schema.Boolean }),
+      error: [...EnvironmentScopedOperationErrors, EnvironmentHttpConflictError],
+    }).middleware(EnvironmentAuthenticatedAuth),
+  ) {}
+
 export class EnvironmentHttpApi extends HttpApi.make("environment")
   .add(EnvironmentMetadataHttpApi)
   .add(EnvironmentAuthHttpApi)
   .add(EnvironmentOrchestrationHttpApi)
   .add(EnvironmentPullRequestsHttpApi)
-  .add(EnvironmentConnectHttpApi) {}
+  .add(EnvironmentConnectHttpApi)
+  .add(EnvironmentIntegrationsHttpApi) {}

@@ -36,6 +36,18 @@ jobs:
       is_prerelease: ${{ steps.release_meta.outputs.is_prerelease }}
       make_latest: ${{ steps.release_meta.outputs.make_latest }}
     steps:
+      - name: Validate public Gmail configuration
+        if: vars.DOER_GMAIL_PUBLIC_READY == 'true'
+        shell: bash
+        env:
+          CLIENT_ID: ${{ secrets.DOER_RELEASE_GOOGLE_OAUTH_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.DOER_RELEASE_GOOGLE_OAUTH_CLIENT_SECRET }}
+        run: |
+          if [[ -z "$CLIENT_ID" || -z "$CLIENT_SECRET" ]]; then
+            echo "Public Gmail requires the verified production Desktop OAuth client credentials." >&2
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v6
         with:
@@ -149,6 +161,9 @@ jobs:
     needs: [preflight, quality]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      DOER_RELEASE_GOOGLE_OAUTH_CLIENT_ID: ${{ vars.DOER_GMAIL_PUBLIC_READY == 'true' && secrets.DOER_RELEASE_GOOGLE_OAUTH_CLIENT_ID || '' }}
+      DOER_RELEASE_GOOGLE_OAUTH_CLIENT_SECRET: ${{ vars.DOER_GMAIL_PUBLIC_READY == 'true' && secrets.DOER_RELEASE_GOOGLE_OAUTH_CLIENT_SECRET || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -224,6 +239,9 @@ jobs:
     # Native rebuilds (Rust, node-gyp, VS setup) are slow on free runners;
     # give Windows especially plenty of headroom.
     timeout-minutes: 60
+    env:
+      DOER_RELEASE_GOOGLE_OAUTH_CLIENT_ID: ${{ vars.DOER_GMAIL_PUBLIC_READY == 'true' && secrets.DOER_RELEASE_GOOGLE_OAUTH_CLIENT_ID || '' }}
+      DOER_RELEASE_GOOGLE_OAUTH_CLIENT_SECRET: ${{ vars.DOER_GMAIL_PUBLIC_READY == 'true' && secrets.DOER_RELEASE_GOOGLE_OAUTH_CLIENT_SECRET || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -594,6 +612,8 @@ jobs:
       contents: read
     env:
       NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      DOER_RELEASE_GOOGLE_OAUTH_CLIENT_ID: ${{ vars.DOER_GMAIL_PUBLIC_READY == 'true' && secrets.DOER_RELEASE_GOOGLE_OAUTH_CLIENT_ID || '' }}
+      DOER_RELEASE_GOOGLE_OAUTH_CLIENT_SECRET: ${{ vars.DOER_GMAIL_PUBLIC_READY == 'true' && secrets.DOER_RELEASE_GOOGLE_OAUTH_CLIENT_SECRET || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6

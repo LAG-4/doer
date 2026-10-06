@@ -111,6 +111,13 @@ export default mergeConfig(
         js: "#!/usr/bin/env node\n",
       },
       define: {
+        // Release credentials come only from CI, never the checkout's development .env.
+        __DOER_BUILD_GOOGLE_OAUTH_CLIENT_ID__: JSON.stringify(
+          process.env.DOER_RELEASE_GOOGLE_OAUTH_CLIENT_ID?.trim() ?? "",
+        ),
+        __DOER_BUILD_GOOGLE_OAUTH_CLIENT_SECRET__: JSON.stringify(
+          process.env.DOER_RELEASE_GOOGLE_OAUTH_CLIENT_SECRET?.trim() ?? "",
+        ),
         __T3CODE_BUILD_CHANNEL__: JSON.stringify(cliBuildChannel),
         __T3CODE_BUILD_RELAY_URL__: JSON.stringify(repoEnv.T3CODE_RELAY_URL?.trim() ?? ""),
         __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: JSON.stringify(

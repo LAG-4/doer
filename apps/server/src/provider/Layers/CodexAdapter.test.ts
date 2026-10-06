@@ -286,7 +286,10 @@ validationLayer("CodexAdapterLive validation", (it) => {
         runtimeMode: "full-access",
       });
 
-      NodeAssert.deepStrictEqual(validationRuntimeFactory.factory.mock.calls[0]?.[0], {
+      const received = validationRuntimeFactory.factory.mock.calls[0]?.[0];
+      NodeAssert.ok(received);
+      const { environment, ...rest } = received;
+      NodeAssert.deepStrictEqual(rest, {
         binaryPath: "codex",
         cwd: process.cwd(),
         launchArgs: "",
@@ -295,6 +298,53 @@ validationLayer("CodexAdapterLive validation", (it) => {
         serviceTier: "priority",
         threadId: asThreadId("thread-1"),
         runtimeMode: "full-access",
+      });
+      // The subprocess environment never carries the Gmail vault key or the
+      // runtime OAuth secret, even when no MCP session is installed.
+      NodeAssert.equal(environment?.DOER_GMAIL_ENCRYPTION_KEY, undefined);
+      NodeAssert.equal(environment?.DOER_GOOGLE_OAUTH_CLIENT_SECRET, undefined);
+    }),
+  );
+});
+
+const sentinelRuntimeFactory = makeRuntimeFactory();
+const sentinelLayer = it.layer(
+  Layer.effect(
+    CodexAdapter,
+    Effect.gen(function* () {
+      const codexConfig = decodeCodexSettings({});
+      return yield* makeCodexAdapter(codexConfig, {
+        makeRuntime: sentinelRuntimeFactory.factory,
+        environment: {
+          CODEX_SENTINEL_KEEP: "keep-me",
+          PATH: "/sentinel/bin",
+          DOER_GMAIL_ENCRYPTION_KEY: "vault-secret",
+          DOER_GOOGLE_OAUTH_CLIENT_SECRET: "oauth-secret",
+        },
+      });
+    }),
+  ).pipe(
+    Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
+    Layer.provideMerge(ServerSettingsService.layerTest()),
+    Layer.provideMerge(providerSessionDirectoryTestLayer),
+    Layer.provideMerge(NodeServices.layer),
+  ),
+);
+
+sentinelLayer("CodexAdapterLive subprocess environment", (it) => {
+  it.effect("strips vault and OAuth secrets while keeping custom provider variables", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-sentinel"),
+        runtimeMode: "full-access",
+      });
+      const received = sentinelRuntimeFactory.factory.mock.calls[0]?.[0];
+      // Precise small snapshot: only the custom variables survive.
+      NodeAssert.deepStrictEqual(received?.environment, {
+        CODEX_SENTINEL_KEEP: "keep-me",
+        PATH: "/sentinel/bin",
       });
     }),
   );

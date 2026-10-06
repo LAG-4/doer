@@ -255,6 +255,7 @@ import {
 } from "./ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
+import { ComposerPluginsMenu } from "./ComposerPluginsMenu";
 import { ComposerImageThumbnail } from "./ComposerImageThumbnail";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
@@ -1088,6 +1089,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
   runtimeMode: RuntimeMode;
   size?: "sm" | "xs";
   hidden?: boolean;
+  pluginsControl?: ReactNode;
   onToggleInteractionMode: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
@@ -1187,6 +1189,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
         <TooltipPopup side="top">{runtimeModeOption.description}</TooltipPopup>
       </Tooltip>
 
+      {props.pluginsControl}
       {interactionModeToggle}
     </>
   );
@@ -1333,6 +1336,7 @@ export interface ChatComposerHandle {
 export interface ChatComposerProps {
   composerDraftTarget: ScopedThreadRef | DraftId;
   environmentId: EnvironmentId;
+  activeProjectId?: ProjectId | null;
   attachmentUploadsCapabilityKnown: boolean;
   supportsAttachmentUploads: boolean;
   supportsQuestionAttachments: boolean;
@@ -5051,6 +5055,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           runtimeMode={runtimeMode}
           size={composerControlsInStrip ? "xs" : "sm"}
           hidden={composerControlsHidden || restingHiddenBlockCount > 0}
+          pluginsControl={
+            <ComposerPluginsMenu
+              key={`${environmentId}:${props.activeProjectId ?? "none"}`}
+              environmentId={environmentId}
+              projectId={props.activeProjectId ?? null}
+              size={composerControlsInStrip ? "xs" : "sm"}
+              hidden={composerControlsHidden || restingHiddenBlockCount > 0}
+            />
+          }
           onToggleInteractionMode={toggleInteractionMode}
           onRuntimeModeChange={handleRuntimeModeChange}
         />
@@ -5208,6 +5221,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             showInteractionModeToggle={planModeUiEnabled && hiddenRestingBlockIds.includes("mode")}
             traitsMenuContent={
               hiddenRestingBlockIds.includes("traits") ? providerTraitsMenuContent : undefined
+            }
+            pluginsMenuContent={
+              hiddenRestingBlockIds.includes("mode") ? (
+                <ComposerPluginsMenu
+                  key={`${environmentId}:${props.activeProjectId ?? "none"}`}
+                  environmentId={environmentId}
+                  projectId={props.activeProjectId ?? null}
+                  embedded
+                />
+              ) : undefined
             }
             onToggleInteractionMode={toggleInteractionMode}
             onRuntimeModeChange={handleRuntimeModeChange}

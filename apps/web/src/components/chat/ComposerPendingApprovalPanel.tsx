@@ -14,26 +14,34 @@ export const ComposerPendingApprovalPanel = memo(function ComposerPendingApprova
   className,
 }: ComposerPendingApprovalPanelProps) {
   const Detail = approval.requestKind === "mcp-elicitation" ? "span" : "code";
-  const fallbackLabel =
-    approval.requestKind === "mcp-elicitation"
-      ? "App access approval"
-      : approval.requestKind === "command"
-        ? "Command approval"
-        : approval.requestKind === "file-read"
-          ? "File read approval"
-          : approval.requestKind === "permission"
-            ? "App permission approval"
-            : "File change approval";
-  const detailAriaLabel =
-    approval.requestKind === "mcp-elicitation"
-      ? "App access request"
-      : approval.requestKind === "command"
-        ? "Command"
-        : approval.requestKind === "file-read"
-          ? "File to read"
-          : approval.requestKind === "permission"
-            ? "Permission request"
-            : "File change";
+  const isEmail = approval.requestId.startsWith("gmail-send:");
+  const isMailChange = approval.requestId.startsWith("gmail-change:");
+  const fallbackLabel = isEmail
+    ? "Review email before sending"
+    : isMailChange
+      ? "Review Gmail change"
+      : approval.requestKind === "mcp-elicitation"
+        ? "App access approval"
+        : approval.requestKind === "command"
+          ? "Command approval"
+          : approval.requestKind === "file-read"
+            ? "File read approval"
+            : approval.requestKind === "permission"
+              ? "App permission approval"
+              : "File change approval";
+  const detailAriaLabel = isEmail
+    ? "Email to send"
+    : isMailChange
+      ? "Gmail change to apply"
+      : approval.requestKind === "mcp-elicitation"
+        ? "App access request"
+        : approval.requestKind === "command"
+          ? "Command"
+          : approval.requestKind === "file-read"
+            ? "File to read"
+            : approval.requestKind === "permission"
+              ? "Permission request"
+              : "File change";
 
   return (
     <span
@@ -52,6 +60,7 @@ export const ComposerPendingApprovalPanel = memo(function ComposerPendingApprova
         aria-label={detailAriaLabel}
         className={cn(
           "block max-h-20 w-full min-w-0 overflow-auto text-xs text-foreground [scrollbar-width:thin] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70 [&::-webkit-scrollbar]:h-1.5",
+          (isEmail || isMailChange) && "max-h-64",
           approval.requestKind === "mcp-elicitation"
             ? "whitespace-pre-wrap font-sans wrap-break-word"
             : "whitespace-pre font-mono",

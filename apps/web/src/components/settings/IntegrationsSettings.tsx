@@ -4,6 +4,7 @@ import { DeviceToolVersions } from "../device/DeviceToolVersions";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { DeviceHostsSettings } from "./DeviceHostsSettings";
+import { ConnectedToolsSettings } from "./ConnectedToolsSettings";
 /**
  * Integrations settings - preferences for surfaces Doer embeds rather than
  * owns. Browser is the first section: the defaults a preview tab opens at,
@@ -1447,6 +1448,7 @@ export function IntegrationsSettingsPanel() {
       {/* Server-authoritative agent access is scoped by the header selection;
           the preview defaults below are device-local and ignore it. */}
       <MicrosoftConnectionCard />
+      <ConnectedToolsSettings />
       <details>
         <summary className="cursor-pointer text-sm font-medium">
           Advanced browser and device settings

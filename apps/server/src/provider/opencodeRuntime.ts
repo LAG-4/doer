@@ -602,6 +602,9 @@ export interface OpenCodeV2PermissionRule {
   readonly effect: "allow" | "deny" | "ask";
 }
 
+export const isGmailSendPermission = (name: string): boolean =>
+  name === "t3-code_gmail_send_email" || name === "t3_code_gmail_send_email";
+
 /**
  * v2 permission ruleset (`{ action, resource, effect }`) mirroring
  * {@link buildOpenCodePermissionRules}. Action renames follow the v2
@@ -615,6 +618,8 @@ export function buildOpenCodeV2PermissionRules(
     return [
       { action: "*", resource: "*", effect: "allow" },
       { action: "external_directory", resource: "*", effect: "allow" },
+      { action: "t3_code_gmail_send_email", resource: "*", effect: "ask" },
+      { action: "t3-code_gmail_send_email", resource: "*", effect: "ask" },
     ];
   }
   const editEffect = runtimeMode === "auto-accept-edits" ? "allow" : "ask";
@@ -635,6 +640,8 @@ export function buildOpenCodeV2PermissionRules(
     { action: "codesearch", resource: "*", effect: "ask" },
     { action: "external_directory", resource: "*", effect: "ask" },
     { action: "question", resource: "*", effect: "allow" },
+    { action: "t3_code_gmail_send_email", resource: "*", effect: "ask" },
+    { action: "t3-code_gmail_send_email", resource: "*", effect: "ask" },
   ];
 }
 
@@ -1013,6 +1020,8 @@ export function buildOpenCodePermissionRules(runtimeMode: RuntimeMode): Permissi
     return [
       { permission: "*", pattern: "*", action: "allow" },
       { permission: "external_directory", pattern: "*", action: "allow" },
+      { permission: "t3_code_gmail_send_email", pattern: "*", action: "ask" },
+      { permission: "t3-code_gmail_send_email", pattern: "*", action: "ask" },
     ];
   }
 
@@ -1043,6 +1052,8 @@ export function buildOpenCodePermissionRules(runtimeMode: RuntimeMode): Permissi
     { permission: "external_directory", pattern: "*", action: "ask" },
     { permission: "doom_loop", pattern: "*", action: "ask" },
     { permission: "question", pattern: "*", action: "allow" },
+    { permission: "t3_code_gmail_send_email", pattern: "*", action: "ask" },
+    { permission: "t3-code_gmail_send_email", pattern: "*", action: "ask" },
   ];
 }
 

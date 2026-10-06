@@ -247,7 +247,7 @@ function stripIllegalXmlChars(value: string): string {
   return out;
 }
 
-function escapeSpreadsheetXml(value: string): string {
+export function escapeSpreadsheetXml(value: string): string {
   return stripIllegalXmlChars(value)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -672,7 +672,7 @@ function parseSheetTargets(
   return sheets;
 }
 
-interface ZipEntry {
+export interface ZipEntry {
   name: string;
   method: 0 | 8;
   /** Decompressed payload. */
@@ -686,7 +686,7 @@ function readDataView(bytes: Uint8Array): DataView {
   return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 }
 
-async function readZipEntries(bytes: Uint8Array): Promise<ZipEntry[]> {
+export async function readZipEntries(bytes: Uint8Array): Promise<ZipEntry[]> {
   if (bytes.byteLength > ZIP_MAX_COMPRESSED_BYTES) {
     throw new Error("Not a spreadsheet file (zip exceeds size limit).");
   }
@@ -842,7 +842,7 @@ async function readZipEntries(bytes: Uint8Array): Promise<ZipEntry[]> {
 const FIXED_DOS_TIME = 0;
 const FIXED_DOS_DATE = (40 << 9) | (1 << 5) | 1; // 2020-01-01, keeps output deterministic.
 
-async function writeZipEntries(entries: readonly ZipEntry[]): Promise<Uint8Array> {
+export async function writeZipEntries(entries: readonly ZipEntry[]): Promise<Uint8Array> {
   if (entries.length > ZIP_MAX_ENTRIES) {
     throw new Error("Spreadsheet has too many package entries to write.");
   }
@@ -1365,6 +1365,56 @@ export async function serializeSpreadsheet(
   target.passthrough = null;
   target.crc = 0;
   target.method = 8;
+  return writeZipEntries(entries);
+}
+
+/** Replace one existing non-formula cell without rebuilding the worksheet's formatting or charts. */
+export async function replaceSpreadsheetCell(
+  originalBytes: Uint8Array,
+  cellRef: string,
+  value: string,
+): Promise<Uint8Array> {
+  const ref = cellRef.toUpperCase();
+  if (!/^[A-Z]{1,3}[1-9][0-9]{0,6}$/.test(ref)) throw new Error("Invalid cell reference.");
+  if (value.length > 32_767) throw new Error("Cell text is too long.");
+  const entries = await readZipEntries(originalBytes);
+  const workbookXml = entryText(entries, "xl/workbook.xml");
+  if (!workbookXml) throw new Error("Not a spreadsheet file (workbook missing).");
+  const targets = parseSheetTargets(
+    workbookXml,
+    entryText(entries, "xl/_rels/workbook.xml.rels") ?? "",
+  );
+  const first = targets[0]?.entry ?? worksheetEntryNames(entries)[0];
+  if (!first) throw new Error("Not a spreadsheet file (no worksheets).");
+  const sheet = entries.find((entry) => entry.name === first);
+  if (!sheet) throw new Error("Not a spreadsheet file (worksheet missing).");
+  const xml = textDecoder().decode(sheet.data);
+  // Match the target cell whether it is paired (<c ...>...</c>) or self-closing
+  // (<c .../>), with or without a namespace prefix. The attribute section is
+  // confined to the single tag ([^>]*), so a self-closing styled blank cell
+  // can never consume its neighbor.
+  const cellPattern = new RegExp(
+    `<((?:\\w+:)?c)\\b([^>]*?\\br=["']${ref}["'][^>]*?)(?:\\/\\s*>|>((?:[\\s\\S]*?))<\\/\\1\\s*>)`,
+    "i",
+  );
+  const match = cellPattern.exec(xml);
+  if (!match) throw new Error("This cell does not exist. Choose an existing cell.");
+  const tag = match[1] ?? "c";
+  const originalContent = match[3] ?? "";
+  if (/<(?:\w+:)?f(?:\s|\/|>)/i.test(originalContent))
+    throw new Error("Formula cells cannot be replaced by this tool.");
+  const originalAttributes = (match[2] ?? "").replace(/\/\s*$/, "");
+  const attributes = originalAttributes.replace(/\s+t=["'][^"']*["']/i, "");
+  const prefix = tag.includes(":") ? `${tag.split(":")[0]}:` : "";
+  const replacement = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value)
+    ? `<${tag}${attributes}><${prefix}v>${value}</${prefix}v></${tag}>`
+    : `<${tag}${attributes} t="inlineStr"><${prefix}is><${prefix}t xml:space="preserve">${escapeSpreadsheetXml(value)}</${prefix}t></${prefix}is></${tag}>`;
+  sheet.data = textEncoder().encode(
+    xml.slice(0, match.index) + replacement + xml.slice(match.index + match[0].length),
+  );
+  sheet.passthrough = null;
+  sheet.crc = 0;
+  sheet.method = 8;
   return writeZipEntries(entries);
 }
 

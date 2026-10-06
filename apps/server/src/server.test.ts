@@ -116,6 +116,8 @@ import * as ServerConfig from "./config.ts";
 import * as DeviceService from "./device/DeviceService.ts";
 import * as ComputerService from "./computer/ComputerService.ts";
 import { HTTP_ROUTER_CONFIG, makeRoutesLayer } from "./server.ts";
+import { GmailConnection } from "./integrations/GmailConnection.ts";
+import * as GmailSendApproval from "./integrations/GmailSendApproval.ts";
 import {
   isThreadDetailEvent,
   resolveAvailableEditorsForConfig,
@@ -791,6 +793,21 @@ const buildAppUnderTest = (options?: {
     ).pipe(
       Layer.provide(
         Layer.mergeAll(
+          Layer.succeed(
+            GmailConnection,
+            GmailConnection.of({
+              status: Effect.succeed({ configured: false, connected: false, email: null }),
+              begin: Effect.die("Gmail sign-in is not available in this test"),
+              complete: () => Effect.die("Gmail sign-in is not available in this test"),
+              disconnect: Effect.void,
+              search: () => Effect.die("Gmail search is not available in this test"),
+              readMessage: () => Effect.die("Gmail read is not available in this test"),
+              listLabels: Effect.die("Gmail labels are not available in this test"),
+              modify: () => Effect.die("Gmail organization is not available in this test"),
+              send: () => Effect.die("Gmail send is not available in this test"),
+            }),
+          ),
+          GmailSendApproval.layer,
           // HttpRouter.serve exposes request-handler context outward, so the saved-memory
           // store is provided here (one shared instance) rather than inside makeRoutesLayer.
           DoerMemoryStoreLive.pipe(Layer.provide(SqlitePersistenceMemory)),
@@ -2481,6 +2498,27 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         const state = (yield* response.json) as { readonly authenticated: boolean };
         assert.equal(state.authenticated, false);
       }
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("requires owner permissions to connect or disconnect Gmail", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+      const { body } = yield* exchangeAccessToken(defaultDesktopBootstrapToken, {
+        scope: "orchestration:read orchestration:operate",
+      });
+      for (const endpoint of ["connect", "disconnect"]) {
+        const response = yield* HttpClient.post(`/api/integrations/gmail/${endpoint}`, {
+          headers: { authorization: `Bearer ${body.access_token}` },
+        });
+        assert.equal(response.status, 403);
+      }
+      const cookie = yield* getAuthenticatedSessionCookieHeader();
+      const disconnect = yield* HttpClient.post("/api/integrations/gmail/disconnect", {
+        headers: { cookie },
+      });
+      assert.equal(disconnect.status, 200);
+      assert.deepEqual(yield* disconnect.json, { disconnected: true });
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

@@ -72,6 +72,7 @@ import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts"
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Clock from "effect/Clock";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import * as GmailSendApproval from "../../integrations/GmailSendApproval.ts";
 import { ServerActivation } from "../../serverActivation.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
@@ -121,6 +122,7 @@ describe("ProviderCommandReactor", () => {
     | OrchestrationEngineService
     | ProviderCommandReactor
     | ProjectionSnapshotQuery
+    | GmailSendApproval.GmailSendApproval
     | SqlClient.SqlClient,
     unknown
   > | null = null;
@@ -463,6 +465,7 @@ describe("ProviderCommandReactor", () => {
       }),
     ).pipe(Layer.provide(orchestrationLayer));
     const layer = ProviderCommandReactorLive.pipe(
+      Layer.provideMerge(GmailSendApproval.layer),
       Layer.provideMerge(reactorOrchestrationLayer),
       Layer.provideMerge(projectionSnapshotLayer),
       Layer.provideMerge(Layer.succeed(ProviderService, service)),
@@ -503,6 +506,9 @@ describe("ProviderCommandReactor", () => {
     const engine = await runtime.runPromise(Effect.service(OrchestrationEngineService));
     const snapshotQuery = await runtime.runPromise(Effect.service(ProjectionSnapshotQuery));
     const reactor = await runtime.runPromise(Effect.service(ProviderCommandReactor));
+    const gmailApprovals = await runtime.runPromise(
+      Effect.service(GmailSendApproval.GmailSendApproval),
+    );
     const runEffect = <A, E>(effect: Effect.Effect<A, E>) => runtime!.runPromise(effect);
 
     await Effect.runPromise(
@@ -599,6 +605,7 @@ describe("ProviderCommandReactor", () => {
     const drain = () => Effect.runPromise(reactor.drain);
 
     return {
+      gmailApprovals,
       engine,
       snapshotQuery,
       readModel: () => Effect.runPromise(snapshotQuery.getSnapshot()),
@@ -4050,6 +4057,62 @@ describe("ProviderCommandReactor", () => {
         detail: expect.stringContaining("without a provider instance id"),
       },
     });
+  });
+
+  it("routes Gmail review decisions to the server without provider approval support", async () => {
+    const harness = await createHarness();
+    const threadId = ThreadId.make("thread-1");
+    const pending = await harness.runEffect(harness.gmailApprovals.create(threadId));
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.approval.respond",
+        commandId: CommandId.make("gmail-approve"),
+        threadId,
+        requestId: pending.requestId,
+        decision: "accept",
+        createdAt: "2026-10-04T00:00:00.000Z",
+      }),
+    );
+    await harness.drain();
+    expect(await harness.runEffect(pending.awaitDecision)).toBe(true);
+    expect(harness.respondToRequest).not.toHaveBeenCalled();
+  });
+
+  it("closes a stale Gmail review after a server restart without forwarding it", async () => {
+    const harness = await createHarness();
+    await harness.runEffect(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const events = yield* harness.engine.subscribeDomainEvents;
+          yield* harness.engine.dispatch({
+            type: "thread.approval.respond",
+            commandId: CommandId.make("gmail-stale-approve"),
+            threadId: ThreadId.make("thread-1"),
+            requestId: ApprovalRequestId.make("gmail-send:stale"),
+            decision: "accept",
+            createdAt: "2026-10-04T00:00:00.000Z",
+          });
+          const resolved = yield* events.pipe(
+            Stream.filter(
+              (event) =>
+                event.type === "thread.activity-appended" &&
+                event.payload.activity.kind === "approval.resolved",
+            ),
+            Stream.runHead,
+          );
+          expect(Option.isSome(resolved)).toBe(true);
+        }),
+      ),
+    );
+    await harness.drain();
+    expect(harness.respondToRequest).not.toHaveBeenCalled();
+    const snapshot = await harness.readModel();
+    expect(snapshot.threads[0]?.activities).toContainEqual(
+      expect.objectContaining({
+        kind: "approval.resolved",
+        summary: "Gmail review expired; no action was performed",
+      }),
+    );
   });
 
   it("forwards approval responses without reading unrelated message bodies", async () => {

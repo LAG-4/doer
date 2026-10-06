@@ -8,7 +8,11 @@ import { createContext, type ReactNode, useContext, useMemo } from "react";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import { getProjectFileQueryAtom, optimisticFileAtom } from "../files/projectFilesQueryState";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
-import { resolveScopedSettingsTargets, selectScopedSettingsEnvironments } from "./scopedSettings";
+import {
+  computerSettingsScope,
+  resolveScopedSettingsTargets,
+  selectScopedSettingsEnvironments,
+} from "./scopedSettings";
 import { resolveSettingsScope, type SettingsScopeSearch } from "./settingsScope";
 import { selectSingleEnvironmentScope } from "./settingsScopeAxis";
 
@@ -134,4 +138,19 @@ export function useSettingsScope() {
   const scope = useOptionalSettingsScope();
   if (scope === null) throw new Error("Settings scope must be read inside SettingsScopeProvider.");
   return scope;
+}
+
+/** Shared connections always show and edit the selected computers' settings. */
+export function ComputerSettingsScope({ children }: { children: ReactNode }) {
+  const parent = useSettingsScope();
+  const value = useMemo(() => {
+    const scope = computerSettingsScope(parent.scope);
+    const targets = resolveScopedSettingsTargets(scope, parent.connectedEnvironments);
+    const target =
+      targets.find((candidate) => candidate.environmentId === parent.environment?.environmentId) ??
+      targets[0] ??
+      null;
+    return { ...parent, scope, targets, target };
+  }, [parent]);
+  return <SettingsScopeContext value={value}>{children}</SettingsScopeContext>;
 }

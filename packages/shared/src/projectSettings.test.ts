@@ -8,6 +8,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { createModelSelection } from "./model.ts";
 import {
   clearProjectSettingsOverrides,
+  CONNECTED_TOOL_SETTING_KEYS,
   hasProjectSettingsOverrides,
   resolveProjectFileBackedSetting,
   resolveProjectSettings,
@@ -20,6 +21,21 @@ const projectId = ProjectId.make("project-a");
 const otherProjectId = ProjectId.make("project-b");
 
 describe("resolveProjectSettings", () => {
+  it.each(CONNECTED_TOOL_SETTING_KEYS)(
+    "uses the shared computer switch for %s despite old Space overrides",
+    (key) => {
+      for (const enabled of [false, true]) {
+        const settings = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+          [key]: enabled,
+          projectSettingsOverrides: { [projectId]: { [key]: !enabled, defaultAutoPull: true } },
+        });
+        const resolved = resolveProjectSettings(settings, projectId);
+        expect(resolved.settings[key]).toBe(enabled);
+        expect(resolved.sources[key]).toBe("environment");
+        expect(resolved.settings.defaultAutoPull).toBe(true);
+      }
+    },
+  );
   it("inherits every scopable key when the project has no overrides", () => {
     const resolved = resolveProjectSettings(DEFAULT_SERVER_SETTINGS, projectId);
     expect(resolved.settings).toBe(DEFAULT_SERVER_SETTINGS);

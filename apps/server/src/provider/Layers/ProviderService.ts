@@ -920,6 +920,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         browser: settings.enableAgentBrowserAccess,
         device: settings.enableAgentDeviceAccess,
         computer: settings.enableAgentComputerAccess,
+        gmail: settings.enableGmailAccess,
+        spreadsheets: settings.enableLocalSpreadsheetAccess,
+        presentations: settings.enableLocalPresentationAccess,
       };
       if (!browserOverridden && !deviceOverridden && !computerOverridden) return environment;
       // Provider-only runtimes may omit orchestration. An unresolved project
@@ -929,6 +932,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         browser: browserOverridden ? false : environment.browser,
         device: deviceOverridden ? false : environment.device,
         computer: computerOverridden ? false : environment.computer,
+        gmail: environment.gmail,
+        spreadsheets: environment.spreadsheets,
+        presentations: environment.presentations,
       };
       if (Option.isNone(projectionQuery)) return denied;
       const thread = yield* projectionQuery.value.getThreadShellById(threadId);
@@ -938,13 +944,25 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         browser: resolved.enableAgentBrowserAccess,
         device: resolved.enableAgentDeviceAccess,
         computer: resolved.enableAgentComputerAccess,
+        gmail: resolved.enableGmailAccess,
+        spreadsheets: resolved.enableLocalSpreadsheetAccess,
+        presentations: resolved.enableLocalPresentationAccess,
       };
     },
     Effect.catch((cause) =>
       Effect.logWarning(
         "Could not read server settings; withholding agent browser, device, and computer access for this session.",
         { cause },
-      ).pipe(Effect.as({ browser: false, device: false, computer: false })),
+      ).pipe(
+        Effect.as({
+          browser: false,
+          device: false,
+          computer: false,
+          gmail: false,
+          spreadsheets: false,
+          presentations: false,
+        }),
+      ),
     ),
   );
 
@@ -959,6 +977,13 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     if (access.browser) capabilities.add("preview");
     if (access.device) capabilities.add("device");
     if (access.computer) capabilities.add("computer");
+    // Connected tools ride along on every credential: their handlers re-read
+    // the live switch (and task state) on each call, so turning access off
+    // still revokes use while turning it on needs no session restart. The
+    // registry is in-memory, so a server restart re-mints credentials anyway.
+    capabilities.add("gmail");
+    capabilities.add("local-spreadsheets");
+    capabilities.add("local-presentations");
     return capabilities;
   });
 

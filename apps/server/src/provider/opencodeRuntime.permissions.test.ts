@@ -68,11 +68,15 @@ describe("buildOpenCodePermissionRules", () => {
     }
   });
 
-  it("allows everything only under full access", () => {
+  it("keeps Gmail send approval even under full access", () => {
     NodeAssert.deepEqual(buildOpenCodePermissionRules("full-access"), [
       { permission: "*", pattern: "*", action: "allow" },
       { permission: "external_directory", pattern: "*", action: "allow" },
+      { permission: "t3_code_gmail_send_email", pattern: "*", action: "ask" },
+      { permission: "t3-code_gmail_send_email", pattern: "*", action: "ask" },
     ]);
+    NodeAssert.equal(actionFor("full-access", "t3_code_gmail_send_email"), "ask");
+    NodeAssert.equal(actionFor("full-access", "t3-code_gmail_send_email"), "ask");
   });
 });
 

@@ -5115,7 +5115,10 @@ describe("agent browser access", () => {
     projectOverride?:
       | boolean
       | { readonly browser?: boolean; readonly device?: boolean; readonly computer?: boolean },
-    options?: { readonly withoutOrchestration?: boolean },
+    options?: {
+      readonly withoutOrchestration?: boolean;
+      readonly connectedTools?: { readonly enabled: boolean; readonly legacyOverride: boolean };
+    },
   ) =>
     Effect.gen(function* () {
       const enableAgentBrowserAccess = typeof access === "boolean" ? access : access.browser;
@@ -5205,9 +5208,24 @@ describe("agent browser access", () => {
             enableAgentBrowserAccess,
             enableAgentDeviceAccess,
             enableAgentComputerAccess,
+            ...(options?.connectedTools
+              ? {
+                  enableGmailAccess: options.connectedTools.enabled,
+                  enableLocalSpreadsheetAccess: options.connectedTools.enabled,
+                  enableLocalPresentationAccess: options.connectedTools.enabled,
+                }
+              : {}),
             projectSettingsOverrides:
               projectOverride === undefined
-                ? {}
+                ? options?.connectedTools
+                  ? {
+                      [projectId]: {
+                        enableGmailAccess: options.connectedTools.legacyOverride,
+                        enableLocalSpreadsheetAccess: options.connectedTools.legacyOverride,
+                        enableLocalPresentationAccess: options.connectedTools.legacyOverride,
+                      },
+                    }
+                  : {}
                 : typeof projectOverride === "boolean"
                   ? { [projectId]: { enableAgentBrowserAccess: projectOverride } }
                   : {
@@ -5248,16 +5266,52 @@ describe("agent browser access", () => {
       return issued;
     });
 
-  // The capability on the credential is the observable that matters: a session
-  // always gets a credential (the pull request toolkit is never withheld), and
-  // `preview` on it is what actually grants or denies the browser tools.
+  // The connected-tool capabilities ride along on every credential: the
+  // handlers re-read the live switch on each call, so turning access off
+  // still revokes use while turning it on needs no session restart.
+  it.effect(
+    "connected tool credentials are always issued while legacy Space overrides still gate use",
+    () =>
+      Effect.gen(function* () {
+        for (const enabled of [false, true]) {
+          const threadId = asThreadId(`thread-shared-tools-${enabled}`);
+          const issued = yield* startSessionWith(false, threadId, undefined, {
+            withoutOrchestration: true,
+            connectedTools: { enabled, legacyOverride: !enabled },
+          });
+          assert.deepEqual(issued, [
+            {
+              threadId,
+              capabilities: [
+                "automations",
+                "gmail",
+                "local-presentations",
+                "local-spreadsheets",
+                "pull-requests",
+              ],
+            },
+          ]);
+        }
+      }).pipe(Effect.provide(NodeServices.layer)),
+  );
   it.effect("issues a credential without preview when agent browser access is off", () =>
     Effect.gen(function* () {
       const threadId = asThreadId("thread-browser-off");
 
       const issued = yield* startSessionWith(false, threadId);
 
-      assert.deepEqual(issued, [{ threadId, capabilities: ["automations", "pull-requests"] }]);
+      assert.deepEqual(issued, [
+        {
+          threadId,
+          capabilities: [
+            "automations",
+            "gmail",
+            "local-presentations",
+            "local-spreadsheets",
+            "pull-requests",
+          ],
+        },
+      ]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
@@ -5270,7 +5324,16 @@ describe("agent browser access", () => {
       assert.deepEqual(issued, [
         {
           threadId,
-          capabilities: ["automations", "computer", "device", "preview", "pull-requests"],
+          capabilities: [
+            "automations",
+            "computer",
+            "device",
+            "gmail",
+            "local-presentations",
+            "local-spreadsheets",
+            "preview",
+            "pull-requests",
+          ],
         },
       ]);
     }).pipe(Effect.provide(NodeServices.layer)),
@@ -5283,7 +5346,17 @@ describe("agent browser access", () => {
       const issued = yield* startSessionWith({ browser: false, device: true }, threadId);
 
       assert.deepEqual(issued, [
-        { threadId, capabilities: ["automations", "device", "pull-requests"] },
+        {
+          threadId,
+          capabilities: [
+            "automations",
+            "device",
+            "gmail",
+            "local-presentations",
+            "local-spreadsheets",
+            "pull-requests",
+          ],
+        },
       ]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
@@ -5292,7 +5365,18 @@ describe("agent browser access", () => {
     Effect.gen(function* () {
       const threadId = asThreadId("thread-project-browser-off");
       const issued = yield* startSessionWith({ browser: true, device: false }, threadId, false);
-      assert.deepEqual(issued, [{ threadId, capabilities: ["automations", "pull-requests"] }]);
+      assert.deepEqual(issued, [
+        {
+          threadId,
+          capabilities: [
+            "automations",
+            "gmail",
+            "local-presentations",
+            "local-spreadsheets",
+            "pull-requests",
+          ],
+        },
+      ]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
@@ -5301,7 +5385,18 @@ describe("agent browser access", () => {
       const threadId = asThreadId("thread-project-browser-off-device-on");
       const issued = yield* startSessionWith(true, threadId, false);
       assert.deepEqual(issued, [
-        { threadId, capabilities: ["automations", "computer", "device", "pull-requests"] },
+        {
+          threadId,
+          capabilities: [
+            "automations",
+            "computer",
+            "device",
+            "gmail",
+            "local-presentations",
+            "local-spreadsheets",
+            "pull-requests",
+          ],
+        },
       ]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
@@ -5311,7 +5406,17 @@ describe("agent browser access", () => {
       const threadId = asThreadId("thread-project-browser-on");
       const issued = yield* startSessionWith({ browser: false, device: false }, threadId, true);
       assert.deepEqual(issued, [
-        { threadId, capabilities: ["automations", "preview", "pull-requests"] },
+        {
+          threadId,
+          capabilities: [
+            "automations",
+            "gmail",
+            "local-presentations",
+            "local-spreadsheets",
+            "preview",
+            "pull-requests",
+          ],
+        },
       ]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
@@ -5323,7 +5428,17 @@ describe("agent browser access", () => {
         device: true,
       });
       assert.deepEqual(issued, [
-        { threadId, capabilities: ["automations", "device", "pull-requests"] },
+        {
+          threadId,
+          capabilities: [
+            "automations",
+            "device",
+            "gmail",
+            "local-presentations",
+            "local-spreadsheets",
+            "pull-requests",
+          ],
+        },
       ]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
@@ -5336,7 +5451,17 @@ describe("agent browser access", () => {
         threadId,
       );
       assert.deepEqual(issued, [
-        { threadId, capabilities: ["automations", "computer", "pull-requests"] },
+        {
+          threadId,
+          capabilities: [
+            "automations",
+            "computer",
+            "gmail",
+            "local-presentations",
+            "local-spreadsheets",
+            "pull-requests",
+          ],
+        },
       ]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
@@ -5350,7 +5475,17 @@ describe("agent browser access", () => {
           computer: true,
         });
         assert.deepEqual(issued, [
-          { threadId, capabilities: ["automations", "computer", "pull-requests"] },
+          {
+            threadId,
+            capabilities: [
+              "automations",
+              "computer",
+              "gmail",
+              "local-presentations",
+              "local-spreadsheets",
+              "pull-requests",
+            ],
+          },
         ]);
       }).pipe(Effect.provide(NodeServices.layer)),
   );
@@ -5367,7 +5502,17 @@ describe("agent browser access", () => {
         { withoutOrchestration: true },
       );
       assert.deepEqual(issued, [
-        { threadId, capabilities: ["automations", "preview", "pull-requests"] },
+        {
+          threadId,
+          capabilities: [
+            "automations",
+            "gmail",
+            "local-presentations",
+            "local-spreadsheets",
+            "preview",
+            "pull-requests",
+          ],
+        },
       ]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );

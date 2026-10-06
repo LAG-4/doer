@@ -59,6 +59,10 @@ export function buildGrokAcpSpawnInput(
       ...environment,
       [GROK_OAUTH2_REFERRER_ENV]: T3_CODE_OAUTH_REFERRER,
     },
+    // Predicate on the environment argument (not env presence: the referrer
+    // object above always exists). Explicit full provider env ⇒ isolated;
+    // otherwise inherit.
+    extendEnv: environment === undefined,
   };
 }
 

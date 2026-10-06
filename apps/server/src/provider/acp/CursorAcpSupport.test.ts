@@ -56,6 +56,7 @@ describe("buildCursorAcpSpawnInput", () => {
       command: "cursor-agent",
       args: ["acp"],
       cwd: "/tmp/project",
+      extendEnv: true,
     });
   });
 
@@ -72,6 +73,7 @@ describe("buildCursorAcpSpawnInput", () => {
       command: "/usr/local/bin/agent",
       args: ["-e", "http://localhost:3000", "acp"],
       cwd: "/tmp/project",
+      extendEnv: true,
     });
   });
 
@@ -80,6 +82,7 @@ describe("buildCursorAcpSpawnInput", () => {
       command: "cursor-agent",
       args: ["--force", "acp"],
       cwd: "/tmp/project",
+      extendEnv: true,
     });
   });
 
@@ -88,6 +91,7 @@ describe("buildCursorAcpSpawnInput", () => {
       command: "cursor-agent",
       args: ["--auto-review", "acp"],
       cwd: "/tmp/project",
+      extendEnv: true,
     });
   });
 
@@ -98,9 +102,28 @@ describe("buildCursorAcpSpawnInput", () => {
         command: "cursor-agent",
         args: ["acp"],
         cwd: "/tmp/project",
+        extendEnv: true,
       });
     },
   );
+
+  it("isolates an explicitly supplied full provider environment from ambient secrets", () => {
+    const spawn = buildCursorAcpSpawnInput(undefined, "/tmp/project", {
+      CURSOR_SENTINEL_KEEP: "keep-me",
+      DOER_GMAIL_ENCRYPTION_KEY: "ambient-vault",
+      DOER_GOOGLE_OAUTH_CLIENT_SECRET: "ambient-oauth",
+    });
+    // Adapters filter the map itself; the spawn input must not re-inherit the
+    // ambient process environment on top of it.
+    expect(spawn.extendEnv).toBe(false);
+    expect(spawn.env?.CURSOR_SENTINEL_KEEP).toBe("keep-me");
+  });
+
+  it("keeps inherited behavior when no environment is supplied", () => {
+    const spawn = buildCursorAcpSpawnInput(undefined, "/tmp/project");
+    expect(spawn.extendEnv).toBe(true);
+    expect("env" in spawn).toBe(false);
+  });
 });
 
 describe("applyCursorAcpModelSelection", () => {

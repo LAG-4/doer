@@ -78,6 +78,7 @@ import {
   buildOpenCodeV2PermissionRules,
   createOpenCodeV2Client,
   isOpenCodeAgentNotFoundError,
+  isGmailSendPermission,
   matchKnownAgentName,
   OpenCodeRuntime,
   OpenCodeRuntimeError,
@@ -658,11 +659,16 @@ export function makeOpenCodeAdapterV2(
           ...(request.metadata !== undefined ? { args: request.metadata } : {}),
           options: [
             { decision: "accept", label: "Allow once" },
-            {
-              decision: "acceptForSession",
-              label: "Allow for workspace",
-              warning: "Applies to matching requests in other OpenCode sessions in this workspace.",
-            },
+            ...(!isGmailSendPermission(request.action)
+              ? [
+                  {
+                    decision: "acceptForSession" as const,
+                    label: "Allow for workspace",
+                    warning:
+                      "Applies to matching requests in other OpenCode sessions in this workspace.",
+                  },
+                ]
+              : []),
             { decision: "decline", label: "Deny" },
           ],
         },
@@ -1110,7 +1116,10 @@ export function makeOpenCodeAdapterV2(
           break;
         }
         case "permission.asked": {
-          if (context.session.runtimeMode === "full-access") {
+          if (
+            context.session.runtimeMode === "full-access" &&
+            !isGmailSendPermission(event.data.action)
+          ) {
             yield* autoReplyV2FullAccess(context, event.data).pipe(
               Effect.forkIn(context.sessionScope),
             );

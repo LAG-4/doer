@@ -2310,7 +2310,15 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           ...(options?.models ? { models: options.models } : {}),
           binaryPath: effectiveConfig.binaryPath,
           launchArgs: resolveCodexLaunchArgs(effectiveConfig.launchArgs, effectiveEnvironment),
-          ...(effectiveEnvironment ? { environment: effectiveEnvironment } : {}),
+          // Always pass an explicit environment so the Gmail vault key and
+          // OAuth secret never leak into the provider subprocess.
+          environment: McpProviderSession.withAgentComputerEnvironment(
+            McpProviderSession.withAgentDeviceEnvironment(
+              effectiveEnvironment ?? process.env,
+              mcpSession,
+            ),
+            mcpSession,
+          ),
           ...(effectiveConfig.homePath ? { homePath: effectiveConfig.homePath } : {}),
           ...(isCodexResumeCursorSchema(input.resumeCursor)
             ? { resumeCursor: input.resumeCursor }

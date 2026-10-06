@@ -148,7 +148,7 @@ describe("buildOpenCodeV2PermissionRules", () => {
     NodeAssert.equal(editEffect("auto"), "ask");
   });
 
-  it("keeps environment-file read approvals and allows everything under full access", () => {
+  it("keeps environment-file read approvals and Gmail send approval under full access", () => {
     const rules = buildOpenCodeV2PermissionRules("approval-required");
     NodeAssert.equal(
       rules.findLast((rule) => rule.action === "read" && rule.resource === "*.env")?.effect,
@@ -157,6 +157,8 @@ describe("buildOpenCodeV2PermissionRules", () => {
     NodeAssert.deepEqual(buildOpenCodeV2PermissionRules("full-access"), [
       { action: "*", resource: "*", effect: "allow" },
       { action: "external_directory", resource: "*", effect: "allow" },
+      { action: "t3_code_gmail_send_email", resource: "*", effect: "ask" },
+      { action: "t3-code_gmail_send_email", resource: "*", effect: "ask" },
     ]);
   });
 });
