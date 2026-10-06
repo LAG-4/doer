@@ -343,4 +343,67 @@ describe("projectActivityPayload", () => {
     const projected = projectActivityPayload(source);
     expect(projected.payload).toEqual(source.payload);
   });
+
+  it("keeps tool screenshot bytes out of the timeline with markers and text intact", () => {
+    const screenshot = {
+      type: "image",
+      source: { type: "base64", media_type: "image/png", data: "iVBORw0KGgo=" },
+    };
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "mcp_tool_call",
+        data: {
+          toolName: "mcp__t3-code__device_screenshot",
+          input: { deviceId: "phone" },
+          result: {
+            content: [
+              { type: "text", text: "Captured the home screen." },
+              screenshot,
+              { type: "image", mimeType: "image/svg+xml", data: "<svg/>" },
+            ],
+          },
+        },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+    expect(data.result).toEqual({
+      content: "Captured the home screen.",
+      images: [{ type: "image", mimeType: "image/png" }],
+    });
+    expect(JSON.stringify(projected.payload)).not.toContain("iVBORw0KGgo=");
+  });
+
+  it("keeps image markers for Codex-shaped items and drops marker-only replays", () => {
+    const source = activity({
+      itemType: "mcp_tool_call",
+      data: {
+        item: {
+          type: "mcpToolCall",
+          id: "item-9",
+          tool: "device_screenshot",
+          server: "t3-code",
+          status: "completed",
+          arguments: {},
+          result: {
+            content: [
+              { type: "image", data: "AAAA", mimeType: "image/png" },
+              { type: "image", mimeType: "image/png" },
+            ],
+          },
+        },
+      },
+    });
+    const projected = projectActivityPayload(source);
+    const item = ((projected.payload as Record<string, unknown>).data as Record<string, unknown>)
+      .item as Record<string, unknown>;
+    // Both the block carrying bytes and the marker-only block become markers
+    // in stored order, and a second projection pass keeps them as-is.
+    expect(item.result).toEqual({
+      images: [
+        { type: "image", mimeType: "image/png" },
+        { type: "image", mimeType: "image/png" },
+      ],
+    });
+    expect(projectActivityPayload(projected).payload).toEqual(projected.payload);
+  });
 });

@@ -13,6 +13,9 @@ import {
   AssetWorkspacePathValidationError,
   AssetWorkspaceResolutionError,
   AssetWorkspaceRootNormalizationError,
+  EventId,
+  PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+  ThreadId,
   ToolActivityNativeAppReference,
 } from "@t3tools/contracts";
 import {
@@ -30,6 +33,7 @@ import {
 } from "@t3tools/shared/imageDimensions";
 import { githubMediaFetchUrl, githubMediaFileName } from "@t3tools/shared/githubMedia";
 import { PROJECT_FAVICON_FALLBACK_MARKER } from "@t3tools/shared/projectFavicon";
+import { toolOutputImages } from "@t3tools/shared/toolOutput";
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -49,6 +53,7 @@ import {
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { parseAttachmentFileExtension, resolveAttachmentPathById } from "../attachmentStore.ts";
 import * as ServerConfig from "../config.ts";
+import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as NativeAppIconResolver from "./NativeAppIconResolver.ts";
@@ -140,6 +145,14 @@ const AssetClaimsSchema = Schema.Union([
   }),
   Schema.Struct({
     version: Schema.Literal(1),
+    kind: Schema.Literal("tool-output-image"),
+    threadId: ThreadId,
+    activityId: EventId,
+    index: Schema.Number,
+    expiresAt: Schema.Number,
+  }),
+  Schema.Struct({
+    version: Schema.Literal(1),
     kind: Schema.Literal("github-media"),
     /** Already narrowed to a GitHub media host at mint time; the signature is what keeps it there. */
     url: Schema.String,
@@ -161,6 +174,11 @@ export type ResolvedAsset =
       readonly fileName?: string;
       readonly mimeType?: string;
       readonly file?: OpenMediaFile;
+    }
+  | {
+      readonly kind: "bytes";
+      readonly bytes: Uint8Array;
+      readonly mimeType: string;
     }
   | {
       readonly kind: "github-media";
@@ -197,6 +215,40 @@ const optionOnNotFound = <A, R>(
         error.reason._tag === "NotFound" ? Effect.succeed(Option.none<A>()) : Effect.fail(error),
     }),
   );
+
+// The largest image a provider turn accepts, as base64 (4 characters per 3 bytes).
+const MAX_TOOL_OUTPUT_IMAGE_BASE64_LENGTH = Math.ceil(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES / 3) * 4;
+
+function asStoredRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+/**
+ * Decodes one image a tool returned inline from the activity's full stored
+ * payload; null when the stored activity has no such image, or it is larger
+ * than a provider turn accepts. Uses the same order as the projection's
+ * markers: the stored `item.result` wins when present, otherwise the stored
+ * `data.result`.
+ */
+const readToolOutputImage = Effect.fn("AssetAccess.readToolOutputImage")(function* (input: {
+  readonly threadId: ThreadId;
+  readonly activityId: EventId;
+  readonly index: number;
+}) {
+  const snapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
+  const payload = yield* snapshotQuery.getThreadActivityPayload(input);
+  if (Option.isNone(payload)) return null;
+  const data = asStoredRecord(asStoredRecord(payload.value)?.data);
+  if (!data) return null;
+  const item = asStoredRecord(data.item);
+  const result = item ? item.result : data.result;
+  const image = toolOutputImages(result)[input.index];
+  return image?.data === undefined || image.data.length > MAX_TOOL_OUTPUT_IMAGE_BASE64_LENGTH
+    ? null
+    : { mimeType: image.mimeType, bytes: Buffer.from(image.data, "base64") };
+});
 
 const resolveCanonicalFile = Effect.fn("AssetAccess.resolveCanonicalFile")(function* (
   filePath: string,
@@ -676,6 +728,28 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
       }
       break;
     }
+    case "tool-output-image": {
+      const image = yield* readToolOutputImage(input.resource).pipe(
+        Effect.mapError(
+          (cause) => new AssetWorkspaceAssetInspectionError({ resource: input.resource, cause }),
+        ),
+      );
+      if (image === null) {
+        return yield* new AssetWorkspaceAssetNotFoundError({ resource: input.resource });
+      }
+      claims = {
+        version: 1,
+        kind: "tool-output-image",
+        threadId: input.resource.threadId,
+        activityId: input.resource.activityId,
+        index: input.resource.index,
+        expiresAt,
+      };
+      // The allowed types are all `image/<extension>`.
+      fileName = `image-${input.resource.index + 1}.${image.mimeType.slice("image/".length)}`;
+      imageDimensions = readImageDimensions(image.bytes);
+      break;
+    }
     case "native-app-icon": {
       claims = {
         version: 1,
@@ -808,6 +882,20 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
       cwd: claims.cwd,
       expiresAt: claims.expiresAt,
     } satisfies ResolvedAsset;
+  }
+
+  if (claims.kind === "tool-output-image") {
+    const image = yield* readToolOutputImage(claims).pipe(
+      Effect.tapError((cause) =>
+        Effect.logError("Failed to read tool output image.", {
+          threadId: claims.threadId,
+          activityId: claims.activityId,
+          cause,
+        }),
+      ),
+      Effect.orElseSucceed(() => null),
+    );
+    return image ? ({ kind: "bytes", ...image } satisfies ResolvedAsset) : null;
   }
 
   if (claims.kind === "native-app-icon") {

@@ -2,13 +2,19 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import * as NodeFSP from "node:fs/promises";
-import { AssetAccessError, AssetPreviewTypeValidationError, ThreadId } from "@t3tools/contracts";
+import {
+  AssetAccessError,
+  AssetPreviewTypeValidationError,
+  EventId,
+  ThreadId,
+} from "@t3tools/contracts";
 import { PROJECT_FAVICON_FALLBACK_MARKER } from "@t3tools/shared/projectFavicon";
 import { describe, expect, it } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
@@ -19,6 +25,7 @@ import { vi } from "vite-plus/test";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
+import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
 import * as T3ProjectFileLoader from "../project/T3ProjectFileLoader.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
@@ -38,6 +45,17 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 const configLayer = ServerConfig.ServerConfig.layerTest(process.cwd(), {
   prefix: "t3-asset-access-test-",
 });
+const toolOutputImagePayloadLayer = Layer.mock(ProjectionSnapshotQuery.ProjectionSnapshotQuery)({
+  getThreadActivityPayload: ({ activityId }) =>
+    Effect.succeed(
+      activityId === "activity-oversized"
+        ? Option.some(oversizedScreenshotPayload)
+        : activityId === "activity-1"
+          ? Option.some(storedScreenshotPayload)
+          : Option.none(),
+    ),
+});
+
 const testLayer = Layer.mergeAll(
   NodeHttpPlatform.layer,
   configLayer,
@@ -48,7 +66,54 @@ const testLayer = Layer.mergeAll(
   ),
   NativeAppIconResolver.layer.pipe(Layer.provide(configLayer)),
   ServerSecretStore.layer.pipe(Layer.provide(configLayer)),
+  toolOutputImagePayloadLayer,
 ).pipe(Layer.provideMerge(NodeServices.layer));
+
+// A PNG header is enough for the dimension read: signature, then IHDR width and height.
+const screenshotPngBytes = new Uint8Array(24);
+screenshotPngBytes.set([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52,
+]);
+new DataView(screenshotPngBytes.buffer).setUint32(16, 390);
+new DataView(screenshotPngBytes.buffer).setUint32(20, 844);
+
+const storedScreenshotPayload = {
+  data: {
+    toolName: "mcp__t3-code__device_screenshot",
+    input: { deviceId: "phone" },
+    result: {
+      content: [
+        { type: "text", text: "Captured the home screen." },
+        {
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: "image/png",
+            data: Buffer.from(screenshotPngBytes).toString("base64"),
+          },
+        },
+      ],
+    },
+  },
+};
+
+const oversizedScreenshotPayload = {
+  data: {
+    toolName: "mcp__t3-code__device_screenshot",
+    result: {
+      content: [
+        {
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: "image/png",
+            data: "A".repeat(14 * 1024 * 1024),
+          },
+        },
+      ],
+    },
+  },
+};
 
 describe("AssetAccess", () => {
   it.effect("loads private media immediately after login and reuses the found credential", () => {
@@ -154,6 +219,35 @@ describe("AssetAccess", () => {
       expect((yield* issue("shot.png")).imageDimensions).toEqual({ width: 1600, height: 900 });
       expect((yield* issue("clip.mp4")).imageDimensions).toBeUndefined();
       expect((yield* issue("broken.png")).imageDimensions).toBeUndefined();
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect("serves an image a tool returned inline from the stored activity", () =>
+    Effect.gen(function* () {
+      const resource = {
+        _tag: "tool-output-image" as const,
+        threadId: ThreadId.make("thread-1"),
+        activityId: EventId.make("activity-1"),
+        index: 0,
+      };
+      const result = yield* issueAssetUrl({ resource });
+      expect(result.imageDimensions).toEqual({ width: 390, height: 844 });
+      const suffix = result.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+      const separator = suffix.indexOf("/");
+      expect(yield* resolveAsset(suffix.slice(0, separator), suffix.slice(separator + 1))).toEqual({
+        kind: "bytes",
+        mimeType: "image/png",
+        bytes: Buffer.from(screenshotPngBytes),
+      });
+      const missing = yield* issueAssetUrl({ resource: { ...resource, index: 1 } }).pipe(
+        Effect.flip,
+      );
+      expect(missing._tag).toBe("AssetWorkspaceAssetNotFoundError");
+      // Larger than a provider turn accepts, so it is never decoded.
+      const oversized = yield* issueAssetUrl({
+        resource: { ...resource, activityId: EventId.make("activity-oversized") },
+      }).pipe(Effect.flip);
+      expect(oversized._tag).toBe("AssetWorkspaceAssetNotFoundError");
     }).pipe(Effect.provide(testLayer)),
   );
 

@@ -22,6 +22,7 @@ const makeTempHome = Effect.fn("InboxProvisioning.test.makeTempHome")(function* 
 
 const unusedProjection = {
   getUserInputActivity: () => Effect.die("unused"),
+  getThreadActivityPayload: () => Effect.die("unused"),
   getCommandReadModel: () => Effect.die("unused"),
   getSnapshot: () => Effect.die("unused"),
   getShellSnapshot: () => Effect.die("unused"),

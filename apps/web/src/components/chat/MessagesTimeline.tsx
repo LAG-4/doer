@@ -34,6 +34,7 @@ import {
   omitSupersededLifecycleMarkers,
 } from "@t3tools/client-runtime/work-log/presentation";
 import { resolveWorkGroupScrollAnchor } from "@t3tools/client-runtime/work-log/scroll-anchor";
+import { toolOutputImageResources } from "@t3tools/client-runtime/work-log/tool-output";
 import type {
   AgentPanelModel,
   RuntimeSubagent,
@@ -4794,6 +4795,16 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
           workspaceRoot,
         })
       : null;
+  // Screenshots a tool returned inline load as signed image assets by their
+  // marker order; the expanded text body keeps the projected summary.
+  const outputImages =
+    expanded && threadRef && workEntry.toolData !== undefined
+      ? toolOutputImageResources({
+          threadId: threadRef.threadId,
+          activityId: workEntry.id,
+          toolData: workEntry.toolData,
+        })
+      : [];
   const canExpand =
     Boolean(workEntry.questionAnswer) ||
     (showFailedIndicator && previewText.trim().length > 0) ||
@@ -4944,6 +4955,24 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
             maxHeightRem={16}
             onImageExpand={onImageExpand}
           />
+        </div>
+      ) : null}
+      {expanded && outputImages.length > 0 && threadRef ? (
+        <div
+          className="mt-1 ms-7 flex cursor-default flex-col gap-1.5"
+          onClick={stopRowToggle}
+          onPointerDown={stopRowToggle}
+        >
+          {outputImages.map((resource) => (
+            <ChatMarkdownAssetImage
+              key={resource.index}
+              environmentId={threadRef.environmentId}
+              resource={resource}
+              alt="Tool output image"
+              maxHeightRem={16}
+              onImageExpand={onImageExpand}
+            />
+          ))}
         </div>
       ) : null}
       {expanded && workEntry.questionAnswer ? (

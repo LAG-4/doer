@@ -4,8 +4,10 @@ import type {
   OrchestrationThreadActivity,
   OrchestrationThreadDetailSnapshot,
 } from "@t3tools/contracts";
+import { isProviderSendTurnSupportedImageMimeType } from "@t3tools/contracts";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
 import { extractJsonObject } from "@t3tools/shared/schemaJson";
+import { toolOutputImages } from "@t3tools/shared/toolOutput";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -239,7 +241,35 @@ function summarizeMcpResult(result: unknown): Record<string, unknown> | undefine
   }
   const text = extractMcpResultText(result);
   const summary = text ? summarizeToolTextOutput(text) : null;
-  return summary ? { content: summary } : undefined;
+  // Image blocks never reach the timeline as bytes; keep their positions as
+  // markers so clients can load each one as a tool-output-image asset, in
+  // order. ws.ts/http.ts project reads a second time before sending, so
+  // markers from an earlier pass ride along and the projection is a fixed
+  // point; only raster types are marked, so agents' SVG/HTML stay text.
+  const prior = asRecord(result)?.images;
+  const carried = Array.isArray(prior) ? prior.filter(isProjectedToolImageMarker) : [];
+  const fresh = toolOutputImages(result).map((image) => ({
+    type: "image",
+    mimeType: image.mimeType,
+  }));
+  const images = [...carried, ...fresh];
+  if (!summary && images.length === 0) {
+    return undefined;
+  }
+  return {
+    ...(summary ? { content: summary } : {}),
+    ...(images.length > 0 ? { images } : {}),
+  };
+}
+
+function isProjectedToolImageMarker(value: unknown): boolean {
+  const record = asRecord(value);
+  return (
+    record !== null &&
+    record.type === "image" &&
+    typeof record.mimeType === "string" &&
+    isProviderSendTurnSupportedImageMimeType(record.mimeType)
+  );
 }
 
 /** Reuse the page URL already returned by preview tools before slimming their output. */

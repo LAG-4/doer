@@ -1355,6 +1355,7 @@ function renderFeedEntry(
   props: Pick<
     ThreadFeedProps,
     | "environmentId"
+    | "threadId"
     | "onUseArtifactTemplate"
     | "skills"
     | "dispatchingMessageId"
@@ -1755,6 +1756,7 @@ function renderFeedEntry(
       key={`${entry.id}:${props.workRowSizing.textSizeKey}`}
       activities={entry.activities}
       environmentId={props.environmentId}
+      threadId={props.threadId}
       anchorKey={entry.id}
       copiedRowId={props.copiedRowId}
       expandedRows={props.expandedWorkRows}
@@ -1766,6 +1768,7 @@ function renderFeedEntry(
       onCopyRow={props.onCopyWorkRow}
       onToggleRow={props.onToggleWorkRow}
       renderImage={props.renderViewedImage}
+      onPressPreview={props.onPressPreview}
     />
   );
 }
@@ -2755,6 +2758,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         <ThreadMediaVisibility>
           {renderFeedEntry(info, {
             environmentId: props.environmentId,
+            threadId: props.threadId,
             dispatchingMessageId: props.dispatchingMessageId,
             onEditPendingMessage: props.onEditPendingMessage,
             copiedRowId,
