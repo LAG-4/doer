@@ -69,24 +69,25 @@ function ConnectedToolsControls() {
           </>
         }
         control={
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <GmailConnectionControl
-              key={target?.environmentId}
-              environmentId={target?.environmentId ?? null}
-              enabled={settings.enableGmailAccess}
-              autoConnect={requestConnection}
-              onConnectionAttempted={() => setRequestConnection(false)}
-            />
-            <Switch
-              aria-label="Gmail"
-              disabled={saving}
-              mixed={mixedGmail}
-              checked={mixedGmail ? false : settings.enableGmailAccess}
-              onCheckedChange={(value) => void toggle("enableGmailAccess", value)}
-            />
-          </div>
+          <Switch
+            aria-label="Gmail"
+            disabled={saving}
+            mixed={mixedGmail}
+            checked={mixedGmail ? false : settings.enableGmailAccess}
+            onCheckedChange={(value) => void toggle("enableGmailAccess", value)}
+          />
         }
-      />
+      >
+        <div className="flex min-w-0 flex-wrap items-center gap-2 pt-1">
+          <GmailConnectionControl
+            key={target?.environmentId}
+            environmentId={target?.environmentId ?? null}
+            enabled={settings.enableGmailAccess}
+            autoConnect={requestConnection}
+            onConnectionAttempted={() => setRequestConnection(false)}
+          />
+        </div>
+      </SettingsRow>
       <SettingsRow
         serverScoped
         settingKeys={["enableLocalSpreadsheetAccess"]}

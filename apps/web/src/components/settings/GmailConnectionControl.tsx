@@ -253,8 +253,8 @@ export function GmailConnectionControl({
   if (!host.reachable) return null;
   if (status?.connected) {
     return (
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-muted-foreground">{status.email}</span>
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <span className="min-w-0 break-all text-xs text-muted-foreground">{status.email}</span>
         <Button size="sm" variant="outline" disabled={busy} onClick={() => void disconnect()}>
           Disconnect
         </Button>
