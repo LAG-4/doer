@@ -148,7 +148,8 @@ function scenario(
                     updatedAt: "2026-10-04T00:00:00.000Z",
                   },
                 };
-              if (options.archiveAfterReview) threadRow = { ...threadRow, archivedAt: "2026-10-05T00:00:00.000Z" };
+              if (options.archiveAfterReview)
+                threadRow = { ...threadRow, archivedAt: "2026-10-05T00:00:00.000Z" };
               yield* approvals.respond(
                 threadId,
                 ApprovalRequestId.make(String(payload.requestId)),
@@ -275,10 +276,11 @@ describe("Gmail tool email review", () => {
   it.effect("allows a read when the switch starts off and is enabled mid-session", () =>
     Effect.gen(function* () {
       // The credential already carries the capability; only the live switch gates.
-      const enabled = yield* scenario(
-        "accept",
-        { operation: "read", startDisabled: true, enableBeforeCall: true },
-      );
+      const enabled = yield* scenario("accept", {
+        operation: "read",
+        startDisabled: true,
+        enableBeforeCall: true,
+      });
       expect(enabled.result._tag).toBe("Success");
       expect(enabled.reads).toBe(1);
       const stillOff = yield* scenario("accept", { operation: "read", startDisabled: true });

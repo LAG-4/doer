@@ -4,17 +4,14 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { RemoteEnvironmentAuthorization } from "../authorization/service.ts";import {
+import { RemoteEnvironmentAuthorization } from "../authorization/service.ts";
+import {
   BearerConnectionTarget,
   RelayConnectionTarget,
   type PreparedConnection,
 } from "../connection/model.ts";
 import { ManagedRelayDpopSigner } from "../relay/managedRelay.ts";
-import {
-  ConnectedAppsHttp,
-  connectedAppsHttpLayer,
-  GmailHttpError,
-} from "./connectedAppsHttp.ts";
+import { ConnectedAppsHttp, connectedAppsHttpLayer, GmailHttpError } from "./connectedAppsHttp.ts";
 
 const SECONDARY_TARGET = new BearerConnectionTarget({
   environmentId: EnvironmentId.make("environment-secondary"),
@@ -206,9 +203,10 @@ describe("ConnectedAppsHttp Gmail transport", () => {
         "https://relay-current.example.test/api/integrations/gmail",
         "https://relay-renewed.example.test/api/integrations/gmail",
       ]);
-      expect(
-        calls.map((call) => new Headers(call.init.headers).get("authorization")),
-      ).toEqual(["DPoP current-token", "DPoP renewed-token"]);
+      expect(calls.map((call) => new Headers(call.init.headers).get("authorization"))).toEqual([
+        "DPoP current-token",
+        "DPoP renewed-token",
+      ]);
       expect(authorizations).toHaveLength(2);
     }),
   );

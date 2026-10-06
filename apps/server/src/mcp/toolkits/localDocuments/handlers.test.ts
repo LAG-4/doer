@@ -109,24 +109,22 @@ function scenario(
     // Flip the live switch with the same issued credential in place.
     if (options.enableBeforeCall) enabled = true;
     if (options.disableBeforeCall) enabled = false;
-    const result = yield* toolkit
-      .handle("inspect_spreadsheet", { path: "sheet.xlsx" })
-      .pipe(
-        Stream.unwrap,
-        Stream.runDrain,
-        Effect.result,
-        Effect.provideService(McpInvocationContext.McpInvocationContext, {
-          environmentId: EnvironmentId.make("host"),
-          threadId,
-          providerSessionId: "session",
-          providerInstanceId: ProviderInstanceId.make("opencode-custom"),
-          capabilities: new Set<McpInvocationContext.McpCapability>(
-            options.capability === false ? [] : ["local-spreadsheets"],
-          ),
-          issuedAt: 1,
-        }),
-        Effect.provide(dependencies),
-      );
+    const result = yield* toolkit.handle("inspect_spreadsheet", { path: "sheet.xlsx" }).pipe(
+      Stream.unwrap,
+      Stream.runDrain,
+      Effect.result,
+      Effect.provideService(McpInvocationContext.McpInvocationContext, {
+        environmentId: EnvironmentId.make("host"),
+        threadId,
+        providerSessionId: "session",
+        providerInstanceId: ProviderInstanceId.make("opencode-custom"),
+        capabilities: new Set<McpInvocationContext.McpCapability>(
+          options.capability === false ? [] : ["local-spreadsheets"],
+        ),
+        issuedAt: 1,
+      }),
+      Effect.provide(dependencies),
+    );
     return result;
   });
 }

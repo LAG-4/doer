@@ -68,8 +68,7 @@ describe("shared Gmail connection state", () => {
 });
 
 describe("Gmail host access", () => {
-  const isLoopback = (hostname: string) =>
-    ["localhost", "127.0.0.1", "[::1]"].includes(hostname);
+  const isLoopback = (hostname: string) => ["localhost", "127.0.0.1", "[::1]"].includes(hostname);
   it("treats the primary local target over loopback as the host", () => {
     expect(
       resolveGmailHostAccess({
@@ -100,7 +99,11 @@ describe("Gmail host access", () => {
   it("never treats a loopback URL over SSH or relay transport as the host", () => {
     // An SSH tunnel serves a remote computer over localhost: the OAuth
     // callback would finish on the remote host, not in this browser.
-    for (const targetTag of ["SshConnectionTarget", "RelayConnectionTarget", "BearerConnectionTarget"]) {
+    for (const targetTag of [
+      "SshConnectionTarget",
+      "RelayConnectionTarget",
+      "BearerConnectionTarget",
+    ]) {
       const forwarded = resolveGmailHostAccess({
         httpBaseUrl: "http://127.0.0.1:43123/",
         targetTag,
