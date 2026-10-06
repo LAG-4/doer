@@ -68,7 +68,7 @@ function strings(value: unknown): string[] {
     ? value.filter((item): item is string => typeof item === "string")
     : [];
 }
-export function validateMailId(id: string): void {
+function validateMailId(id: string): void {
   if (!/^[a-zA-Z0-9_-]{1,200}$/.test(id)) throw new Error("Invalid Gmail message or label ID.");
 }
 export function validateMailChange(input: MailChange): void {

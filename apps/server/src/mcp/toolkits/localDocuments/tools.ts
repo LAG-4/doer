@@ -57,7 +57,11 @@ const inspectPresentation = Tool.make("inspect_presentation", {
   success: Schema.Struct({
     sha256: Schema.String,
     slides: Schema.Array(
-      Schema.Struct({ slide: Schema.Number, text: Schema.String, runs: Schema.Array(Schema.String) }),
+      Schema.Struct({
+        slide: Schema.Number,
+        text: Schema.String,
+        runs: Schema.Array(Schema.String),
+      }),
     ),
   }),
   failure: LocalDocumentError,

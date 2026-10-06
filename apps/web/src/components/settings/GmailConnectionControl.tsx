@@ -1,9 +1,6 @@
 import type { EnvironmentId, GmailConnectionStatus } from "@t3tools/contracts";
 import { EnvironmentSupervisor } from "@t3tools/client-runtime/connection";
-import {
-  ConnectedAppsHttp,
-  GmailHttpError,
-} from "@t3tools/client-runtime/state/connected-apps";
+import { ConnectedAppsHttp, GmailHttpError } from "@t3tools/client-runtime/state/connected-apps";
 import { createEnvironmentCommand } from "@t3tools/client-runtime/state/runtime";
 import { isLoopbackHost } from "@t3tools/shared/preview";
 import * as Effect from "effect/Effect";
@@ -19,7 +16,10 @@ import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
 import { getGmailConnectionState, resolveGmailHostAccess } from "./gmailConnectionState";
 
-type GmailAction = { readonly action: "status" } | { readonly action: "begin" } | { readonly action: "disconnect" };
+type GmailAction =
+  | { readonly action: "status" }
+  | { readonly action: "begin" }
+  | { readonly action: "disconnect" };
 
 type GmailResult =
   | { readonly kind: "status"; readonly status: GmailConnectionStatus }
@@ -133,9 +133,7 @@ export function GmailConnectionControl({
     await state.refresh(async () => {
       const result = await run("status");
       if (result?.kind === "status") return result.status;
-      throw new Error(
-        result?.kind === "error" ? result.message : "Could not reach this computer.",
-      );
+      throw new Error(result?.kind === "error" ? result.message : "Could not reach this computer.");
     });
   }, [environmentId, host.reachable, run, state]);
 
@@ -171,9 +169,7 @@ export function GmailConnectionControl({
       const begun = await run("begin");
       if (!state.isCurrent(currentOperation)) return;
       if (begun?.kind === "error" || !begun || begun.kind !== "authorization") {
-        throw new Error(
-          begun?.kind === "error" ? begun.message : "Could not start Gmail sign-in.",
-        );
+        throw new Error(begun?.kind === "error" ? begun.message : "Could not start Gmail sign-in.");
       }
       const shell = readLocalApi()?.shell;
       if (shell) await shell.openExternal(begun.authorizationUrl);

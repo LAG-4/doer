@@ -8,7 +8,6 @@ import {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientRequest } from "effect/unstable/http";
 import { ManagedRelayDpopSigner } from "../relay/managedRelay.ts";
@@ -53,22 +52,24 @@ export class GmailHttpError extends Schema.TaggedError<GmailHttpError>()("GmailH
 /** Bounded server-provided conflict message. */
 const boundConflictMessage = (message: string): string => {
   const trimmed = message.trim();
-  return trimmed.length > 0
-    ? trimmed.slice(0, 300)
-    : "Gmail reported a conflict on this computer.";
+  return trimmed.length > 0 ? trimmed.slice(0, 300) : "Gmail reported a conflict on this computer.";
 };
 
 type GmailEndpointResult<A> =
   | { readonly ok: true; readonly value: A }
   | { readonly ok: false; readonly message: string };
 
+const checkGmailConflict = Schema.is(EnvironmentHttpConflictError);
+
 const isGmailConflict = (error: unknown): error is EnvironmentHttpConflictError =>
-  Schema.is(EnvironmentHttpConflictError)(error);
+  checkGmailConflict(error);
 
 const gmailResultToEffect = <A>(
   result: GmailEndpointResult<A>,
 ): Effect.Effect<A, GmailHttpError> =>
-  result.ok ? Effect.succeed(result.value) : Effect.fail(new GmailHttpError({ message: result.message }));
+  result.ok
+    ? Effect.succeed(result.value)
+    : Effect.fail(new GmailHttpError({ message: result.message }));
 
 export const connectedAppsHttpLayer = Layer.effect(
   ConnectedAppsHttp,
@@ -94,12 +95,10 @@ export const connectedAppsHttpLayer = Layer.effect(
           group: "integrations",
           request: ({ client, headers }) =>
             client.gmailStatus({ headers }).pipe(
-              Effect.map(
-                (value): GmailEndpointResult<GmailConnectionStatus> => ({
-                  ok: true as const,
-                  value,
-                }),
-              ),
+              Effect.map((value): GmailEndpointResult<GmailConnectionStatus> => ({
+                ok: true as const,
+                value,
+              })),
               Effect.catchIf(isGmailConflict, (cause) =>
                 Effect.succeed({
                   ok: false as const,
@@ -127,12 +126,10 @@ export const connectedAppsHttpLayer = Layer.effect(
           group: "integrations",
           request: ({ client, headers }) =>
             client.gmailBegin({ headers }).pipe(
-              Effect.map(
-                (value): GmailEndpointResult<typeof GmailAuthorizationResult.Type> => ({
-                  ok: true as const,
-                  value,
-                }),
-              ),
+              Effect.map((value): GmailEndpointResult<typeof GmailAuthorizationResult.Type> => ({
+                ok: true as const,
+                value,
+              })),
               Effect.catchIf(isGmailConflict, (cause) =>
                 Effect.succeed({
                   ok: false as const,
@@ -160,12 +157,10 @@ export const connectedAppsHttpLayer = Layer.effect(
           group: "integrations",
           request: ({ client, headers }) =>
             client.gmailDisconnect({ headers }).pipe(
-              Effect.map(
-                (value): GmailEndpointResult<{ readonly disconnected: boolean }> => ({
-                  ok: true as const,
-                  value,
-                }),
-              ),
+              Effect.map((value): GmailEndpointResult<{ readonly disconnected: boolean }> => ({
+                ok: true as const,
+                value,
+              })),
               Effect.catchIf(isGmailConflict, (cause) =>
                 Effect.succeed({
                   ok: false as const,

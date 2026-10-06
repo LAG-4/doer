@@ -154,9 +154,11 @@ describe("ConnectedAppsHttp Gmail transport", () => {
         authorizeDpop: () => Effect.die("Unexpected websocket preparation."),
         authorizeDpopHttp: (input) =>
           Effect.sync(() => {
-            authorizations.push({
-              rejectedAccessToken: input.rejectedAccessToken,
-            });
+            if (input.rejectedAccessToken !== undefined) {
+              authorizations.push({ rejectedAccessToken: input.rejectedAccessToken });
+            } else {
+              authorizations.push({});
+            }
             const renewed = input.rejectedAccessToken !== undefined;
             return {
               environmentId: RELAY_TARGET.environmentId,

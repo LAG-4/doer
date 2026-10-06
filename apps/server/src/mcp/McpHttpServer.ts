@@ -673,11 +673,11 @@ const ScheduledTasksToolkitRegistrationLive = McpServer.toolkit(ScheduledTasksTo
   Layer.provide(ScheduledTasksToolkitHandlersLive),
 );
 
-export const GmailToolkitRegistrationLive = McpServer.toolkit(GmailToolkit).pipe(
+const GmailToolkitRegistrationLive = McpServer.toolkit(GmailToolkit).pipe(
   Layer.provide(GmailToolkitHandlersLive),
 );
 
-export const LocalDocumentsToolkitRegistrationLive = McpServer.toolkit(LocalDocumentsToolkit).pipe(
+const LocalDocumentsToolkitRegistrationLive = McpServer.toolkit(LocalDocumentsToolkit).pipe(
   Layer.provide(LocalDocumentsToolkitHandlersLive),
 );
 
