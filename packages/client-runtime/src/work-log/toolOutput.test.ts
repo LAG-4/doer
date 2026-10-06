@@ -1,7 +1,7 @@
 import { EventId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { toolOutputImageResources } from "./toolOutput.ts";
+import { countToolOutputImageMarkers, toolOutputImageResources } from "./toolOutput.ts";
 
 const threadId = ThreadId.make("thread-1");
 const activityId = EventId.make("activity-1");
@@ -54,5 +54,11 @@ describe("toolOutputImageResources", () => {
         toolData: { result: { content: "ok" } },
       }),
     ).toEqual([]);
+  });
+
+  it("counts markers without thread identity for expandability", () => {
+    expect(countToolOutputImageMarkers(projectedItem)).toBe(1);
+    expect(countToolOutputImageMarkers({ result: { content: "ok" } })).toBe(0);
+    expect(countToolOutputImageMarkers(null)).toBe(0);
   });
 });

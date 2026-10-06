@@ -582,6 +582,38 @@ describe("buildThreadFeed", () => {
     expect(workEntryRowLabel(row!.workEntry, true)).toBe("Command");
   });
 
+  it("expands an image-only dynamic tool output with no text detail", () => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-image-only"),
+      projectId: ProjectId.make("project-1"),
+      title: "Image output",
+      activities: [
+        makeActivity({
+          id: EventId.make("image-only-activity"),
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "Screenshot",
+          createdAt: "2026-09-01T00:00:00.000Z",
+          payload: {
+            itemType: "dynamic_tool_call",
+            title: "Screenshot",
+            data: {
+              toolName: "computer_screenshot",
+              result: { images: [{ type: "image", mimeType: "image/png" }] },
+            },
+          },
+        }),
+      ],
+    });
+
+    const [group] = buildThreadFeed(thread);
+    expect(group?.type).toBe("activity-group");
+    if (group?.type !== "activity-group") return;
+    const [row] = group.activities;
+    expect(row?.workEntry.detail).toBeUndefined();
+    expect(row?.canExpand).toBe(true);
+  });
+
   it.each([
     {
       name: "a task summary that is its own detail",

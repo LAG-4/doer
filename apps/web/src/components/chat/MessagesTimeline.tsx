@@ -4797,8 +4797,9 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       : null;
   // Screenshots a tool returned inline load as signed image assets by their
   // marker order; the expanded text body keeps the projected summary.
+  // Computed unexpanded so image-only outputs (no text detail) still expand.
   const outputImages =
-    expanded && threadRef && workEntry.toolData !== undefined
+    threadRef && workEntry.toolData !== undefined
       ? toolOutputImageResources({
           threadId: threadRef.threadId,
           activityId: workEntry.id,
@@ -4809,6 +4810,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     Boolean(workEntry.questionAnswer) ||
     (showFailedIndicator && previewText.trim().length > 0) ||
     (workEntry.itemType === "mcp_tool_call" && workEntry.toolData !== undefined) ||
+    outputImages.length > 0 ||
     Boolean(
       workEntryRawCommand(workEntry) ||
       workEntry.command?.trim() ||

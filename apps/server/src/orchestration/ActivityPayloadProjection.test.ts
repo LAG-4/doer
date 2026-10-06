@@ -406,4 +406,28 @@ describe("projectActivityPayload", () => {
     });
     expect(projectActivityPayload(projected).payload).toEqual(projected.payload);
   });
+
+  it("marks screenshots in dynamic tool results at the reader's location", () => {
+    const claudeBlock = {
+      type: "tool_result",
+      tool_use_id: "toolu_1",
+      content: [
+        {
+          type: "image",
+          source: { type: "base64", media_type: "image/png", data: "iVBORw0KGgo=" },
+        },
+      ],
+    };
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "dynamic_tool_call",
+        data: { toolName: "computer_screenshot", input: {}, result: claudeBlock },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+    // No text summary is added; only the marker, with no bytes on the wire.
+    expect(data.result).toEqual({ images: [{ type: "image", mimeType: "image/png" }] });
+    expect(JSON.stringify(projected.payload)).not.toContain("iVBORw0KGgo=");
+    expect(projectActivityPayload(projected).payload).toEqual(projected.payload);
+  });
 });

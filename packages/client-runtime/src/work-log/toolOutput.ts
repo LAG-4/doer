@@ -39,15 +39,29 @@ export function toolOutputImageResources(input: {
 }): ReadonlyArray<ToolOutputImageResource> {
   if (input.activityId.trim().length === 0) return [];
   const activityId = input.activityId as EventId;
-  const toolData = asRecord(input.toolData);
-  const item = toolData ? asRecord(toolData.item) : null;
-  const result = asRecord(item ? item.result : toolData?.result);
-  const markers = result ? asRecord(result)?.images : undefined;
-  if (!Array.isArray(markers)) return [];
-  return markers.filter(isImageMarker).map((_, index) => ({
+  const markers = toolOutputImageMarkers(input.toolData);
+  return markers.map((_, index) => ({
     _tag: "tool-output-image",
     threadId: input.threadId,
     activityId,
     index,
   }));
+}
+
+/**
+ * How many tool-output image markers one projected payload carries, without
+ * needing thread identity. Used to decide whether a row with no text still
+ * expands to its images.
+ */
+export function countToolOutputImageMarkers(toolData: unknown): number {
+  return toolOutputImageMarkers(toolData).length;
+}
+
+function toolOutputImageMarkers(toolData: unknown): ReadonlyArray<{ readonly mimeType: string }> {
+  const data = asRecord(toolData);
+  const item = data ? asRecord(data.item) : null;
+  const result = asRecord(item ? item.result : data?.result);
+  const markers = result ? asRecord(result)?.images : undefined;
+  if (!Array.isArray(markers)) return [];
+  return markers.filter(isImageMarker);
 }
