@@ -412,6 +412,7 @@ describe("projectActivityPayload", () => {
       type: "tool_result",
       tool_use_id: "toolu_1",
       content: [
+        { type: "text", text: "Captured the home screen." },
         {
           type: "image",
           source: { type: "base64", media_type: "image/png", data: "iVBORw0KGgo=" },
@@ -425,9 +426,38 @@ describe("projectActivityPayload", () => {
       }),
     );
     const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
-    // No text summary is added; only the marker, with no bytes on the wire.
-    expect(data.result).toEqual({ images: [{ type: "image", mimeType: "image/png" }] });
+    // Caption and marker survive together; bytes never reach the wire.
+    expect(data.result).toEqual({
+      content: "Captured the home screen.",
+      images: [{ type: "image", mimeType: "image/png" }],
+    });
     expect(JSON.stringify(projected.payload)).not.toContain("iVBORw0KGgo=");
+    expect(projectActivityPayload(projected).payload).toEqual(projected.payload);
+  });
+
+  it("marks Codex item-envelope images with their caption", () => {
+    const source = activity({
+      itemType: "dynamic_tool_call",
+      data: {
+        item: {
+          type: "customToolCall",
+          result: {
+            content: [
+              { type: "text", text: "Frame two of three." },
+              { type: "image", data: "AAAA", mimeType: "image/jpeg" },
+            ],
+          },
+        },
+      },
+    });
+    const projected = projectActivityPayload(source);
+    const item = ((projected.payload as Record<string, unknown>).data as Record<string, unknown>)
+      .item as Record<string, unknown>;
+    expect(item.result).toEqual({
+      content: "Frame two of three.",
+      images: [{ type: "image", mimeType: "image/jpeg" }],
+    });
+    expect(JSON.stringify(projected.payload)).not.toContain("AAAA");
     expect(projectActivityPayload(projected).payload).toEqual(projected.payload);
   });
 });

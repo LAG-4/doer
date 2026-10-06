@@ -33,7 +33,10 @@ import {
   type ToolGroupSummaryKind,
   type WorkLogToolLifecycleStatus,
 } from "@t3tools/client-runtime/work-log/presentation";
-import { countToolOutputImageMarkers } from "@t3tools/client-runtime/work-log/tool-output";
+import {
+  countToolOutputImageMarkers,
+  toolOutputCaption,
+} from "@t3tools/client-runtime/work-log/tool-output";
 import { extractToolActivityPresentation } from "@t3tools/client-runtime/work-log/tool-presentation";
 import { commandProgramName } from "@t3tools/client-runtime/work-log/command-label";
 
@@ -1001,6 +1004,10 @@ function buildWorkEntryExpandedBody(entry: WorkLogEntry): string | null {
 
   if (entry.itemType === "mcp_tool_call" && entry.toolData !== undefined) {
     appendBlock(`MCP call\n${JSON.stringify(entry.toolData, null, 2)}`);
+  }
+  // Dynamic rows have no JSON dump; surface the caption kept with markers.
+  if (entry.itemType !== "mcp_tool_call" && entry.toolData !== undefined) {
+    appendBlock(toolOutputCaption(entry.toolData));
   }
   appendBlock(entry.rawCommand ?? entry.command);
   appendBlock(entry.detail);

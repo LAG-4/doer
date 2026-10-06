@@ -1,7 +1,11 @@
 import { EventId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { countToolOutputImageMarkers, toolOutputImageResources } from "./toolOutput.ts";
+import {
+  countToolOutputImageMarkers,
+  toolOutputCaption,
+  toolOutputImageResources,
+} from "./toolOutput.ts";
 
 const threadId = ThreadId.make("thread-1");
 const activityId = EventId.make("activity-1");
@@ -60,5 +64,15 @@ describe("toolOutputImageResources", () => {
     expect(countToolOutputImageMarkers(projectedItem)).toBe(1);
     expect(countToolOutputImageMarkers({ result: { content: "ok" } })).toBe(0);
     expect(countToolOutputImageMarkers(null)).toBe(0);
+  });
+
+  it("extracts the caption kept alongside markers", () => {
+    expect(
+      toolOutputCaption({
+        result: { content: "Captured the home screen.", images: [{ type: "image" }] },
+      }),
+    ).toBe("Captured the home screen.");
+    expect(toolOutputCaption({ result: { images: [] } })).toBeNull();
+    expect(toolOutputCaption(null)).toBeNull();
   });
 });

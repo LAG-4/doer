@@ -614,6 +614,41 @@ describe("buildThreadFeed", () => {
     expect(row?.canExpand).toBe(true);
   });
 
+  it("shows a mixed caption with its screenshot in the expanded body", () => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-image-caption"),
+      projectId: ProjectId.make("project-1"),
+      title: "Captioned output",
+      activities: [
+        makeActivity({
+          id: EventId.make("image-caption-activity"),
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "Screenshot",
+          createdAt: "2026-09-01T00:00:00.000Z",
+          payload: {
+            itemType: "dynamic_tool_call",
+            title: "Screenshot",
+            data: {
+              toolName: "computer_screenshot",
+              result: {
+                content: "Captured the home screen.",
+                images: [{ type: "image", mimeType: "image/png" }],
+              },
+            },
+          },
+        }),
+      ],
+    });
+
+    const [group] = buildThreadFeed(thread);
+    expect(group?.type).toBe("activity-group");
+    if (group?.type !== "activity-group") return;
+    const [row] = group.activities;
+    expect(row?.canExpand).toBe(true);
+    expect(row?.getFullDetail()).toContain("Captured the home screen.");
+  });
+
   it.each([
     {
       name: "a task summary that is its own detail",

@@ -58,10 +58,25 @@ export function countToolOutputImageMarkers(toolData: unknown): number {
 }
 
 function toolOutputImageMarkers(toolData: unknown): ReadonlyArray<{ readonly mimeType: string }> {
-  const data = asRecord(toolData);
-  const item = data ? asRecord(data.item) : null;
-  const result = asRecord(item ? item.result : data?.result);
+  const result = toolOutputResult(toolData);
   const markers = result ? asRecord(result)?.images : undefined;
   if (!Array.isArray(markers)) return [];
   return markers.filter(isImageMarker);
+}
+
+/** The projected result holding image markers, mirroring the server's read order. */
+function toolOutputResult(toolData: unknown): Record<string, unknown> | null {
+  const data = asRecord(toolData);
+  const item = data ? asRecord(data.item) : null;
+  return asRecord(item ? item.result : data?.result);
+}
+
+/**
+ * Caption text a tool returned alongside its images, if the projection kept
+ * one. Expanded rows show it with the images so mixed text+image outputs
+ * survive without their bytes.
+ */
+export function toolOutputCaption(toolData: unknown): string | null {
+  const content = toolOutputResult(toolData)?.content;
+  return typeof content === "string" && content.trim().length > 0 ? content : null;
 }

@@ -523,22 +523,24 @@ export function projectActivityPayload(
 
   // Dynamic (non-MCP) tool results can also carry screenshots, such as a
   // Claude computer tool's capture at `data.result` or a Codex custom tool's
-  // `data.item.result`. Mark them at the same location the asset reader
-  // decodes, so image-only outputs stay expandable with no bytes on the wire.
+  // `data.item.result`. Keep the full summary (caption text plus markers) at
+  // the same location the asset reader decodes, so mixed text+image outputs
+  // survive with no bytes on the wire.
   if (payload.itemType !== "command_execution") {
     const dynamicItem = asRecord(data.item);
     const dynamicResult = dynamicItem ? dynamicItem.result : data.result;
-    const dynamicImages = asRecord(summarizeMcpResult(dynamicResult))?.images;
+    const dynamicSummary = summarizeMcpResult(dynamicResult) ?? {};
+    const dynamicImages = asRecord(dynamicSummary)?.images;
     if (Array.isArray(dynamicImages) && dynamicImages.length > 0) {
       if (dynamicItem) {
         const existingItem = asRecord(projectedData.item) ?? {};
         const existingResult = asRecord(existingItem.result) ?? {};
         projectedData.item = {
           ...existingItem,
-          result: { ...existingResult, images: dynamicImages },
+          result: { ...existingResult, ...dynamicSummary },
         };
       } else {
-        projectedData.result = { images: dynamicImages };
+        projectedData.result = { ...dynamicSummary };
       }
     }
   }

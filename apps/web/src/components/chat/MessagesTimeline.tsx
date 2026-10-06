@@ -34,7 +34,10 @@ import {
   omitSupersededLifecycleMarkers,
 } from "@t3tools/client-runtime/work-log/presentation";
 import { resolveWorkGroupScrollAnchor } from "@t3tools/client-runtime/work-log/scroll-anchor";
-import { toolOutputImageResources } from "@t3tools/client-runtime/work-log/tool-output";
+import {
+  toolOutputCaption,
+  toolOutputImageResources,
+} from "@t3tools/client-runtime/work-log/tool-output";
 import type {
   AgentPanelModel,
   RuntimeSubagent,
@@ -4441,6 +4444,10 @@ function buildToolCallExpandedBody(
   };
   if (workEntry.itemType === "mcp_tool_call" && workEntry.toolData !== undefined) {
     addBlock(`MCP call\n${JSON.stringify(workEntry.toolData, null, 2)}`);
+  }
+  // Dynamic rows have no JSON dump; surface the caption kept with markers.
+  if (workEntry.itemType !== "mcp_tool_call" && workEntry.toolData !== undefined) {
+    addBlock(toolOutputCaption(workEntry.toolData));
   }
   const command = workEntry.command?.trim();
   const raw = workEntryRawCommand(workEntry);
