@@ -4,6 +4,7 @@ import {
   ChatAttachment,
   OrchestrationMessageContext,
   CheckpointRef,
+  EventId,
   IsoDateTime,
   MessageId,
   NonNegativeInt,
@@ -1551,6 +1552,27 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     `,
   });
 
+  const getThreadActivityPayloadRow = SqlSchema.findOneOption({
+    Request: Schema.Struct({ threadId: ThreadId, activityId: EventId }),
+    Result: ProjectionThreadActivityDbRowSchema,
+    execute: ({ threadId, activityId }) => sql`
+      SELECT
+        activity_id AS "activityId",
+        thread_id AS "threadId",
+        turn_id AS "turnId",
+        tone,
+        kind,
+        summary,
+        payload_json AS "payload",
+        sequence,
+        created_at AS "createdAt"
+      FROM projection_thread_activities
+      WHERE thread_id = ${threadId}
+        AND activity_id = ${activityId}
+      LIMIT 1
+    `,
+  });
+
   const getUserInputActivity: ProjectionSnapshotQueryShape["getUserInputActivity"] = (input) =>
     getUserInputActivityRow(input).pipe(
       Effect.map(Option.map(mapThreadActivityRow)),
@@ -1558,6 +1580,19 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         toPersistenceSqlOrDecodeError(
           "ProjectionSnapshotQuery.getUserInputActivity:query",
           "ProjectionSnapshotQuery.getUserInputActivity:decodeRow",
+        ),
+      ),
+    );
+
+  const getThreadActivityPayload: ProjectionSnapshotQueryShape["getThreadActivityPayload"] = (
+    input,
+  ) =>
+    getThreadActivityPayloadRow(input).pipe(
+      Effect.map(Option.map((row) => mapThreadActivityRow(row).payload)),
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "ProjectionSnapshotQuery.getThreadActivityPayload:query",
+          "ProjectionSnapshotQuery.getThreadActivityPayload:decodeRow",
         ),
       ),
     );
@@ -3973,6 +4008,7 @@ pending_approval_requests AS (
   return {
     getCommandReadModel,
     getUserInputActivity,
+    getThreadActivityPayload,
     listActivitiesByKind,
     getSnapshot,
     getShellSnapshot,

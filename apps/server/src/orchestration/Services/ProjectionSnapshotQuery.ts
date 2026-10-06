@@ -12,6 +12,7 @@ import type {
   Automation,
   AutomationId,
   CheckpointRef,
+  EventId,
   MessageId,
   OrchestrationCheckpointSummary,
   OrchestrationMessage,
@@ -99,6 +100,16 @@ export interface ProjectionSnapshotQueryShape {
   readonly listActivitiesByKind: (
     kind: string,
   ) => Effect.Effect<ReadonlyArray<OrchestrationThreadActivity>, ProjectionRepositoryError>;
+
+  /**
+   * Read one activity's full stored payload by thread and activity id, without
+   * client projection. Asset serving uses this to decode images a tool
+   * returned inline; the projected timeline carries only their markers.
+   */
+  readonly getThreadActivityPayload: (input: {
+    readonly threadId: ThreadId;
+    readonly activityId: EventId;
+  }) => Effect.Effect<Option.Option<unknown>, ProjectionRepositoryError>;
 
   /**
    * Read the lightweight command snapshot used to bootstrap the in-memory

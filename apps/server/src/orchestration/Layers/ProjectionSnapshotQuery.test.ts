@@ -3768,4 +3768,60 @@ projectionSnapshotLayer("ProjectionSnapshotQuery activities by kind", (it) => {
       assert.deepEqual(yield* query.listActivitiesByKind("nope"), []);
     }),
   );
+
+  it.effect("reads a raw activity payload scoped to its thread", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const query = yield* ProjectionSnapshotQuery;
+      const payloadJson =
+        '{"data":{"toolName":"mcp__t3-code__device_screenshot",' +
+        '"result":{"content":[{"type":"text","text":"Captured."}]}}}';
+      const payload = {
+        data: {
+          toolName: "mcp__t3-code__device_screenshot",
+          result: { content: [{ type: "text", text: "Captured." }] },
+        },
+      };
+      yield* sql`
+        INSERT INTO projection_thread_activities (
+          activity_id, thread_id, turn_id, tone, kind, summary, payload_json, created_at
+        ) VALUES
+          ('shot-1', 'thread-shot', NULL, 'tool', 'tool.completed', 'Screenshot',
+            ${payloadJson}, '2026-10-06T00:00:00.000Z')
+      `;
+      // Full stored payload, unprojected, for the owning thread.
+      assert.deepStrictEqual(
+        yield* query.getThreadActivityPayload({
+          threadId: ThreadId.make("thread-shot"),
+          activityId: asEventId("shot-1"),
+        }),
+        Option.some(payload),
+      );
+      // Same activity id from another thread leaks nothing.
+      assert.deepStrictEqual(
+        yield* query.getThreadActivityPayload({
+          threadId: ThreadId.make("thread-other"),
+          activityId: asEventId("shot-1"),
+        }),
+        Option.none(),
+      );
+      assert.deepStrictEqual(
+        yield* query.getThreadActivityPayload({
+          threadId: ThreadId.make("thread-shot"),
+          activityId: asEventId("shot-missing"),
+        }),
+        Option.none(),
+      );
+    }).pipe(
+      Effect.provide(
+        OrchestrationProjectionSnapshotQueryLive.pipe(
+          Layer.provide(ThreadBackgroundLiveness.layer),
+          Layer.provide(ThreadPlanProgress.layer),
+          Layer.provideMerge(RepositoryIdentityResolver.layer),
+          Layer.provideMerge(SqlitePersistenceMemory),
+          Layer.provideMerge(NodeServices.layer),
+        ),
+      ),
+    ),
+  );
 });

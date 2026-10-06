@@ -930,3 +930,45 @@ describe("ChatMarkdown Windows file links", () => {
     expect(html).not.toContain("chat-markdown-file-link");
   });
 });
+
+describe("ChatMarkdown mermaid diagrams", () => {
+  it("keeps the highlighted source while streaming, without a diagram toggle", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    let renderer: ReactTestRenderer | undefined;
+    const text = "```mermaid\ngraph TD\n  A-->B\n```";
+    try {
+      await act(async () => {
+        renderer = create(<ChatMarkdown cwd="/tmp/project" text={text} isStreaming />);
+      });
+      const buttons = renderer!.root.findAllByType(Button);
+      expect(buttons.some((button) => button.props["aria-label"] === "Show code")).toBe(false);
+      // The fence still renders as code while the response streams.
+      expect(renderer!.root.findByProps({ "data-language": "mermaid" })).toBeDefined();
+    } finally {
+      await act(async () => renderer?.unmount());
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("enters diagram mode once settled and toggles back to the source", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    let renderer: ReactTestRenderer | undefined;
+    const text = "```mermaid\ngraph TD\n  A-->B\n```";
+    try {
+      await act(async () => {
+        renderer = create(<ChatMarkdown cwd="/tmp/project" text={text} />);
+      });
+      const mounted = renderer!;
+      const showCode = codeButton(mounted, "Show code");
+      await act(async () => {
+        showCode.onClick?.({} as Parameters<NonNullable<typeof showCode.onClick>>[0]);
+      });
+      // Toggling off the diagram restores the code view and the way back.
+      expect(codeButton(mounted, "Show diagram")).toBeDefined();
+      expect(mounted.root.findByProps({ "data-language": "mermaid" })).toBeDefined();
+    } finally {
+      await act(async () => renderer?.unmount());
+      vi.unstubAllGlobals();
+    }
+  });
+});

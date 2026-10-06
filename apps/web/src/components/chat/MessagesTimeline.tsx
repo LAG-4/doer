@@ -34,6 +34,10 @@ import {
   omitSupersededLifecycleMarkers,
 } from "@t3tools/client-runtime/work-log/presentation";
 import { resolveWorkGroupScrollAnchor } from "@t3tools/client-runtime/work-log/scroll-anchor";
+import {
+  toolOutputCaption,
+  toolOutputImageResources,
+} from "@t3tools/client-runtime/work-log/tool-output";
 import type {
   AgentPanelModel,
   RuntimeSubagent,
@@ -4441,6 +4445,10 @@ function buildToolCallExpandedBody(
   if (workEntry.itemType === "mcp_tool_call" && workEntry.toolData !== undefined) {
     addBlock(`MCP call\n${JSON.stringify(workEntry.toolData, null, 2)}`);
   }
+  // Dynamic rows have no JSON dump; surface the caption kept with markers.
+  if (workEntry.itemType !== "mcp_tool_call" && workEntry.toolData !== undefined) {
+    addBlock(toolOutputCaption(workEntry.toolData));
+  }
   const command = workEntry.command?.trim();
   const raw = workEntryRawCommand(workEntry);
   if (command === visibleLabel.trim()) {
@@ -4794,10 +4802,22 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
           workspaceRoot,
         })
       : null;
+  // Screenshots a tool returned inline load as signed image assets by their
+  // marker order; the expanded text body keeps the projected summary.
+  // Computed unexpanded so image-only outputs (no text detail) still expand.
+  const outputImages =
+    threadRef && workEntry.toolData !== undefined
+      ? toolOutputImageResources({
+          threadId: threadRef.threadId,
+          activityId: workEntry.id,
+          toolData: workEntry.toolData,
+        })
+      : [];
   const canExpand =
     Boolean(workEntry.questionAnswer) ||
     (showFailedIndicator && previewText.trim().length > 0) ||
     (workEntry.itemType === "mcp_tool_call" && workEntry.toolData !== undefined) ||
+    outputImages.length > 0 ||
     Boolean(
       workEntryRawCommand(workEntry) ||
       workEntry.command?.trim() ||
@@ -4944,6 +4964,24 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
             maxHeightRem={16}
             onImageExpand={onImageExpand}
           />
+        </div>
+      ) : null}
+      {expanded && outputImages.length > 0 && threadRef ? (
+        <div
+          className="mt-1 ms-7 flex cursor-default flex-col gap-1.5"
+          onClick={stopRowToggle}
+          onPointerDown={stopRowToggle}
+        >
+          {outputImages.map((resource) => (
+            <ChatMarkdownAssetImage
+              key={resource.index}
+              environmentId={threadRef.environmentId}
+              resource={resource}
+              alt="Tool output image"
+              maxHeightRem={16}
+              onImageExpand={onImageExpand}
+            />
+          ))}
         </div>
       ) : null}
       {expanded && workEntry.questionAnswer ? (
