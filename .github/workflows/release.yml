@@ -156,23 +156,110 @@ jobs:
       - name: Test
         run: vp run test
 
-  # Finish the Linux build first so Windows can embed its WSL runtime.
-  # Matrix entries cannot depend on another entry in the same matrix.
-  wsl_prebuild:
-    name: Build Linux and WSL runtime
-    needs: [preflight]
-    if: ${{ !cancelled() && needs.preflight.result == 'success' }}
+  build_wsl_runtime:
+    name: Build WSL runtime before desktop packaging
+    needs: [preflight, quality]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      DOER_RELEASE_GOOGLE_OAUTH_CLIENT_ID: ${{ vars.DOER_GMAIL_PUBLIC_READY == 'true' && secrets.DOER_RELEASE_GOOGLE_OAUTH_CLIENT_ID || '' }}
+      DOER_RELEASE_GOOGLE_OAUTH_CLIENT_SECRET: ${{ vars.DOER_GMAIL_PUBLIC_READY == 'true' && secrets.DOER_RELEASE_GOOGLE_OAUTH_CLIENT_SECRET || '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Align package versions to release version
+        run: node scripts/update-release-package-versions.ts "${{ needs.preflight.outputs.version }}"
+
+      - name: Build Linux resource monitor
+        run: cargo build --locked --release --target x86_64-unknown-linux-gnu --manifest-path native/resource-monitor/Cargo.toml
+
+      - name: Build Linux CLI archive for WSL
+        shell: bash
+        env:
+          # The single-executable needs a Node with --build-sea (25.7+); the
+          # repo itself stays on engines.node. Exact version, not a major: vp
+          # downloads it from nodejs.org/dist, and only exact versions have a
+          # dist directory. Keep in step with SEA_NODE_VERSION in
+          # apps/server/vite.config.ts.
+          VP_NODE_VERSION: "26.8.2"
+        run: |
+          set -euo pipefail
+          # cli.ts build bundles apps/web/dist into the server's dist/client,
+          # so build the web client first (the desktop artifact step above does
+          # not leave it behind).
+          vp run --filter @t3tools/web build
+          node apps/server/scripts/cli.ts build --verbose
+          node apps/server/scripts/cli.ts build-exe --target linux-x64 --verbose
+          monitor_dir="$RUNNER_TEMP/cli-resource-monitor"
+          mkdir -p "$monitor_dir"
+          cp "native/resource-monitor/target/x86_64-unknown-linux-gnu/release/t3-resource-monitor" "$monitor_dir/t3-resource-monitor"
+          node scripts/build-cli-archive.ts \
+            --platform linux \
+            --arch x64 \
+            --version "${{ needs.preflight.outputs.version }}" \
+            --resource-monitor-dir "$monitor_dir" \
+            --output-dir release-cli
+
+      - name: Smoke-test Linux CLI archive
+        shell: bash
+        run: node scripts/smoke-cli-archive.ts --archive release-cli/* --expect-version "${{ needs.preflight.outputs.version }}"
+
+      - name: Upload Linux CLI archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: cli-linux-x64
+          path: release-cli/*
+          if-no-files-found: error
+
+  build:
+    name: Build ${{ matrix.label }}
+    # The Windows entry consumes the `cli-linux-x64` artifact built by the
+    # The completed prebuild supplies the Windows WSL archive.
+    needs: [preflight, quality, build_wsl_runtime]
+    if: ${{ !cancelled() && needs.preflight.result == 'success' && needs.quality.result == 'success' && needs.build_wsl_runtime.result == 'success' }}
     runs-on: ${{ matrix.runner }}
     # Native rebuilds (Rust, node-gyp, VS setup) are slow on free runners;
     # give Windows especially plenty of headroom.
     timeout-minutes: 60
-    env: &gmail_release_config
+    env:
       DOER_RELEASE_GOOGLE_OAUTH_CLIENT_ID: ${{ vars.DOER_GMAIL_PUBLIC_READY == 'true' && secrets.DOER_RELEASE_GOOGLE_OAUTH_CLIENT_ID || '' }}
       DOER_RELEASE_GOOGLE_OAUTH_CLIENT_SECRET: ${{ vars.DOER_GMAIL_PUBLIC_READY == 'true' && secrets.DOER_RELEASE_GOOGLE_OAUTH_CLIENT_SECRET || '' }}
     strategy:
       fail-fast: false
       matrix:
         include:
+          - label: macOS arm64
+            runner: macos-15
+            platform: mac
+            target: dmg
+            arch: arm64
+            rust_target: aarch64-apple-darwin
+            resource_key: darwin-arm64
+          - label: macOS x64
+            runner: macos-15
+            platform: mac
+            target: dmg
+            arch: x64
+            rust_target: x86_64-apple-darwin
+            resource_key: darwin-x64
           - label: Linux x64
             runner: ubuntu-24.04
             platform: linux
@@ -180,7 +267,19 @@ jobs:
             arch: x64
             rust_target: x86_64-unknown-linux-gnu
             resource_key: linux-x64
-    steps: &desktop_build_steps
+          - label: Windows x64
+            runner: windows-2025
+            platform: win
+            target: nsis
+            arch: x64
+            rust_target: x86_64-pc-windows-msvc
+            resource_key: win32-x64
+          # - label: Windows arm64
+          #   runner: windows-11-arm
+          #   platform: win
+          #   target: nsis
+          #   arch: arm64
+    steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
@@ -415,7 +514,7 @@ jobs:
               echo "macOS signing disabled (missing one or more Apple signing secrets)."
             fi
           elif [[ "${{ matrix.platform }}" == "win" ]]; then
-            # Embed the Linux CLI archive produced by wsl_prebuild
+            # Embed the Linux CLI archive built by the Linux x64 matrix entry
             # as the WSL runtime (the WSL backend runs this archive inside the
             # distro). Required for a working WSL backend on Windows.
             args+=(--wsl-runtime "$GITHUB_WORKSPACE"/wsl-runtime/t3-*-linux-x64.tar.gz)
@@ -489,50 +588,6 @@ jobs:
           mkdir -p "$target_dir"
           cp "$source_path" "$target_dir/$binary_name"
 
-      # The Windows entry embeds this archive as its WSL runtime, and the
-      # `release` job attaches it alongside the desktop assets. Built here, on
-      # Linux x64, because the archive's single-executable is platform-specific.
-      - name: Build Linux CLI archive for WSL
-        if: matrix.platform == 'linux' && matrix.arch == 'x64'
-        shell: bash
-        env:
-          # The single-executable needs a Node with --build-sea (25.7+); the
-          # repo itself stays on engines.node. Exact version, not a major: vp
-          # downloads it from nodejs.org/dist, and only exact versions have a
-          # dist directory. Keep in step with SEA_NODE_VERSION in
-          # apps/server/vite.config.ts.
-          VP_NODE_VERSION: "26.8.2"
-        run: |
-          set -euo pipefail
-          # cli.ts build bundles apps/web/dist into the server's dist/client,
-          # so build the web client first (the desktop artifact step above does
-          # not leave it behind).
-          vp run --filter @t3tools/web build
-          node apps/server/scripts/cli.ts build --verbose
-          node apps/server/scripts/cli.ts build-exe --target linux-x64 --verbose
-          monitor_dir="$RUNNER_TEMP/cli-resource-monitor"
-          mkdir -p "$monitor_dir"
-          cp "native/resource-monitor/target/${{ matrix.rust_target }}/release/t3-resource-monitor" "$monitor_dir/t3-resource-monitor"
-          node scripts/build-cli-archive.ts \
-            --platform linux \
-            --arch x64 \
-            --version "${{ needs.preflight.outputs.version }}" \
-            --resource-monitor-dir "$monitor_dir" \
-            --output-dir release-cli
-
-      - name: Smoke-test Linux CLI archive
-        if: matrix.platform == 'linux' && matrix.arch == 'x64'
-        shell: bash
-        run: node scripts/smoke-cli-archive.ts --archive release-cli/* --expect-version "${{ needs.preflight.outputs.version }}"
-
-      - name: Upload Linux CLI archive
-        if: matrix.platform == 'linux' && matrix.arch == 'x64'
-        uses: actions/upload-artifact@v7
-        with:
-          name: cli-linux-x64
-          path: release-cli/*
-          if-no-files-found: error
-
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -547,44 +602,10 @@ jobs:
           path: resource-monitor-publish/${{ matrix.resource_key }}/*
           if-no-files-found: error
 
-  build:
-    name: Build ${{ matrix.label }}
-    needs: [preflight, wsl_prebuild]
-    if: ${{ !cancelled() && needs.preflight.result == 'success' && needs.wsl_prebuild.result == 'success' }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
-    env: *gmail_release_config
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - label: macOS arm64
-            runner: macos-15
-            platform: mac
-            target: dmg
-            arch: arm64
-            rust_target: aarch64-apple-darwin
-            resource_key: darwin-arm64
-          - label: macOS x64
-            runner: macos-15
-            platform: mac
-            target: dmg
-            arch: x64
-            rust_target: x86_64-apple-darwin
-            resource_key: darwin-x64
-          - label: Windows x64
-            runner: windows-2025
-            platform: win
-            target: nsis
-            arch: x64
-            rust_target: x86_64-pc-windows-msvc
-            resource_key: win32-x64
-    steps: *desktop_build_steps
-
   publish_cli:
     name: Publish CLI to npm
-    needs: [preflight, quality, wsl_prebuild, build]
-    if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' && needs.quality.result == 'success' && needs.wsl_prebuild.result == 'success' && needs.build.result == 'success' }}
+    needs: [preflight, quality, build]
+    if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' && needs.quality.result == 'success' && needs.build.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

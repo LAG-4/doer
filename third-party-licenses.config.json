@@ -167,6 +167,24 @@
   ],
   "packageOverrides": [
     {
+      "name": "hash.js",
+      "sourceUrl": "https://github.com/indutny/hash.js/tree/v1.1.7",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright Fedor Indutny, 2014."]
+      }
+    },
+    {
+      "name": "https",
+      "generatedNotice": {
+        "licenseId": "ISC",
+        "copyrights": ["Copyright (c) hardus van der berg"],
+        "preamble": [
+          "https@1.0.0 is an empty compatibility package by hardus van der berg, published under ISC."
+        ]
+      }
+    },
+    {
       "license": "MIT",
       "name": "@react-grab/cli",
       "sourceUrl": "https://github.com/aidenybai/react-grab/tree/main/packages/cli",
@@ -510,6 +528,114 @@
       "generatedNotice": {
         "licenseId": "MIT",
         "copyrights": ["Copyright (c) 2025 opencode"]
+      }
+    },
+    {
+      "license": "MIT",
+      "name": "noxcturnal",
+      "sourceUrl": "https://github.com/expo/noxcturnal",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) 2015-present 650 Industries, Inc. (aka Expo)"]
+      }
+    },
+    {
+      "license": "MIT",
+      "name": "@noxcturnal/noxcturnal-linux-x64-gnu",
+      "sourceUrl": "https://github.com/expo/noxcturnal",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) 2015-present 650 Industries, Inc. (aka Expo)"]
+      }
+    },
+    {
+      "license": "MIT",
+      "name": "@noxcturnal/noxcturnal-darwin-x64",
+      "sourceUrl": "https://github.com/expo/noxcturnal",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) 2015-present 650 Industries, Inc. (aka Expo)"]
+      }
+    },
+    {
+      "license": "MIT",
+      "name": "@noxcturnal/noxcturnal-linux-arm64-gnu",
+      "sourceUrl": "https://github.com/expo/noxcturnal",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) 2015-present 650 Industries, Inc. (aka Expo)"]
+      }
+    },
+    {
+      "license": "MIT",
+      "name": "@noxcturnal/noxcturnal-darwin-arm64",
+      "sourceUrl": "https://github.com/expo/noxcturnal",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) 2015-present 650 Industries, Inc. (aka Expo)"]
+      }
+    },
+    {
+      "license": "MIT",
+      "name": "@noxcturnal/noxcturnal-linux-arm64-musl",
+      "sourceUrl": "https://github.com/expo/noxcturnal",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) 2015-present 650 Industries, Inc. (aka Expo)"]
+      }
+    },
+    {
+      "license": "MIT",
+      "name": "@noxcturnal/noxcturnal-linux-x64-musl",
+      "sourceUrl": "https://github.com/expo/noxcturnal",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) 2015-present 650 Industries, Inc. (aka Expo)"]
+      }
+    },
+    {
+      "license": "MIT",
+      "name": "@noxcturnal/noxcturnal-win32-arm64-msvc",
+      "sourceUrl": "https://github.com/expo/noxcturnal",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) 2015-present 650 Industries, Inc. (aka Expo)"]
+      }
+    },
+    {
+      "license": "MIT",
+      "name": "@noxcturnal/noxcturnal-win32-x64-msvc",
+      "sourceUrl": "https://github.com/expo/noxcturnal",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) 2015-present 650 Industries, Inc. (aka Expo)"]
+      }
+    },
+    {
+      "license": "MIT",
+      "name": "fastdom",
+      "sourceUrl": "https://github.com/wilsonpage/fastdom",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) 2016 Wilson Page"]
+      }
+    },
+    {
+      "license": "MIT",
+      "name": "strictdom",
+      "sourceUrl": "https://github.com/wilsonpage/strictdom",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) 2013 Wilson Page"]
+      }
+    },
+    {
+      "license": "MIT",
+      "name": "khroma",
+      "sourceUrl": "https://github.com/fabiospampinato/khroma",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) 2019-present Fabio Spampinato, Andrew Maney"]
       }
     }
   ]

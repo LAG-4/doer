@@ -52,11 +52,13 @@ const replaceSpreadsheetCell = Tool.make("replace_spreadsheet_cell", {
 
 const inspectPresentation = Tool.make("inspect_presentation", {
   description:
-    "Read text from the slides of a local .pptx file in this Space. Returns a version hash for a later edit.",
+    "Read text from the slides of a local .pptx file in this Space. Returns a version hash for a later edit. Each slide lists exact text runs; replace_presentation_text needs one exact run.",
   parameters: path,
   success: Schema.Struct({
     sha256: Schema.String,
-    slides: Schema.Array(Schema.Struct({ slide: Schema.Number, text: Schema.String })),
+    slides: Schema.Array(
+      Schema.Struct({ slide: Schema.Number, text: Schema.String, runs: Schema.Array(Schema.String) }),
+    ),
   }),
   failure: LocalDocumentError,
   dependencies,

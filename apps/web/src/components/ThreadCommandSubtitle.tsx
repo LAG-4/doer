@@ -105,7 +105,7 @@ export function ThreadCommandSubtitle(props: {
       {props.isCurrent ? (
         <>
           {projectLabel || branchLabel || showHarness ? <CommandPaletteMetaDot /> : null}
-          <span className="shrink-0">Current thread</span>
+          <span className="shrink-0">Current Task</span>
         </>
       ) : null}
     </span>

@@ -16,10 +16,13 @@
 import { VcsUnsupportedOperationError, type CheckpointRef } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import { ServerConfig } from "../config.ts";
 import * as Layer from "effect/Layer";
 
 import type { CheckpointStoreError } from "./Errors.ts";
 import type { VcsCheckpointOps } from "../vcs/VcsDriver.ts";
+import * as FolderCheckpoints from "./FolderCheckpoints.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 
 export interface CaptureCheckpointInput {
@@ -31,6 +34,11 @@ export interface RestoreCheckpointInput {
   readonly cwd: string;
   readonly checkpointRef: CheckpointRef;
   readonly fallbackToHead?: boolean;
+  /** Ordinary folders restore only these Task files and reject later edits. */
+  readonly expectedPaths?: readonly {
+    readonly path: string;
+    readonly checkpointRef: CheckpointRef;
+  }[];
 }
 
 export interface DiffCheckpointsInput {
@@ -53,6 +61,7 @@ export class CheckpointStore extends Context.Service<
   {
     /** Check whether cwd is inside a Git worktree. */
     readonly isGitRepository: (cwd: string) => Effect.Effect<boolean, CheckpointStoreError>;
+    readonly supportsOrdinaryFolders?: boolean;
 
     /**
      * Capture a checkpoint commit and store it at the provided checkpoint ref.
@@ -101,11 +110,17 @@ export class CheckpointStore extends Context.Service<
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
+  const config = yield* Effect.serviceOption(ServerConfig);
+  const folders = Option.isSome(config)
+    ? yield* FolderCheckpoints.make(config.value.stateDir)
+    : null;
 
   const resolveCheckpoints = Effect.fn("CheckpointStore.resolveCheckpoints")(function* (
     operation: string,
     cwd: string,
   ) {
+    const repository = yield* vcsRegistry.detect({ cwd });
+    if (repository === null && folders !== null) return folders;
     const handle = yield* vcsRegistry.resolve({ cwd });
     if (!handle.driver.checkpoints) {
       return yield* new VcsUnsupportedOperationError({
@@ -162,6 +177,7 @@ export const make = Effect.gen(function* () {
 
   return CheckpointStore.of({
     isGitRepository,
+    supportsOrdinaryFolders: folders !== null,
     captureCheckpoint,
     hasCheckpointRef,
     restoreCheckpoint,

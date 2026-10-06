@@ -116,7 +116,7 @@ export function ComposerPluginsMenu({
           disabled={saving || unavailableReason !== null}
           onCheckedChange={(enabled) => void toggle(key, enabled)}
           closeOnClick={false}
-          className="min-h-12 py-2 sm:min-h-12"
+          className="min-h-12 sm:min-h-12"
         >
           <span className="flex items-center gap-2.5">
             <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-border/60 bg-muted/40">

@@ -62,6 +62,7 @@ import {
   openCodeManagedScriptBinDir,
   openCodeManagedScriptBinaryPath,
   openCodeNpmInstallArgs,
+  openCodePowerShellDownloadArgs,
   OPENCODE_NPM_INSTALL_SPEC,
   OPENCODE_NPM_INSTALL_SPEC_V2,
 } from "./opencodeInstall.ts";
@@ -133,7 +134,6 @@ export function resolveOpenCodeServerPassword(
     : input.environment.OPENCODE_SERVER_PASSWORD;
 }
 
-const OPENCODE_SERVER_READY_PREFIXES = ["opencode server listening", "server listening"];
 const OPENCODE_SERVER_PASSWORD_PREFIX = "server password";
 const DEFAULT_OPENCODE_SERVER_TIMEOUT_MS = 30_000;
 const DEFAULT_HOSTNAME = "127.0.0.1";
@@ -339,7 +339,7 @@ function openCodeHttpStatusOf(cause: unknown): number | undefined {
   return undefined;
 }
 
-export const verifyOpenCodeServerVersionV2 = Effect.fn("verifyOpenCodeServerVersionV2")(function* (
+const verifyOpenCodeServerVersionV2 = Effect.fn("verifyOpenCodeServerVersionV2")(function* (
   client: OpenCodeV2Client,
 ) {
   const infoOption = yield* runOpenCodeSdk("server.info", (signal) =>
@@ -385,7 +385,7 @@ export const verifyOpenCodeServerVersionV2 = Effect.fn("verifyOpenCodeServerVers
  * v1 server, and a v1 server is found even when the v2 probe fails oddly
  * (proxies, HTML error pages, content-type quirks).
  */
-export const verifyOpenCodeServerVersionRouted = Effect.fn("verifyOpenCodeServerVersionRouted")(
+const verifyOpenCodeServerVersionRouted = Effect.fn("verifyOpenCodeServerVersionRouted")(
   function* (input: { readonly v1: OpencodeClient; readonly v2: OpenCodeV2Client }) {
     const [v2Exit, v1Exit] = yield* Effect.all(
       [
@@ -780,13 +780,8 @@ export interface OpenCodeRuntimeShape {
 /** @internal */
 export function parseServerUrlFromOutput(output: string): string | null {
   for (const line of output.split("\n")) {
-    // v1 prints `opencode server listening on <url>`; v2 prints
-    // `server listening on <url>`. Accept either.
-    if (!OPENCODE_SERVER_READY_PREFIXES.some((prefix) => line.startsWith(prefix))) {
-      continue;
-    }
-    const match = line.match(/on\s+(https?:\/\/[^\s]+)/);
-    return match?.[1] ?? null;
+    const match = line.match(/server listening on\s+(https?:\/\/[^\s]+)/i);
+    if (match?.[1]) return match[1];
   }
   return null;
 }
@@ -1746,7 +1741,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
         return yield* new OpenCodeRuntimeError({
           operation: "ensureOpenCodeInstalled",
           detail:
-            "Automatic OpenCode installation timed out after 5 minutes. The install may still be finishing; refresh provider status to check.",
+            "Automatic OpenCode installation timed out. Check your connection and try setup again.",
         });
       }
       return collected.value;
@@ -1783,21 +1778,39 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       }
       const failures: Array<string> = [];
       for (const spec of OPENCODE_NPM_INSTALL_SPECS_IN_ORDER) {
-        const { stdout, stderr, code } = yield* runInstallCommand({
+        const installed = yield* runInstallCommand({
           label: "npm",
           command: npm.value,
           args: openCodeNpmInstallArgs(input.managedDir, spec),
           ...(input.environment ? { environment: input.environment } : {}),
           timeoutMs: OPENCODE_NPM_INSTALL_TIMEOUT_MS,
-        });
-        if (code === 0) {
+        }).pipe(Effect.result);
+        if (Result.isFailure(installed)) {
+          failures.push(`${spec}: ${installed.failure.detail}`);
+          continue;
+        }
+        const { stdout, stderr, code } = installed.success;
+        // npm can exit successfully with a missing or unusable native binary.
+        const probe =
+          code === 0
+            ? yield* runInstallCommand({
+                label: "OpenCode version check",
+                command: openCodeManagedBinaryPath(input.managedDir, hostPlatform),
+                args: ["--version"],
+                ...(input.environment ? { environment: input.environment } : {}),
+                timeoutMs: 10_000,
+              }).pipe(Effect.result)
+            : undefined;
+        if (probe && Result.isSuccess(probe) && probe.success.code === 0) {
           yield* Effect.logInfo(`Automatic OpenCode installation used ${spec}.`, {
             managedDir: input.managedDir,
           });
           return;
         }
         const tail = `${stderr}\n${stdout}`.trim().slice(-1024);
-        failures.push(`${spec} (npm exited with code ${code})${tail ? `:\n${tail}` : ""}`);
+        failures.push(
+          `${spec} (${code === 0 ? "installed binary could not start" : `npm exited with code ${code}`})${tail ? `:\n${tail}` : ""}`,
+        );
       }
       return yield* new OpenCodeRuntimeError({
         operation: "ensureOpenCodeInstalled",
@@ -1829,7 +1842,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
         });
       }
       const curl = yield* resolveExisting("curl", input.environment);
-      if (Option.isNone(curl)) {
+      if (Option.isNone(curl) && hostPlatform !== "win32") {
         return yield* new OpenCodeRuntimeError({
           operation: "ensureOpenCodeInstalled",
           detail:
@@ -1873,17 +1886,43 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
         const archivePath = pathService.join(tmpDir, openCodeInstallArchiveFilename(target));
         const extractDir = pathService.join(tmpDir, "extracted");
         yield* fs.makeDirectory(extractDir, { recursive: true });
-        const download = yield* runInstallCommand({
-          label: "curl",
-          command: curl.value,
-          args: openCodeCurlDownloadArgs(openCodeInstallDownloadUrl(target), archivePath),
-          ...(input.environment ? { environment: input.environment } : {}),
-          timeoutMs: OPENCODE_SCRIPT_INSTALL_TIMEOUT_MS,
-        });
-        if (download.code !== 0) {
+        const downloadUrl = openCodeInstallDownloadUrl(target);
+        const downloads = [
+          ...(Option.isSome(curl)
+            ? [{ command: curl.value, args: openCodeCurlDownloadArgs(downloadUrl, archivePath) }]
+            : []),
+          ...(hostPlatform === "win32"
+            ? [
+                {
+                  command: extractor.value,
+                  args: openCodePowerShellDownloadArgs(downloadUrl, archivePath),
+                },
+              ]
+            : []),
+        ];
+        const failures: Array<string> = [];
+        let downloaded = false;
+        for (const command of downloads) {
+          const attempt = yield* runInstallCommand({
+            label: command.command,
+            ...command,
+            ...(input.environment ? { environment: input.environment } : {}),
+            timeoutMs: OPENCODE_SCRIPT_INSTALL_TIMEOUT_MS,
+          }).pipe(Effect.result);
+          if (Result.isSuccess(attempt) && attempt.success.code === 0) {
+            downloaded = true;
+            break;
+          }
+          failures.push(
+            Result.isFailure(attempt)
+              ? attempt.failure.detail
+              : `${command.command} exited with code ${attempt.success.code}: ${attempt.success.stderr.trim().slice(-1024)}`,
+          );
+        }
+        if (!downloaded) {
           return yield* new OpenCodeRuntimeError({
             operation: "ensureOpenCodeInstalled",
-            detail: `Automatic OpenCode installation failed (could not download the release archive). Check network access, or install OpenCode manually: curl -fsSL https://opencode.ai/install | bash`,
+            detail: `Could not download the free AI service. Check your internet connection and try setup again. Download details: ${failures.join("; ")}`,
           });
         }
         const extractCommand = openCodeArchiveExtractCommand({
@@ -2025,7 +2064,23 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
           yield* runNpmInstall({
             managedDir,
             ...(environment !== undefined ? { environment } : {}),
-          });
+          }).pipe(
+            Effect.catch((npmError) =>
+              Effect.logWarning(
+                "OpenCode npm install failed; trying the official release archive.",
+                {
+                  detail: npmError.detail,
+                },
+              ).pipe(
+                Effect.andThen(
+                  runScriptInstall({
+                    managedDir,
+                    ...(environment !== undefined ? { environment } : {}),
+                  }),
+                ),
+              ),
+            ),
+          );
         } else {
           yield* Effect.logInfo(
             "OpenCode CLI not found and npm is unavailable. Installing automatically by downloading the official release.",
@@ -2038,8 +2093,8 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
         }
         const installed = yield* firstExisting(
           [
-            openCodeManagedBinaryPath(managedDir, hostPlatform),
             openCodeManagedScriptBinaryPath(managedDir, hostPlatform),
+            openCodeManagedBinaryPath(managedDir, hostPlatform),
           ],
           environment,
         );

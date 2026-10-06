@@ -9,7 +9,7 @@ import { type ComponentProps, useRef, useState } from "react";
 
 import { requestConfirmDialog } from "~/confirmDialog";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
-import { useEnvironmentSettings } from "~/hooks/useSettings";
+import { useClientSettings, useEnvironmentSettings } from "~/hooks/useSettings";
 import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { manualServerUpdateCommand } from "~/versionSkew";
@@ -163,9 +163,7 @@ export function ServerUpdateProgress({
         <span className="size-1.5 shrink-0 rounded-full bg-destructive" aria-hidden="true" />
         <Tooltip>
           <TooltipTrigger render={<span className="min-w-0 truncate">{state.message}</span>} />
-          <TooltipPopup side="top" className="max-w-80">
-            {state.message}
-          </TooltipPopup>
+          <TooltipPopup side="top">{state.message}</TooltipPopup>
         </Tooltip>
       </div>
     );
@@ -199,6 +197,7 @@ export function ServerUpdateAction({
   className,
   appearance = "button",
 }: Omit<ServerUpdateTarget, "continueThreadsAfterServerUpdate"> & UpdateButtonProps) {
+  const simpleMode = useClientSettings((settings) => settings.simpleModeEnabled);
   const isDesktopAppUpdate = selfUpdate === "desktop-managed";
   const continueThreadsAfterServerUpdate = useEnvironmentSettings(
     environmentId,
@@ -259,6 +258,13 @@ export function ServerUpdateAction({
   }
 
   const manualCommand = selfUpdate === null ? manualServerUpdateCommand(targetVersion) : null;
+  if (simpleMode && manualCommand !== null) {
+    return (
+      <span className="text-xs text-muted-foreground">
+        Update instructions are available in Advanced settings.
+      </span>
+    );
+  }
   const actionLabel = manualCommand !== null ? "Copy update command" : label;
   const onClick =
     manualCommand !== null
@@ -272,8 +278,8 @@ export function ServerUpdateAction({
           render={
             <Button
               size="icon-xs"
-              variant="ghost"
-              className={className ?? "text-muted-foreground hover:text-foreground"}
+              variant="ghost-muted"
+              className={className}
               aria-label={`${actionLabel} for ${serverLabel}`}
               onClick={onClick}
             />

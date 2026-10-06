@@ -121,6 +121,8 @@ export function ScheduledDatePicker(props: {
     props.onChange(
       toIso({ ...parts, year: date.getFullYear(), month: date.getMonth(), day: date.getDate() }),
     );
+    setViewYear(date.getFullYear());
+    setViewMonth(date.getMonth());
   };
 
   const setTime = (hour24: number, minute: number) => {
@@ -131,18 +133,18 @@ export function ScheduledDatePicker(props: {
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         render={
-          <Button
-            id={props.id}
-            type="button"
-            variant="outline"
-            className="w-full justify-start font-normal"
-          >
+          <Button id={props.id} type="button" variant="outline" className="w-full justify-start">
             <span className="flex-1 truncate text-left">{formatTrigger(parts)}</span>
             <ChevronDownIcon className="size-4 opacity-60" />
           </Button>
         }
       />
-      <PopoverPopup side="bottom" align="start" className="w-[min(21rem,calc(100vw-1.5rem))] p-3">
+      <PopoverPopup
+        side="bottom"
+        align="start"
+        padding="compact"
+        className="w-[min(21rem,calc(100vw-1.5rem))]"
+      >
         <div className="flex items-center justify-between pb-2">
           <Button
             type="button"
@@ -185,6 +187,13 @@ export function ScheduledDatePicker(props: {
                 key={`${viewYear}-${viewMonth}-${cell.monthOffset}-${cell.day}`}
                 type="button"
                 disabled={disabled}
+                aria-label={date.toLocaleDateString(undefined, {
+                  weekday: "long",
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                })}
+                aria-pressed={selected}
                 onClick={() => pickDay(cell.day, cell.monthOffset)}
                 className={cn(
                   "cursor-pointer rounded-md py-1.5 text-sm hover:bg-accent disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent",

@@ -1,3 +1,10 @@
+import {
+  buildDoerContextPrompt,
+  parseDoerContext,
+  PERSONAL_CONTEXT_FILE,
+  SPACE_CONTEXT_FILE,
+} from "@t3tools/shared/doerContext";
+import { buildDoerMemoryPrompt } from "@t3tools/shared/doerMemory";
 /**
  * ProviderServiceLive - Cross-provider orchestration layer.
  *
@@ -88,6 +95,7 @@ import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as ProjectionSnapshotQuery from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { DoerMemoryStore } from "../../persistence/Services/DoerMemoryStore.ts";
 const isModelSelection = Schema.is(ModelSelection);
 const encodePromptJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
@@ -265,6 +273,7 @@ interface TurnAnalyticsMetadata {
   readonly provider: ProviderDriverKind;
   readonly startedAtMs: number;
   readonly mixedModels: boolean;
+  readonly subscriptionSharing?: boolean;
   readonly model?: string;
   readonly effort?: string;
   readonly interactionMode?: string;
@@ -429,6 +438,14 @@ function readPersistedCwd(
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+/** Stopped rows with no active turn are settled; shutdown leaves them untouched. */
+function isSettledBinding(binding: ProviderSessionDirectory.ProviderRuntimeBinding): boolean {
+  if (binding.status !== "stopped") return false;
+  const payload = binding.runtimePayload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return true;
+  return !("activeTurnId" in payload) || payload.activeTurnId == null;
+}
+
 const dieOnMissingBindingInstanceId = (
   operation: string,
   payload: {
@@ -484,6 +501,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const projectionQuery = yield* Effect.serviceOption(
     ProjectionSnapshotQuery.ProjectionSnapshotQuery,
   );
+  // Saved memories are optional here so provider-only runtimes without the
+  // persistence layer still send turns (recall is skipped, never fatal).
+  const doerMemoryStore = yield* Effect.serviceOption(DoerMemoryStore);
   const issueMcpCredential =
     options?.issueMcpCredential ?? McpSessionRegistry.issueActiveMcpCredential;
   const fileSystem = yield* FileSystem.FileSystem;
@@ -537,6 +557,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
 
     return {
       ...input.completion.terminalProperties,
+      ...(metadata?.subscriptionSharing ? { subscriptionSharing: true } : {}),
       ...(metadata?.model ? { model: metadata.model } : {}),
       ...(metadata?.effort ? { effort: metadata.effort } : {}),
       ...(metadata?.interactionMode ? { interactionMode: metadata.interactionMode } : {}),
@@ -582,6 +603,21 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     readonly runtimeMode: string | undefined;
   }) {
     const startedAtMs = DateTime.toEpochMillis(yield* DateTime.now);
+    const settings = yield* serverSettings.getSettings.pipe(Effect.option);
+    const instance = Option.isSome(settings)
+      ? settings.value.providerInstances[input.providerInstanceId]
+      : undefined;
+    const subscriptionSharing =
+      input.provider === "codex" &&
+      (instance
+        ? instance.driver === "codex" &&
+          typeof instance.config === "object" &&
+          instance.config !== null &&
+          "setupMode" in instance.config &&
+          instance.config.setupMode === "managed"
+        : input.providerInstanceId === "codex" &&
+          Option.isSome(settings) &&
+          settings.value.providers.codex.setupMode === "managed");
     turnAnalyticsRequestId += 1;
     const requestId = turnAnalyticsRequestId;
     const effort = turnEffort(input.modelSelection);
@@ -594,6 +630,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       };
       const metadata: TurnAnalyticsMetadata = {
         provider: input.provider,
+        ...(subscriptionSharing ? { subscriptionSharing: true } : {}),
         startedAtMs,
         mixedModels: false,
         requestId,
@@ -940,9 +977,13 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     if (access.browser) capabilities.add("preview");
     if (access.device) capabilities.add("device");
     if (access.computer) capabilities.add("computer");
-    if (access.gmail) capabilities.add("gmail");
-    if (access.spreadsheets) capabilities.add("local-spreadsheets");
-    if (access.presentations) capabilities.add("local-presentations");
+    // Connected tools ride along on every credential: their handlers re-read
+    // the live switch (and task state) on each call, so turning access off
+    // still revokes use while turning it on needs no session restart. The
+    // registry is in-memory, so a server restart re-mints credentials anyway.
+    capabilities.add("gmail");
+    capabilities.add("local-spreadsheets");
+    capabilities.add("local-presentations");
     return capabilities;
   });
 
@@ -1633,6 +1674,36 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     },
   );
 
+  /**
+   * Bounded recall for one turn. About-you entries plus the calling Task's
+   * Space only — the project id comes from the authoritative thread shell,
+   * never from caller input. Unknown threads and store-less runtimes fall
+   * back to About-you only (or nothing), so recall is correct when a Task is
+   * resumed or switched and fresh saves apply next turn.
+   */
+  const readDoerMemoryPrompt = Effect.fn("ProviderService.readDoerMemoryPrompt")(function* (
+    threadId: ThreadId,
+  ) {
+    if (Option.isNone(doerMemoryStore)) return "";
+    const store = doerMemoryStore.value;
+    if (Option.isNone(projectionQuery)) {
+      return buildDoerMemoryPrompt({ aboutYou: yield* store.listAboutYou() });
+    }
+    const thread = yield* projectionQuery.value.getThreadShellById(threadId);
+    if (Option.isNone(thread)) {
+      return buildDoerMemoryPrompt({ aboutYou: yield* store.listAboutYou() });
+    }
+    const projectId = String(thread.value.projectId);
+    const [aboutYou, space] = yield* Effect.zip(
+      store.listAboutYou(),
+      store.listForSpace({ projectId }),
+      {
+        concurrent: true,
+      },
+    );
+    return buildDoerMemoryPrompt({ aboutYou, space });
+  });
+
   const sendTurn: ProviderServiceMethod<"sendTurn"> = Effect.fn("sendTurn")(function* (rawInput) {
     const parsed = yield* decodeInputOrValidationError({
       operation: "ProviderService.sendTurn",
@@ -1677,6 +1748,52 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       }
       return false;
     };
+    // Native provider commands must stay exact; saved prose would become command arguments.
+    // Continuation-only turns also resume their existing prompt rather than starting another task.
+    if (!parsed.continuation && !parsed.input?.trimStart().startsWith("/")) {
+      const binding = Option.getOrUndefined(yield* directory.getBinding(parsed.threadId));
+      const contextCwd = binding ? readPersistedCwd(binding.runtimePayload) : undefined;
+      const readContext = (filePath: string) =>
+        fileSystem.readFileString(filePath).pipe(
+          Effect.flatMap((contents) => Effect.try(() => parseDoerContext(contents))),
+          Effect.orElseSucceed(() => undefined),
+        );
+      const personal = yield* readContext(
+        pathService.join(serverConfig.stateDir, PERSONAL_CONTEXT_FILE),
+      );
+      const space = contextCwd
+        ? yield* readContext(pathService.join(contextCwd, SPACE_CONTEXT_FILE))
+        : undefined;
+      const savedContext = buildDoerContextPrompt({
+        ...(personal ? { personal } : {}),
+        ...(space ? { space } : {}),
+      });
+      if (savedContext && !appendAttachmentContext(savedContext)) {
+        return yield* toValidationError(
+          "ProviderService.sendTurn",
+          "This request is too long to include your saved preferences. Shorten it and try again.",
+        );
+      }
+      // Saved memories: About-you plus the current Space only, bounded by the
+      // shared prompt budget. Resolved fresh on every turn so a save is
+      // recalled next turn and a resumed or switched Task recalls the correct
+      // Space. A failed read warns and skips — recall never blocks a turn.
+      if (Option.isSome(doerMemoryStore)) {
+        const memoryPrompt = yield* readDoerMemoryPrompt(parsed.threadId).pipe(
+          Effect.catch((cause) =>
+            Effect.logWarning("Could not read saved memories for this turn.", { cause }).pipe(
+              Effect.as(""),
+            ),
+          ),
+        );
+        if (memoryPrompt && !appendAttachmentContext(memoryPrompt)) {
+          return yield* toValidationError(
+            "ProviderService.sendTurn",
+            "This request is too long to include your saved memories. Shorten it and try again.",
+          );
+        }
+      }
+    }
     for (const attachment of attachments) {
       const attachmentPath = resolveAttachmentPath({
         attachmentsDir: serverConfig.attachmentsDir,
@@ -1693,10 +1810,12 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             ? `[Pasted text "${attachment.name}" is saved at: ${attachmentPath}. Inspect it as needed.]`
             : `[Attached ${attachment.type} "${attachment.name}" is saved at: ${attachmentPath}]`,
       );
-      if (isPastedText && !appended) {
+      // Most adapters see generic files only through this path line, so a file
+      // without one would be silently dropped. Images still go natively.
+      if (!appended && attachment.type === "file") {
         return yield* toValidationError(
           "ProviderService.sendTurn",
-          `Input plus pasted-text attachment context exceeds the ${PROVIDER_SEND_TURN_MAX_INPUT_CHARS} character limit`,
+          `Input plus attachment context exceeds the ${PROVIDER_SEND_TURN_MAX_INPUT_CHARS} character limit`,
         );
       }
     }
@@ -1788,6 +1907,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       yield* McpSessionRegistry.touchActiveMcpThread(input.threadId);
       const analyticsModelSelection =
         input.modelSelection?.instanceId === routed.instanceId ? input.modelSelection : undefined;
+      let subscriptionSharing = false;
       const turn = yield* Effect.acquireUseRelease(
         beginTurnAnalytics({
           providerInstanceId: routed.instanceId,
@@ -1799,7 +1919,22 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         }),
         (turnMetadata) =>
           Effect.gen(function* () {
-            const turn = yield* routed.adapter.sendTurn(input);
+            subscriptionSharing = turnMetadata.subscriptionSharing === true;
+            yield* analytics.record("provider.turn.attempted", {
+              provider: routed.adapter.provider,
+              ...(turnMetadata.subscriptionSharing ? { subscriptionSharing: true } : {}),
+              model: input.modelSelection?.model,
+              runtimeMode: routed.runtimeMode,
+            });
+            const turn = yield* routed.adapter.sendTurn(input).pipe(
+              Effect.tapError((error) =>
+                analytics.record("provider.turn.rejected", {
+                  provider: routed.adapter.provider,
+                  ...(turnMetadata.subscriptionSharing ? { subscriptionSharing: true } : {}),
+                  errorType: error._tag,
+                }),
+              ),
+            );
             yield* associateTurnAnalytics({
               providerInstanceId: routed.instanceId,
               threadId: input.threadId,
@@ -1833,6 +1968,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       });
       yield* analytics.record("provider.turn.sent", {
         provider: routed.adapter.provider,
+        ...(subscriptionSharing ? { subscriptionSharing: true } : {}),
         model: input.modelSelection?.model,
         interactionMode: input.interactionMode,
         // Session-start events alone skew runtime mode toward users who toggle
@@ -2365,7 +2501,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     // Continuation is project-scopable, so decide it per session's project;
     // without orchestration the environment value is all there is.
     const stopSettings = yield* serverSettings.getSettings.pipe(
-      Effect.map(Option.some),
+      Effect.asSome,
       Effect.orElseSucceed(() => Option.none<ServerSettingsValue>()),
     );
     const continueAfterRestartFor = Effect.fn("continueAfterRestartFor")(function* (
@@ -2398,7 +2534,6 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       return [completed, state] as const;
     });
     yield* recordCompletedTurnProperties(properties);
-    const threadIds = yield* directory.listThreadIds();
     const currentAdapters = yield* getAdapterEntries;
     const activeSessions = yield* Effect.forEach(currentAdapters, ([instanceId, adapter]) =>
       adapter.listSessions().pipe(
@@ -2429,7 +2564,12 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     yield* Effect.forEach(currentAdapters, ([, adapter]) => adapter.stopAll()).pipe(Effect.asVoid);
     yield* McpSessionRegistry.revokeAllActiveMcpCredentials();
     McpProviderSession.clearAllMcpProviderSessions();
-    const bindings = yield* directory.listBindings().pipe(Effect.orElseSucceed(() => []));
+    // Stopped rows stay for their resume cursors, so long-lived installs hold
+    // thousands. Only rewrite the ones this shutdown actually stops.
+    const bindings = yield* directory.listBindings().pipe(
+      Effect.map((all) => all.filter((binding) => !isSettledBinding(binding))),
+      Effect.orElseSucceed(() => []),
+    );
     yield* Effect.forEach(bindings, (binding) =>
       Effect.gen(function* () {
         const providerInstanceId = dieOnMissingBindingInstanceId(
@@ -2449,8 +2589,10 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         });
       }),
     ).pipe(Effect.asVoid);
+    // Not `sessionCount`: that older property counted every row, so a new name
+    // keeps the two meanings in separate series.
     yield* analytics.record("provider.sessions.stopped_all", {
-      sessionCount: threadIds.length,
+      stoppedSessionCount: bindings.length,
     });
     yield* analytics.flush;
   });

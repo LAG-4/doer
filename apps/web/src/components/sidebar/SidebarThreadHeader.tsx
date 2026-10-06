@@ -21,8 +21,7 @@ import {
 
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
-import { Input } from "../ui/input";
-import { SidebarMenuButton } from "../ui/sidebar";
+import { SidebarInput, SidebarMenuButton } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 export interface SidebarThreadHeaderProps {
@@ -75,8 +74,8 @@ export function SidebarThreadHeader({
   // screen reader on nothing.
   const activeResultExists = resultsVisible && activeSearchResultIndex < searchResultCount;
   const newThreadLabel = newThreadShortcutLabel
-    ? `New thread (${newThreadShortcutLabel})`
-    : "New thread";
+    ? `New Task (${newThreadShortcutLabel})`
+    : "New Task";
 
   return (
     <div className="flex items-center gap-1">
@@ -84,17 +83,16 @@ export function SidebarThreadHeader({
         ref={searchFieldRef}
         className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
       >
-        <SearchIcon className="size-4 shrink-0 text-[var(--sidebar-icon-color)]" />
-        <Input
+        <SearchIcon className="size-4 shrink-0 text-(--sidebar-icon-color)" />
+        <SidebarInput
           ref={searchInputRef}
           nativeInput
-          unstyled
           type="search"
           value={searchQuery}
           onChange={(event) => onSearchQueryChange(event.currentTarget.value)}
           onKeyDown={onSearchKeyDown}
           placeholder="Search"
-          aria-label="Search threads"
+          aria-label="Search Tasks"
           role="combobox"
           aria-autocomplete="list"
           aria-expanded={resultsVisible}
@@ -104,15 +102,15 @@ export function SidebarThreadHeader({
               ? `sidebar-thread-search-result-${activeSearchResultIndex}`
               : undefined
           }
-          className="min-w-0 flex-1 [&_[data-slot=input]]:h-auto [&_[data-slot=input]]:p-0 [&_[data-slot=input]]:leading-normal [&_[data-slot=input]]:text-sm [&_[data-slot=input]]:font-medium [&_[data-slot=input]]:text-sidebar-foreground [&_[data-slot=input]]:placeholder:text-[var(--sidebar-icon-color)]"
+          className="min-w-0 flex-1"
         />
         {isSearching ? (
           <Button
             type="button"
             size="icon-micro"
-            variant="ghost"
-            className="shrink-0 text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
-            aria-label="Clear thread search"
+            variant="ghost-muted"
+            className="shrink-0"
+            aria-label="Clear Task search"
             onClick={() => {
               onClearSearch();
               searchInputRef.current?.focus();
@@ -129,19 +127,19 @@ export function SidebarThreadHeader({
         {hasProjects ? (
           <>
             {projectScope}
-            <SidebarHeaderIconButton label="New project" onClick={onNewProject}>
+            <SidebarHeaderIconButton label="New Space" onClick={onNewProject}>
               <FolderPlusIcon />
             </SidebarHeaderIconButton>
           </>
         ) : null}
         <SidebarHeaderIconButton
-          label="New thread"
+          label="New Task"
           tooltip={
             showNewThreadInProjectHint ? (
               <span className="flex flex-col gap-0.5">
                 <span>{newThreadLabel}</span>
                 <span className="text-muted-foreground">
-                  New thread in current project: Shift+click
+                  New Task in current Space: Shift+click
                   {newThreadInProjectShortcutLabel ? ` (${newThreadInProjectShortcutLabel})` : ""}
                 </span>
               </span>
@@ -189,10 +187,7 @@ export function SidebarHeaderIconButton({
             type="button"
             aria-label={label}
             {...rest}
-            className={cn(
-              "relative size-7 shrink-0 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar",
-              className,
-            )}
+            className={cn("relative size-7 shrink-0", className)}
           />
         }
       >

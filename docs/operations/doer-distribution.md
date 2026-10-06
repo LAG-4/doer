@@ -83,3 +83,110 @@ the live domain served a fresh upstream build (canonical `t3.codes`,
   signs automatically when they exist. No code change.
 - **Package managers** (winget, Homebrew, AUR) need manual registry
   submissions; wire them up only on request.
+
+## Microsoft Store (AppX, free signing)
+
+Two routes address the 10.2.9 unsigned-package rejection; pick one per release.
+Only that stated failure requires signing — no broader policy claim is made
+here, and a green build never guarantees certification.
+
+- **Signed EXE (existing Win32 listing).** Add the `AZURE_*` Trusted Signing
+  secrets and the release workflow signs the NSIS installer in place. No code
+  change. Needs an Azure Trusted Signing account + certificate profile. Adding
+  the secrets only enables the signing step: before shipping, verify the
+  installer AND every shipped PE binary (all DLLs, node.exe, helpers) carry
+  valid signatures.
+- **Store AppX (free, separate packaged submission).** Build the unsigned
+  `.appx` with Actions → Store AppX → Run workflow (default app version
+  `0.0.56`, mapped to Store package `1.0.56` / manifest `1.0.56.0`; always a
+  new version, never reuse a rejected one), upload it to Partner Center, and
+  Microsoft signs it after certification. No Apple/Azure certificate needed.
+  The `.appx` stays in CI artifacts: it is never attached to a GitHub Release
+  and never mirrored to the download site.
+- **Prerequisite for Store distribution:** the Store job builds the desktop
+  app at the input version but publishes no npm package. Remote SSH hosts
+  install `@lag4/doer-cli@<version>`, so run the normal release first to
+  publish the matching CLI version; until that npm version exists, the Store
+  package is install-only with no remote-backend support claim.
+
+### Store version mapping
+
+The Store requires a four-part Version with a nonzero first section and a
+reserved trailing 0
+(`https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/app-package-requirements`),
+but electron-builder packs `${app.version}.0` verbatim — so app `0.0.56`
+would produce the invalid `0.0.56.0`. The build maps app major+1 (`0.0.56` →
+Store `1.0.56` → manifest `1.0.56.0`; `1.0.0` → `2.0.0.0`), rejects
+prereleases, and rewrites the packed manifest's Identity Version through the
+supported `appxManifestCreated` hook (a staged `.cjs` file path, which
+survives config JSON serialization where a function would not). The app keeps
+its own version everywhere else; CI validates the unpacked manifest carries
+the mapped quad. Updating an already-certified packaged listing requires a
+mapped Store version strictly higher than the certified one.
+
+### Package identity (four exact values, no substitutes)
+
+The workflow takes four required inputs from Partner Center → the product →
+Package identity, plus the reserved packaged app name. Do not reuse the old
+`T3CODE_DESKTOP_APPX_*` repo vars (their listing is unconfirmed — they may
+belong to a different submission — so never substitute them); the workflow
+overrides them with your inputs and the build fails closed without all four.
+
+- Name (Identity.Name), Publisher (`CN=<guid>`), Publisher display name.
+- Display name: the reserved packaged app name. This is the fourth exact
+  value needed in addition to the identity trio — do not assume it.
+
+### Listing constraint
+
+The existing Win32 app name may be held, so the new packaged submission may
+require a DIFFERENT reserved name (e.g. Doer Alpha or another name you
+reserve). The existing Win32 product cannot just accept the AppX via the same
+URL form — packaged submissions are separate. Never delete the Win32 listing
+automatically to free the name; create the new packaged submission with its
+own identity and keep both until the Store build is certified. Migrating the
+exact `Doer` name later (if ever) requires your explicit decision.
+
+### runFullTrust justification (for the submission notes)
+
+Electron apps ship with the `runFullTrust` capability (electron-builder adds
+it automatically). Reviewers expect a reason: Doer runs a local Node server
+sidecar, spawns terminal shells (node-pty/conpty), reads and writes across
+the user's own folders, and embeds a WSL Linux runtime. None of this fits a
+sandboxed capability set.
+
+### Verify on Windows before submitting
+
+1. Download the `doer-store-appx-<app-version>` CI artifact (package +
+   `SHA256SUMS.txt` + unpacked `AppxManifest-<app-version>.xml`).
+2. For local validation only, make a TEST-SIGNED COPY: sign the copy with a
+   self-signed cert, install the cert into the machine's Trusted People
+   store, then `Add-AppxPackage -Path <test-signed-copy.appx>`. This copy is
+   validation-only — upload the ORIGINAL UNSIGNED CI `.appx` to Partner
+   Center, never the test-signed copy.
+3. Launch the sideloaded app and check `doer://` deep links, first-run
+   folders under `~/.doer` (full-trust user folders), and the WSL backend.
+4. Run the Windows App Cert Kit against the test-signed package and clear
+   every failure, especially the branding checks (the build stages its own
+   `StoreLogo`, `Square150x150Logo`, `Square44x44Logo`, `Wide310x150Logo`
+   from the Doer icon — never Electron defaults).
+5. Upload the **unsigned** CI `.appx` to Partner Center.
+
+A green build is not a certification guarantee: WACK results, manual policy
+review, and Store backend/subprocess behavior (especially WSL) still decide.
+The Store build disables in-app self-update because the Microsoft Store
+manages updates for Store packages (the app reports "Automatic updates are
+managed by the Microsoft Store for the Store package."); Store installs
+update through the Store only.
+
+## Optional Microsoft sign-in
+
+Register a Microsoft Entra public-client application with device-code sign-in
+enabled and the supported account types your installation needs. Set
+`DOER_MICROSOFT_CLIENT_ID` to its application ID on the server host, then restart
+Doer. This is a public application identifier; no client secret is used.
+The initial delegated permissions are `User.Read`, `Mail.Read`, `Calendars.Read`,
+`Files.Read`, and `offline_access`. SharePoint is opt-in and additionally requests
+`Sites.Read.All`. Your organization may require administrator consent.
+Test consent with both personal and organization accounts before distributing
+your registered configuration. Access and refresh tokens stay in the server's
+protected secret store. Do not bundle account tokens in a release.

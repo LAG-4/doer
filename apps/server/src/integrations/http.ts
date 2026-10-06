@@ -54,15 +54,8 @@ export const integrationsHttpApiLayer = HttpApiBuilder.group(
           yield* reviews.cancelAll;
           return yield* gmail.disconnect.pipe(
             Effect.as({ disconnected: true }),
-            // The existing wire contract has no disconnect conflict variant.
-            // Keep it compatible while reporting a failed revocation honestly.
-            Effect.catch((error) =>
-              Effect.succeed(
-                HttpServerResponse.jsonUnsafe(
-                  { _tag: "EnvironmentHttpConflictError", message: error.message },
-                  { status: 409, headers: { "cache-control": "no-store" } },
-                ),
-              ),
+            Effect.mapError(
+              (error) => new EnvironmentHttpConflictError({ message: error.message }),
             ),
           );
         }),

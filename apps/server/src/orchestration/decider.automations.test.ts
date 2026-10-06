@@ -408,7 +408,9 @@ it.layer(NodeServices.layer)("automation decider", (it) => {
       const message = events.find((entry) => entry.type === "thread.message-sent");
       expect(message).toBeDefined();
       if (message?.type === "thread.message-sent") {
-        expect(message.payload.text).toBe("Summarize overnight activity.");
+        expect(message.payload.text).toContain("Summarize overnight activity.");
+        expect(message.payload.text).toContain("Run the existing reminder");
+        expect(message.payload.text).toContain("Manual run");
       }
       const fired = events.find((entry) => entry.type === "automation.fired");
       expect(fired).toBeDefined();
@@ -419,6 +421,29 @@ it.layer(NodeServices.layer)("automation decider", (it) => {
         expect(fired.payload.nextFireAt).toBe(FUTURE_FIRE);
         expect(fired.payload.state).toBe("active");
       }
+    }),
+  );
+
+  it.effect("retries completed one-off work without reactivating its schedule", () =>
+    Effect.gen(function* () {
+      const result = yield* decideOrchestrationCommand({
+        command: {
+          type: "automation.run-now",
+          commandId: CommandId.make("retry"),
+          automationId: AutomationId.make("automation-1"),
+        },
+        readModel: makeReadModel({
+          automations: [makeAutomation({ state: "completed", nextFireAt: null })],
+        }),
+      });
+      const events = Array.isArray(result) ? result : [result];
+      expect(events.some((event) => event.type === "thread.turn-start-requested")).toBe(true);
+      const fired = events.find((event) => event.type === "automation.fired");
+      expect(fired?.payload).toMatchObject({
+        state: "completed",
+        nextFireAt: null,
+        run: { outcome: "manual" },
+      });
     }),
   );
 
@@ -448,6 +473,33 @@ it.layer(NodeServices.layer)("automation decider", (it) => {
         }),
       }).pipe(Effect.flip);
       expect(threadGone._tag).toBe("OrchestrationCommandInvariantError");
+    }),
+  );
+
+  it.effect("manual dedicated runs execute while shared chats retain the user's modes", () =>
+    Effect.gen(function* () {
+      for (const dedicatedThread of [true, false]) {
+        const result = yield* decideOrchestrationCommand({
+          command: {
+            type: "automation.run-now",
+            commandId: CommandId.make(`cmd-manual-modes-${dedicatedThread}`),
+            automationId: AutomationId.make("automation-1"),
+          },
+          readModel: makeReadModel({
+            automations: [makeAutomation({ dedicatedThread })],
+            thread: makeThread({ runtimeMode: "approval-required", interactionMode: "plan" }),
+          }),
+        });
+        const events = Array.isArray(result) ? result : [result];
+        const turn = events.find((event) => event.type === "thread.turn-start-requested");
+        expect(turn?.payload).toMatchObject({
+          runtimeMode: dedicatedThread ? "full-access" : "approval-required",
+          interactionMode: dedicatedThread ? "default" : "plan",
+        });
+        const fired = events.find((event) => event.type === "automation.fired");
+        if (fired?.type !== "automation.fired") return expect.unreachable("expected manual run");
+        expect(fired.payload.nextFireAt).toBe(FUTURE_FIRE);
+      }
     }),
   );
 

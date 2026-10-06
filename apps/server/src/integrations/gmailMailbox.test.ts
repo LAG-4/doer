@@ -78,6 +78,31 @@ describe("Gmail mailbox API boundaries", () => {
       "https://gmail.googleapis.com/gmail/v1/users/me/messages/abc123?format=full",
     ]);
   });
+  it("falls back to UTF-8 when a part declares an unsupported charset", async () => {
+    const request = (async () =>
+      Response.json({
+        ...mail,
+        payload: {
+          mimeType: "multipart/alternative",
+          parts: [
+            {
+              mimeType: "text/plain",
+              headers: [{ name: "Content-Type", value: 'text/plain; charset="x-made-up-99"' }],
+              body: { data: encoded("Fallback ✓") },
+            },
+            {
+              mimeType: "text/plain",
+              headers: [{ name: "Content-Type", value: "text/plain; charset=utf-8" }],
+              body: { data: encoded("Second ✓") },
+            },
+          ],
+        },
+      })) as typeof fetch;
+    const result = await readGmailMessage("token", "abc123", request);
+    expect(result.bodyFormat).toBe("text");
+    expect(result.body).toContain("Fallback ✓");
+    expect(result.body).toContain("Second ✓");
+  });
   it("returns inert HTML when no text exists and reports truncation", async () => {
     const request = (async () =>
       Response.json({

@@ -31,8 +31,8 @@
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
-export const DEFAULT_OPENCODE_BINARY = "opencode";
-export const OPENCODE_NPM_PACKAGE = "opencode-ai";
+const DEFAULT_OPENCODE_BINARY = "opencode";
+const OPENCODE_NPM_PACKAGE = "opencode-ai";
 export const OPENCODE_NPM_INSTALL_SPEC = `${OPENCODE_NPM_PACKAGE}@latest`;
 /**
  * v2 CLI distribution. Fresh automatic installs prefer this: `@opencode/cli`
@@ -41,14 +41,12 @@ export const OPENCODE_NPM_INSTALL_SPEC = `${OPENCODE_NPM_PACKAGE}@latest`;
  * download step. Falls back to {@link OPENCODE_NPM_INSTALL_SPEC} (v1) when
  * the v2 install fails; both are supported at runtime via version routing.
  */
-export const OPENCODE_NPM_PACKAGE_V2 = "@opencode/cli";
+const OPENCODE_NPM_PACKAGE_V2 = "@opencode/cli";
 export const OPENCODE_NPM_INSTALL_SPEC_V2 = `${OPENCODE_NPM_PACKAGE_V2}@latest`;
 /** Directory name below `<baseDir>/tools` holding the T3-managed install. */
-export const OPENCODE_MANAGED_TOOL_DIRNAME = "opencode";
-/** The official install script — the fallback install mirrors its platform mapping. */
-export const OPENCODE_INSTALL_SCRIPT_URL = "https://opencode.ai/install";
+const OPENCODE_MANAGED_TOOL_DIRNAME = "opencode";
 /** Release downloads live here; the script uses `.../latest/download/<filename>`. */
-export const OPENCODE_RELEASE_DOWNLOAD_BASE_URL =
+const OPENCODE_RELEASE_DOWNLOAD_BASE_URL =
   "https://github.com/anomalyco/opencode/releases/latest/download";
 
 /** True when the caller left the stock `"opencode"` command in place. */
@@ -133,7 +131,8 @@ export interface OpenCodeBinaryCandidatesInput {
  * returned verbatim (the user's explicit choice wins and is never
  * second-guessed); the default resolves through PATH first, then the
  * official script's `~/.opencode/bin`, then the T3-managed installs
- * (npm first, script-downloaded second).
+ * (standalone first, npm second). A failed npm install can leave a broken shim;
+ * the standalone fallback must remain usable on the next startup too.
  */
 export function openCodeBinaryCandidates(
   input: OpenCodeBinaryCandidatesInput,
@@ -149,8 +148,8 @@ export function openCodeBinaryCandidates(
   }
   const managedDir = input.managedDir?.trim();
   if (managedDir) {
-    candidates.push(openCodeManagedBinaryPath(managedDir, input.platform));
     candidates.push(openCodeManagedScriptBinaryPath(managedDir, input.platform));
+    candidates.push(openCodeManagedBinaryPath(managedDir, input.platform));
   }
   return candidates;
 }
@@ -248,7 +247,22 @@ export function openCodeInstallDownloadUrl(target: OpenCodeInstallTarget): strin
 
 /** `curl` argv that downloads a URL to a file, failing loudly on HTTP errors. */
 export function openCodeCurlDownloadArgs(url: string, outputPath: string): ReadonlyArray<string> {
-  return ["-fsSL", "-L", "-o", outputPath, url];
+  return [
+    "-fsSL",
+    "--retry",
+    "3",
+    "--retry-delay",
+    "1",
+    "--retry-max-time",
+    "120",
+    "--connect-timeout",
+    "15",
+    "--max-time",
+    "120",
+    "-o",
+    outputPath,
+    url,
+  ];
 }
 
 export interface OpenCodeExtractCommand {
@@ -259,6 +273,19 @@ export interface OpenCodeExtractCommand {
 /** Quote a path for PowerShell single-quoted string context. */
 export function powershellSingleQuoted(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
+}
+
+/** Windows fallback uses the OS downloader when curl is missing or fails. */
+export function openCodePowerShellDownloadArgs(
+  url: string,
+  outputPath: string,
+): ReadonlyArray<string> {
+  return [
+    "-NoProfile",
+    "-NonInteractive",
+    "-Command",
+    `$ErrorActionPreference = 'Stop'; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -UseBasicParsing -Uri ${powershellSingleQuoted(url)} -OutFile ${powershellSingleQuoted(outputPath)} -TimeoutSec 120`,
+  ];
 }
 
 /**

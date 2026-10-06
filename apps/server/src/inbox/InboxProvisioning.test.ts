@@ -22,6 +22,7 @@ const makeTempHome = Effect.fn("InboxProvisioning.test.makeTempHome")(function* 
 
 const unusedProjection = {
   getUserInputActivity: () => Effect.die("unused"),
+  getThreadActivityPayload: () => Effect.die("unused"),
   getCommandReadModel: () => Effect.die("unused"),
   getSnapshot: () => Effect.die("unused"),
   getShellSnapshot: () => Effect.die("unused"),
@@ -35,6 +36,7 @@ const unusedProjection = {
   getImportedAgentSessionSources: () => Effect.die("unused"),
   getThreadCheckpointContext: () => Effect.succeed(Option.none()),
   getFullThreadDiffContext: () => Effect.succeed(Option.none()),
+  listThreadsWithPullRequests: () => Effect.succeed([]),
   listActivitiesByKind: () => Effect.succeed([]),
   getThreadRuntimeContext: () => Effect.die("unused"),
   getTurnStartMessage: () => Effect.die("unused"),

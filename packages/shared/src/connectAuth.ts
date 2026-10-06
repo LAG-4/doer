@@ -104,18 +104,3 @@ export function buildConnectClerkAuthorizeUrl(input: {
   url.searchParams.set("code_challenge_method", "S256");
   return url.toString();
 }
-
-// Kept for the fork's /connect/callback one-time-code surface, which bundles
-// `state` with the authorization code so the CLI keeps the loopback flow's
-// CSRF check without any backend. Clerk authorization codes and the CLI's
-// base64url states never contain ".".
-const CONNECT_AUTH_CODE_SEPARATOR = ".";
-
-export interface ConnectAuthCode {
-  readonly code: string;
-  readonly state: string;
-}
-
-export function encodeConnectAuthCode(input: ConnectAuthCode): string {
-  return `${input.code}${CONNECT_AUTH_CODE_SEPARATOR}${input.state}`;
-}

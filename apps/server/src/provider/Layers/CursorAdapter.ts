@@ -550,19 +550,15 @@ export function makeCursorAdapter(
           const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
           const acp = yield* makeCursorAcpRuntime({
             cursorSettings: effectiveCursorSettings,
-            ...(options?.environment ||
-            mcpSession?.agentDeviceEnvironment ||
-            mcpSession?.agentComputerEnvironment
-              ? {
-                  environment: McpProviderSession.withAgentComputerEnvironment(
-                    McpProviderSession.withAgentDeviceEnvironment(
-                      options?.environment ?? process.env,
-                      mcpSession,
-                    ),
-                    mcpSession,
-                  ),
-                }
-              : {}),
+            // Always pass an explicit environment so the Gmail vault key and
+            // OAuth secret never leak into the provider subprocess.
+            environment: McpProviderSession.withAgentComputerEnvironment(
+              McpProviderSession.withAgentDeviceEnvironment(
+                options?.environment ?? process.env,
+                mcpSession,
+              ),
+              mcpSession,
+            ),
             childProcessSpawner,
             cwd,
             runtimeMode: input.runtimeMode,

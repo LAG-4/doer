@@ -61,6 +61,9 @@ export function buildCursorAcpSpawnInput(
     ],
     cwd,
     ...(environment ? { env: environment } : {}),
+    // An explicitly supplied full provider environment must not re-inherit
+    // ambient secrets; without one keep inherited behavior.
+    extendEnv: environment === undefined,
   };
 }
 

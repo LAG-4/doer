@@ -207,12 +207,14 @@ export const ChatHeader = memo(function ChatHeader({
     activeProjectScripts ? activeProjectCwd : null,
   );
   const remoteOpenState = useRemoteOpenState(activeThreadEnvironmentId);
-  const showOpenInPicker = shouldShowOpenInPicker({
-    activeProjectName,
-    activeThreadEnvironmentId,
-    primaryEnvironmentId,
-    remoteOpenMode: remoteOpenState.mode,
-  });
+  const showOpenInPicker =
+    !simpleModeEnabled &&
+    shouldShowOpenInPicker({
+      activeProjectName,
+      activeThreadEnvironmentId,
+      primaryEnvironmentId,
+      remoteOpenMode: remoteOpenState.mode,
+    });
   const activeThreadRef = useMemo(
     () => scopeThreadRef(activeThreadEnvironmentId, activeThreadId),
     [activeThreadEnvironmentId, activeThreadId],
@@ -238,7 +240,7 @@ export const ChatHeader = memo(function ChatHeader({
       setRenaming(null);
       const resolution = resolveRenameCommit({ title, originalTitle: activeThreadTitle });
       if (resolution.action === "reject-empty") {
-        toastManager.add({ type: "warning", title: "Thread title cannot be empty" });
+        toastManager.add({ type: "warning", title: "Task title cannot be empty" });
         return;
       }
       if (resolution.action === "noop") return;
@@ -250,7 +252,7 @@ export const ChatHeader = memo(function ChatHeader({
           const error = squashAtomCommandFailure(result);
           toastManager.add({
             type: "error",
-            title: "Failed to rename thread",
+            title: "Could not rename Task",
             description: error instanceof Error ? error.message : "An error occurred.",
           });
         }
@@ -409,7 +411,7 @@ export const ChatHeader = memo(function ChatHeader({
       onContextMenu={handleHeaderContextMenu}
     >
       <WorkspaceBreadcrumb
-        ariaLabel="Thread breadcrumb"
+        ariaLabel="Task breadcrumb"
         className="flex-1 overflow-clip [overflow-clip-margin:2px]"
       >
         {/* The project always leads the header — except the nameless
@@ -423,7 +425,7 @@ export const ChatHeader = memo(function ChatHeader({
                   render={
                     <button
                       type="button"
-                      aria-label={`New thread in ${activeProjectName}`}
+                      aria-label={`New Task in ${activeProjectName}`}
                       onClick={onNewThreadInProject}
                       className="inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
                     />
@@ -434,7 +436,7 @@ export const ChatHeader = memo(function ChatHeader({
                     {activeProjectName}
                   </WorkspaceBreadcrumbText>
                 </TooltipTrigger>
-                <TooltipPopup side="top">New thread in {activeProjectName}</TooltipPopup>
+                <TooltipPopup side="top">New Task in {activeProjectName}</TooltipPopup>
               </Tooltip>
             </WorkspaceBreadcrumbItem>
             <WorkspaceBreadcrumbSeparator>
@@ -463,7 +465,7 @@ export const ChatHeader = memo(function ChatHeader({
                   <button
                     ref={titleButtonRef}
                     type="button"
-                    aria-label={`Thread actions for ${activeThreadTitle}`}
+                    aria-label={`Task actions for ${activeThreadTitle}`}
                     aria-haspopup="menu"
                     onClick={openMenuFromTitle}
                     onDoubleClick={handleTitleDoubleClick}
@@ -500,16 +502,17 @@ export const ChatHeader = memo(function ChatHeader({
         data-chat-header-actions
         className={cn(
           "flex shrink-0 items-center justify-end gap-2 @3xl/header-actions:gap-3",
-          // Reserve two panel toggles plus their 4px gaps and 1px edge inset.
-          // The page header adds 8px more right padding at sm. The terminal
-          // toggle hides in simple mode, so a lone right-panel toggle only
-          // needs pr-8.
+          // Reserve two panel toggles (32px, 28px at sm) with their 4px gap and 1px edge inset,
+          // plus the same gap the actions keep between themselves (gap-2, gap-3 at @3xl) so the
+          // terminal toggle does not sit against the last action. The page header adds 8px more
+          // right padding at sm. The terminal toggle hides in simple mode, so a lone
+          // right-panel toggle only needs pr-8.
           rightPanelOpen
             ? "pr-0"
             : simpleModeEnabled
               ? "pr-8"
-              : "pr-[calc(--spacing(18)+1px)] sm:pr-[calc(--spacing(14)+1px)]",
-          "[[data-panel-animations=true]_&]:motion-safe:transition-[padding-right] [[data-panel-animations=true]_&]:motion-safe:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:motion-safe:ease-out",
+              : "pr-19.25 sm:pr-15.25 @3xl/header-actions:pr-16.25",
+          "[[data-panel-animations=true]_&]:motion-safe:transition-[padding-right] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
         )}
       >
         <Menu open={actionsCollapsed && actionsOpen} onOpenChange={setActionsOpen}>
@@ -525,7 +528,6 @@ export const ChatHeader = memo(function ChatHeader({
             keepMounted
             aria-label="Header actions"
             align="end"
-            className="min-w-56 max-w-[calc(100vw-2rem)]"
             finalFocus={actionsCollapsed ? undefined : false}
           >
             <div ref={mountMenuActions} className="contents" />

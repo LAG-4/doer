@@ -27,6 +27,8 @@ export interface ParsedSpreadsheet {
   readonly sheetNames: string[];
   readonly activeSheetName: string;
   readonly rows: string[][];
+  readonly cachedRows: string[][];
+  readonly editingBlockedReason: string | null;
 }
 
 export interface SpreadsheetWorkbookInput {
@@ -254,7 +256,7 @@ export function escapeSpreadsheetXml(value: string): string {
     .replace(/'/g, "&apos;");
 }
 
-export function unescapeSpreadsheetXml(value: string): string {
+function unescapeSpreadsheetXml(value: string): string {
   return value
     .replace(/&#(\d+);/g, (_match, digits: string) => String.fromCodePoint(Number(digits)))
     .replace(/&#x([0-9a-fA-F]+);/g, (_match, digits: string) =>
@@ -405,6 +407,7 @@ function parseCellValue(
   sharedStrings: readonly string[],
   numberFormat?: string,
   date1904 = false,
+  cached = false,
 ): string {
   const type = attributeValue(cellTag, "t") ?? "";
   const valuePattern = new RegExp(
@@ -424,7 +427,7 @@ function parseCellValue(
   // result: the grid owns formulas as text and the UI computes display
   // values live, so formulas survive unlimited save round-trips.
   const formulaMatch = formulaPattern.exec(cellInner ?? "");
-  if (formulaMatch) return `=${unescapeSpreadsheetXml(formulaMatch[1] ?? "")}`;
+  if (formulaMatch && !cached) return `=${unescapeSpreadsheetXml(formulaMatch[1] ?? "")}`;
   if (type === "s") {
     const valueMatch = valuePattern.exec(cellInner ?? "");
     if (!valueMatch) return "";
@@ -564,7 +567,7 @@ function parseDate1904(workbookXml: string): boolean {
 export function parseSheetGrid(
   xml: string,
   sharedStrings: readonly string[] = [],
-  options: { numberFormats?: readonly string[]; date1904?: boolean } = {},
+  options: { numberFormats?: readonly string[]; date1904?: boolean; cached?: boolean } = {},
 ): string[][] {
   const cells = new Map<number, Map<number, string>>();
   let maxRow = -1;
@@ -614,6 +617,7 @@ export function parseSheetGrid(
         sharedStrings,
         numberFormat,
         options.date1904,
+        options.cached,
       );
       let rowMap = cells.get(rowIndex);
       if (!rowMap) {
@@ -964,6 +968,8 @@ export async function parseSpreadsheet(
     sheetNames: targets.map((target) => target.name),
     activeSheetName: first.name,
     rows,
+    cachedRows: parseSheetGrid(sheetXml, sharedStrings, { numberFormats, date1904, cached: true }),
+    editingBlockedReason: spreadsheetEditingBlockedReason(sheetXml),
   };
 }
 
@@ -1214,7 +1220,7 @@ export async function createSpreadsheetWorkbook(
 }
 
 /**
- * Replace the first sheet's grid, preserving every other package entry's
+ * Patch a selected sheet's changed cells, preserving every other package entry's
  * payload bytes verbatim so non-first sheets round-trip untouched. The
  * optional computed grid carries live formula results, which are written as
  * cached values next to each formula body.
@@ -1223,6 +1229,7 @@ export async function serializeSpreadsheet(
   originalBytes: Uint8Array,
   rows: readonly (readonly string[])[],
   computed?: readonly (readonly string[] | undefined)[] | undefined,
+  sheetIndex = 0,
 ): Promise<Uint8Array> {
   const entries = await readZipEntries(originalBytes);
   const workbookXmlText = entryText(entries, "xl/workbook.xml");
@@ -1235,11 +1242,126 @@ export async function serializeSpreadsheet(
       entry,
     }));
   }
-  const first = targets[0];
+  const first = targets[sheetIndex];
   if (!first) throw new Error("Not a spreadsheet file (no worksheets).");
   const target = entries.find((entry) => entry.name === first.entry);
   if (!target) throw new Error("Not a spreadsheet file (worksheet missing).");
-  target.data = textEncoder().encode(buildSheetXml(normalizeSpreadsheetGrid(rows), computed));
+  const originalXml = textDecoder().decode(target.data);
+  const blocked = spreadsheetEditingBlockedReason(originalXml);
+  if (blocked) throw new Error(blocked);
+  const originalRows = parseSheetGrid(
+    originalXml,
+    parseSharedStrings(entryText(entries, "xl/sharedStrings.xml") ?? ""),
+    {
+      numberFormats: parseNumberFormats(entryText(entries, "xl/styles.xml")),
+      date1904: parseDate1904(workbookXmlText),
+    },
+  );
+  const normalized = normalizeSpreadsheetGrid(rows);
+  if (normalized.length < originalRows.length) {
+    throw new Error(
+      "Remove cell contents instead of deleting rows. Open this file in your spreadsheet app to change its structure.",
+    );
+  }
+  const generated = buildSheetXml(normalized, computed);
+  const cellPattern = new RegExp(
+    `<${tagPattern("c")}\\b[^>]*?(?:\\/>|>[\\s\\S]*?<\\/${tagPattern("c")}>)`,
+    "g",
+  );
+  const changes = new Map<string, string>();
+  for (const cell of generated.matchAll(cellPattern)) {
+    const ref = attributeValue(cell[0].split(">")[0] ?? "", "r");
+    const indexes = ref ? cellRefToIndexes(ref) : null;
+    if (
+      !ref ||
+      !indexes ||
+      normalized[indexes.row]?.[indexes.col] === (originalRows[indexes.row]?.[indexes.col] ?? "")
+    )
+      continue;
+    changes.set(ref, cell[0]);
+  }
+  const rowPattern = new RegExp(
+    `<${tagPattern("row")}\\b([^>]*?)(?:\\/>|>([\\s\\S]*?)<\\/${tagPattern("row")}>)`,
+    "g",
+  );
+  let patched = originalXml.replace(
+    rowPattern,
+    (whole, attributes: string, inner: string | undefined) => {
+      const rowIndex = Number(attributeValue(attributes, "r")) - 1;
+      let contents = (inner ?? "").replace(cellPattern, (cell) => {
+        const ref = attributeValue(cell.split(">")[0] ?? "", "r");
+        const replacement = ref ? changes.get(ref) : undefined;
+        if (!ref || replacement === undefined) return cell;
+        changes.delete(ref);
+        // Retain styling and other cell attributes; replace only its type and value.
+        const oldAttributes = (cell.match(/^<[^\s>]+([^>]*?)(?:\/>|>)/)?.[1] ?? "")
+          .replace(/\s+t=(?:"[^"]*"|'[^']*')/g, "")
+          .replace(/\/$/, "");
+        const type = attributeValue(replacement.split(">")[0] ?? "", "t");
+        const body = replacement.replace(/^<c[^>]*>/, "").replace(/<\/c>$/, "");
+        return replacement.endsWith("/>")
+          ? `<c${oldAttributes}/>`
+          : `<c${oldAttributes}${type ? ` t="${type}"` : ""}>${body}</c>`;
+      });
+      for (const [ref, cell] of changes) {
+        if (cellRefToIndexes(ref)?.row === rowIndex) {
+          contents += cell;
+          changes.delete(ref);
+        }
+      }
+      if (contents === (inner ?? "")) return whole;
+      // Cells must remain in column order for Excel readers.
+      const cells = [...contents.matchAll(cellPattern)].map((match) => match[0]);
+      cells.sort(
+        (a, b) =>
+          (cellRefToIndexes(attributeValue(a.split(">")[0] ?? "", "r") ?? "")?.col ?? 0) -
+          (cellRefToIndexes(attributeValue(b.split(">")[0] ?? "", "r") ?? "")?.col ?? 0),
+      );
+      return `<row${attributes}>${cells.join("")}${contents.replace(cellPattern, "")}</row>`;
+    },
+  );
+  const addedRows = new Map<number, string[]>();
+  for (const [ref, cell] of changes) {
+    const row = cellRefToIndexes(ref)?.row;
+    if (row === undefined) continue;
+    const cells = addedRows.get(row) ?? [];
+    cells.push(cell);
+    addedRows.set(row, cells);
+  }
+  const append = [...addedRows]
+    .sort(([a], [b]) => a - b)
+    .map(([row, cells]) => `<row r="${row + 1}">${cells.join("")}</row>`)
+    .join("");
+  if (append) {
+    patched = patched.replace(/<sheetData\s*\/>/, "<sheetData></sheetData>");
+    patched = patched.replace(new RegExp(`</${tagPattern("sheetData")}>`), `${append}</sheetData>`);
+    patched = patched.replace(
+      /(<sheetData[^>]*>)([\s\S]*?)(<\/sheetData>)/,
+      (_, start: string, data: string, end: string) => {
+        const sheetRows = [...data.matchAll(rowPattern)].sort(
+          (a, b) =>
+            Number(attributeValue(a[1] ?? "", "r")) - Number(attributeValue(b[1] ?? "", "r")),
+        );
+        return start + sheetRows.map((row) => row[0]).join("") + data.replace(rowPattern, "") + end;
+      },
+    );
+  }
+  // Dimension and calculation hints are the only metadata that must change.
+  patched = patched.replace(
+    new RegExp(`<${tagPattern("dimension")}\\b[^>]*/>`),
+    `<dimension ref="A1:${columnIndexToLetters(Math.max(0, (normalized[0]?.length ?? 1) - 1))}${Math.max(1, normalized.length)}"/>`,
+  );
+  target.data = textEncoder().encode(patched);
+  const workbookEntry = entries.find((entry) => entry.name === "xl/workbook.xml");
+  if (workbookEntry) {
+    const calc = '<calcPr fullCalcOnLoad="1" forceFullCalc="1"/>';
+    workbookEntry.data = textEncoder().encode(
+      workbookXmlText
+        .replace(new RegExp(`<${tagPattern("calcPr")}\\b[^>]*/>`), "")
+        .replace(new RegExp(`</${tagPattern("workbook")}>`), `${calc}</workbook>`),
+    );
+    workbookEntry.passthrough = null;
+  }
   target.passthrough = null;
   target.crc = 0;
   target.method = 8;
@@ -1267,17 +1389,26 @@ export async function replaceSpreadsheetCell(
   const sheet = entries.find((entry) => entry.name === first);
   if (!sheet) throw new Error("Not a spreadsheet file (worksheet missing).");
   const xml = textDecoder().decode(sheet.data);
-  const cellPattern = new RegExp(`<c\\b([^>]*\\br=["']${ref}["'][^>]*)>([\\s\\S]*?)<\\/c>`, "i");
+  // Match the target cell whether it is paired (<c ...>...</c>) or self-closing
+  // (<c .../>), with or without a namespace prefix. The attribute section is
+  // confined to the single tag ([^>]*), so a self-closing styled blank cell
+  // can never consume its neighbor.
+  const cellPattern = new RegExp(
+    `<((?:\\w+:)?c)\\b([^>]*?\\br=["']${ref}["'][^>]*?)(?:\\/\\s*>|>((?:[\\s\\S]*?))<\\/\\1\\s*>)`,
+    "i",
+  );
   const match = cellPattern.exec(xml);
   if (!match) throw new Error("This cell does not exist. Choose an existing cell.");
-  const originalContent = match[2] ?? "";
-  if (/<f(?:\s|>)/i.test(originalContent))
+  const tag = match[1] ?? "c";
+  const originalContent = match[3] ?? "";
+  if (/<(?:\w+:)?f(?:\s|\/|>)/i.test(originalContent))
     throw new Error("Formula cells cannot be replaced by this tool.");
-  const originalAttributes = match[1] ?? "";
+  const originalAttributes = (match[2] ?? "").replace(/\/\s*$/, "");
   const attributes = originalAttributes.replace(/\s+t=["'][^"']*["']/i, "");
+  const prefix = tag.includes(":") ? `${tag.split(":")[0]}:` : "";
   const replacement = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value)
-    ? `<c${attributes}><v>${value}</v></c>`
-    : `<c${attributes} t="inlineStr"><is><t xml:space="preserve">${escapeSpreadsheetXml(value)}</t></is></c>`;
+    ? `<${tag}${attributes}><${prefix}v>${value}</${prefix}v></${tag}>`
+    : `<${tag}${attributes} t="inlineStr"><${prefix}is><${prefix}t xml:space="preserve">${escapeSpreadsheetXml(value)}</${prefix}t></${prefix}is></${tag}>`;
   sheet.data = textEncoder().encode(
     xml.slice(0, match.index) + replacement + xml.slice(match.index + match[0].length),
   );
@@ -1285,4 +1416,17 @@ export async function replaceSpreadsheetCell(
   sheet.crc = 0;
   sheet.method = 8;
   return writeZipEntries(entries);
+}
+
+/** Imported sheets with linked formula regions or protected/merged cells stay viewable. */
+function spreadsheetEditingBlockedReason(xml: string): string | null {
+  if (/<\w+:worksheet\b/.test(xml))
+    return "Preview this sheet here and edit it in your spreadsheet app to preserve its format.";
+  if (
+    /<(?:\w+:)?(?:mergeCells|sheetProtection|tableParts|extLst)\b/.test(xml) ||
+    /<(?:\w+:)?f\b[^>]*\bt=["'](?:shared|array|dataTable)["']/.test(xml)
+  ) {
+    return "This sheet uses advanced formatting, tables, protection, or linked formulas. Preview it here and edit it in your spreadsheet app to preserve those features.";
+  }
+  return null;
 }

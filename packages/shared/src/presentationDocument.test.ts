@@ -18,9 +18,9 @@ describe("presentation text editing", () => {
       entry("ppt/slides/slide1.xml", "<p:sld><a:t>Hello</a:t><a:t>Keep</a:t></p:sld>"),
       entry("ppt/media/image1.png", "image bytes"),
     ]);
-    expect(await inspectPresentation(original)).toEqual([{ slide: 1, text: "Hello Keep" }]);
+    expect(await inspectPresentation(original)).toEqual([{ slide: 1, text: "Hello Keep", runs: ["Hello", "Keep"] }]);
     const edited = await replacePresentationText(original, 1, "Hello", "New & safe");
-    expect(await inspectPresentation(edited)).toEqual([{ slide: 1, text: "New & safe Keep" }]);
+    expect(await inspectPresentation(edited)).toEqual([{ slide: 1, text: "New & safe Keep", runs: ["New & safe", "Keep"] }]);
     const before = await readZipEntries(original);
     const after = await readZipEntries(edited);
     expect(after.find((part) => part.name === "ppt/media/image1.png")?.data).toEqual(

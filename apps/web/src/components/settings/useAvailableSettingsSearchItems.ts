@@ -1,3 +1,5 @@
+import { useClientSettings } from "~/hooks/useSettings";
+import { isAdvancedSettingsItem } from "~/simpleMode";
 import { useMemo } from "react";
 import { AuthAccessWriteScope } from "@t3tools/contracts";
 
@@ -10,12 +12,14 @@ import { useEnvironmentQuery } from "~/state/query";
 import { usePrimarySessionState } from "~/environments/primary";
 import { isWslSettingsRowVisible } from "./ConnectionsSettings.logic";
 import { isProviderSettingsEnvironmentAvailable } from "./ProviderSettingsPanel.logic";
+import type { SettingsScopeSearch } from "./settingsScope";
 import {
   filterAvailableSettingsSearchItems,
   getThreadAutoSettlementSearchAvailability,
 } from "./settingsSearch";
 
-export function useAvailableSettingsSearchItems() {
+export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch = {}) {
+  const simple = useClientSettings((settings) => settings.simpleModeEnabled);
   const { environments } = useEnvironments();
   const primarySessionState = usePrimarySessionState();
   const localEnvironmentDisabled = isLocalEnvironmentDisabled();
@@ -41,6 +45,16 @@ export function useAvailableSettingsSearchItems() {
             hasServerConfig: environment.serverConfig !== null,
           }),
         ),
+        hasMacProviderSettingsEnvironment: environments.some(
+          (environment) =>
+            (scopeSearch.machine === undefined ||
+              environment.environmentId === scopeSearch.machine) &&
+            environment.serverConfig?.environment.platform.os === "darwin" &&
+            isProviderSettingsEnvironmentAvailable({
+              connectionPhase: environment.connection.phase,
+              hasServerConfig: true,
+            }),
+        ),
         canManageLocalBackend,
         isWslSettingsRowVisible: isWslSettingsRowVisible({
           state: desktopWsl.data,
@@ -48,13 +62,15 @@ export function useAvailableSettingsSearchItems() {
         }),
         hasThreadAutoSettlement:
           getThreadAutoSettlementSearchAvailability(environments).eligibleEnvironmentIds.length > 0,
-      }),
+      }).filter((item) => !simple || !isAdvancedSettingsItem(item)),
     [
+      simple,
       canManageLocalBackend,
       desktopWsl.data,
       desktopWsl.error,
       environments,
       localEnvironmentDisabled,
+      scopeSearch.machine,
     ],
   );
 }

@@ -37,7 +37,6 @@ import {
   addSpreadsheetRow,
   applySpreadsheetSave,
   createSpreadsheetDocument,
-  deleteSpreadsheetRow,
   discardSpreadsheetChanges,
   isSpreadsheetDirty,
   setSpreadsheetCell,
@@ -66,6 +65,7 @@ export function SpreadsheetSurface({
 }: SpreadsheetSurfaceProps) {
   const file = useProjectBinaryFileQuery(environmentId, cwd, relativePath, true);
   const [document, setDocument] = useState<SpreadsheetDocument | null>(null);
+  const [sheetIndex, setSheetIndex] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveInFlight, setSaveInFlight] = useState(false);
   const [formulaEngine, setFormulaEngine] = useState<SpreadsheetFormulaEngine | null>(null);
@@ -102,13 +102,14 @@ export function SpreadsheetSurface({
   // passes through. Without an engine the raw text shows, as before.
   const displays = useMemo(() => {
     if (!document) return null;
-    if (formulas.length === 0 || !formulaEngine) return document.rows;
+    if (formulas.length === 0) return document.rows;
     try {
       return evaluateSpreadsheetFormulas(
         document.rows,
         formulas,
         document.sheetName,
         formulaEngine,
+        { rows: document.savedRows, cachedRows: document.cachedRows ?? document.savedRows },
       );
     } catch {
       return document.rows;
@@ -154,12 +155,15 @@ export function SpreadsheetSurface({
     void (async () => {
       try {
         const bytes = base64ToBytes(file.data?.contents ?? "");
-        const parsed = await parseSpreadsheet(bytes);
+        const parsed = await parseSpreadsheet(bytes, sheetIndex);
         if (cancelled || parseRequestRef.current !== requestId) return;
         setLoadError(null);
         setDocument(
           createSpreadsheetDocument({
             sheetName: parsed.activeSheetName,
+            cachedRows: parsed.cachedRows,
+            editingBlockedReason: parsed.editingBlockedReason,
+            sheetIndex,
             sheetNames: parsed.sheetNames,
             rows: parsed.rows,
             sourceBytes: bytes,
@@ -177,7 +181,7 @@ export function SpreadsheetSurface({
     return () => {
       cancelled = true;
     };
-  }, [file.data]);
+  }, [file.data, sheetIndex]);
 
   const handleSaved = useCallback(
     (contents: string) => {
@@ -207,7 +211,15 @@ export function SpreadsheetSurface({
     onPendingChange(relativePath, true);
     try {
       const displayGrid = displaysRef.current ?? current.rows;
-      const bytes = await serializeSpreadsheet(current.sourceBytes, current.rows, displayGrid);
+      const bytes =
+        current.editingBlockedReason || !isSpreadsheetDirty(current)
+          ? current.sourceBytes
+          : await serializeSpreadsheet(
+              current.sourceBytes,
+              current.rows,
+              displayGrid,
+              current.sheetIndex ?? 0,
+            );
       const base64 = bytesToBase64(bytes);
       pendingSaveRef.current = { base64, rows: current.rows, bytes };
       saveCoordinatorRef.current?.save(base64);
@@ -311,7 +323,15 @@ export function SpreadsheetSurface({
     const baseName = relativePath.split(/[\\/]/).at(-1)?.trim() || "sheet.xlsx";
     try {
       const displayGrid = displaysRef.current ?? current.rows;
-      const bytes = await serializeSpreadsheet(current.sourceBytes, current.rows, displayGrid);
+      const bytes =
+        current.editingBlockedReason || !isSpreadsheetDirty(current)
+          ? current.sourceBytes
+          : await serializeSpreadsheet(
+              current.sourceBytes,
+              current.rows,
+              displayGrid,
+              current.sheetIndex ?? 0,
+            );
       const url = URL.createObjectURL(
         new Blob([bytes.slice().buffer as ArrayBuffer], {
           type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -382,11 +402,6 @@ export function SpreadsheetSurface({
     });
   }, [confirmDiscard]);
 
-  const extraSheets = useMemo(
-    () => Math.max(0, (document?.sheetNames.length ?? 1) - 1),
-    [document],
-  );
-
   if (!isSpreadsheetRuntimeSupported()) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs leading-relaxed text-muted-foreground">
@@ -398,24 +413,34 @@ export function SpreadsheetSurface({
   return (
     <div ref={surfaceRef} className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="flex h-9 min-h-9 shrink-0 items-center gap-2 border-b border-border/60 px-3">
-        <span className="rounded-sm bg-accent px-1.5 py-0.5 text-[11px] font-medium">Sheet</span>
+        <span className="rounded-sm bg-accent px-1.5 py-0.5 text-2xs font-medium">Sheet</span>
         {document ? (
-          <span className="truncate text-xs text-muted-foreground">
-            {document.sheetName}
-            {extraSheets > 0
-              ? ` · ${extraSheets} more sheet${extraSheets === 1 ? "" : "s"} kept`
-              : ""}
-          </span>
+          <select
+            aria-label="Worksheet"
+            className="min-w-0 rounded border border-input bg-background text-xs"
+            value={sheetIndex}
+            disabled={dirty || saveInFlight}
+            onChange={(event) => {
+              setDocument(null);
+              setSheetIndex(Number(event.target.value));
+            }}
+          >
+            {document.sheetNames.map((name, index) => (
+              <option key={name} value={index}>
+                {name}
+              </option>
+            ))}
+          </select>
         ) : null}
         <span className="min-w-0 flex-1" />
         {dirty && !saveInFlight ? (
-          <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <span className="flex items-center gap-1.5 text-2xs text-muted-foreground">
             <span className="size-1.5 rounded-full bg-current" aria-hidden />
             Unsaved changes
           </span>
         ) : null}
         {saveInFlight ? (
-          <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <span className="flex items-center gap-1.5 text-2xs text-muted-foreground">
             <Spinner className="size-3" />
             Saving
           </span>
@@ -477,6 +502,18 @@ export function SpreadsheetSurface({
           <TooltipPopup>Copy sheet for Excel or Google Sheets</TooltipPopup>
         </Tooltip>
       </div>
+      {document?.editingBlockedReason ? (
+        <p role="status" className="border-b px-3 py-2 text-xs text-muted-foreground">
+          {document.editingBlockedReason}
+        </p>
+      ) : null}
+      {formulas.length > 0 ? (
+        <p className="border-b px-3 py-2 text-xs text-muted-foreground">
+          Some formulas use the workbook’s saved values. Calculations involving other sheets or
+          unsupported functions may be out of date after edits. Open your spreadsheet app to
+          recalculate.
+        </p>
+      ) : null}
       {file.error && file.data === null ? (
         <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs leading-relaxed text-destructive">
           {file.error}
@@ -495,16 +532,15 @@ export function SpreadsheetSurface({
         </div>
       ) : (
         <SpreadsheetGridEditor
+          key={document.sheetName}
           grid={displays ?? document.rows}
+          readOnly={Boolean(document.editingBlockedReason)}
           rawGrid={document.rows}
           onCellChange={(rowIndex, colIndex, value) =>
             applyEdit((current) => setSpreadsheetCell(current, rowIndex, colIndex, value))
           }
           onAddRow={() => applyEdit((current) => addSpreadsheetRow(current))}
           onAddColumn={() => applyEdit((current) => addSpreadsheetColumn(current))}
-          onDeleteRow={(rowIndex) =>
-            applyEdit((current) => deleteSpreadsheetRow(current, rowIndex))
-          }
         />
       )}
     </div>

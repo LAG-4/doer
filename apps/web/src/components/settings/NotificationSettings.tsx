@@ -22,7 +22,7 @@ export function NotificationSettings() {
       {...searchableSetting("thread-notifications")}
       description={
         permissionMessage ??
-        "System alerts when a thread finishes, fails, or needs input or approval. Applies to this device while Doer is open."
+        "System alerts when a Task finishes, fails, or needs input or approval. Applies to this device while Doer is open."
       }
       control={
         <Select
@@ -66,7 +66,7 @@ export function NotificationSettings() {
             updateSettings({ notificationMode: value });
           }}
         >
-          <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Thread notifications">
+          <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Task notifications">
             <SelectValue>{NOTIFICATION_MODE_LABELS[mode]}</SelectValue>
           </SelectTrigger>
           <SelectPopup align="end" alignItemWithTrigger={false}>

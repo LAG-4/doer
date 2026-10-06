@@ -643,7 +643,7 @@ class EnvironmentIntegrationsHttpApi extends HttpApiGroup.make("integrations")
     HttpApiEndpoint.post("gmailDisconnect", "/api/integrations/gmail/disconnect", {
       headers: OptionalBearerHeaders,
       success: Schema.Struct({ disconnected: Schema.Boolean }),
-      error: EnvironmentScopedOperationErrors,
+      error: [...EnvironmentScopedOperationErrors, EnvironmentHttpConflictError],
     }).middleware(EnvironmentAuthenticatedAuth),
   ) {}
 

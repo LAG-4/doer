@@ -35,16 +35,20 @@ function decodeText(value: string): string {
 
 export async function inspectPresentation(
   bytes: Uint8Array,
-): Promise<readonly { slide: number; text: string }[]> {
+): Promise<readonly { slide: number; text: string; runs: readonly string[] }[]> {
   const entries = await readZipEntries(bytes);
   if (!entries.some((entry) => entry.name === "ppt/presentation.xml"))
     throw new Error("Not a PowerPoint presentation.");
-  return slideEntries(entries).map((entry) => ({
-    slide: Number(entry.name.match(/slide(\d+)/)?.[1]),
-    text: [...decoder.decode(entry.data).matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)]
-      .map((match) => decodeText(match[1] ?? ""))
-      .join(" "),
-  }));
+  return slideEntries(entries).map((entry) => {
+    const runs = [...decoder.decode(entry.data).matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)].map((match) =>
+      decodeText(match[1] ?? ""),
+    );
+    return {
+      slide: Number(entry.name.match(/slide(\d+)/)?.[1]),
+      text: runs.join(" "),
+      runs,
+    };
+  });
 }
 
 /** Replace an exact text run in one slide; all other package parts retain their payloads. */

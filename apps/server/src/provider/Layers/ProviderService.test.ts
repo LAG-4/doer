@@ -78,6 +78,8 @@ import * as ServerSettings from "../../serverSettings.ts";
 import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import { makeAdapterRegistryMock } from "../testUtils/providerAdapterRegistryMock.ts";
 import * as ProjectionSnapshotQuery from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { DoerMemoryStore } from "../../persistence/Services/DoerMemoryStore.ts";
+import { DoerMemoryStoreLive } from "../../persistence/Layers/DoerMemoryStore.ts";
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const defaultServerSettingsLayer = ServerSettings.ServerSettingsService.layerTest();
@@ -428,6 +430,7 @@ function makeProviderServiceLayer(
     readonly directory?: ProviderSessionDirectory.ProviderSessionDirectory["Service"];
     readonly supportsConversationRollback?: boolean;
     readonly analyticsLayer?: Layer.Layer<AnalyticsService.AnalyticsService>;
+    readonly settingsLayer?: typeof defaultServerSettingsLayer;
     readonly registry?: ProviderAdapterRegistry.ProviderAdapterRegistry["Service"];
   } = {},
 ) {
@@ -460,7 +463,7 @@ function makeProviderServiceLayer(
         Layer.provide(NodeServices.layer),
         Layer.provide(providerAdapterLayer),
         Layer.provide(directoryLayer),
-        Layer.provide(defaultServerSettingsLayer),
+        Layer.provide(input.settingsLayer ?? defaultServerSettingsLayer),
         Layer.provide(serverConfigTestLayer),
         Layer.provideMerge(input.analyticsLayer ?? AnalyticsService.layerTest),
         Layer.provide(
@@ -656,6 +659,78 @@ it.effect("ProviderServiceLive catches stopAll failures during shutdown", () =>
     assert.equal(Exit.isSuccess(closeExit), true);
     assert.equal(codex.stopAll.mock.calls.length, 1);
   }),
+);
+
+it.effect("ProviderServiceLive shutdown leaves settled session rows untouched", () =>
+  Effect.gen(function* () {
+    const recordedAnalytics = makeRecordingAnalytics();
+    const codex = makeFakeCodexAdapter();
+    const persistence = yield* Layer.build(
+      ProviderSessionDirectoryLive.pipe(
+        Layer.provide(ProviderSessionRuntime.layer.pipe(Layer.provide(SqlitePersistenceMemory))),
+      ),
+    );
+    const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory.pipe(
+      Effect.provide(persistence),
+    );
+    const seed = (threadId: ThreadId, status: "running" | "stopped", activeTurnId: TurnId | null) =>
+      directory.upsert({
+        threadId,
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        status,
+        runtimePayload: { cwd: "/repo", activeTurnId },
+      });
+    const readBindings = directory
+      .listBindings()
+      .pipe(
+        Effect.map((bindings) => new Map(bindings.map((binding) => [binding.threadId, binding]))),
+      );
+    const settledId = asThreadId("shutdown-settled");
+    const runningId = asThreadId("shutdown-running");
+    const stoppedWithTurnId = asThreadId("shutdown-stopped-with-turn");
+    yield* seed(settledId, "stopped", null);
+    yield* seed(runningId, "running", asTurnId("running-turn"));
+    yield* seed(stoppedWithTurnId, "stopped", asTurnId("stale-turn"));
+    const settledBefore = (yield* readBindings).get(settledId);
+    assert(settledBefore !== undefined);
+
+    const scope = yield* Scope.make();
+    yield* Layer.build(
+      makeProviderServiceLive().pipe(
+        Layer.provide(NodeServices.layer),
+        Layer.provide(Layer.succeed(ProviderSessionDirectory.ProviderSessionDirectory, directory)),
+        Layer.provide(
+          Layer.succeed(
+            ProviderAdapterRegistry.ProviderAdapterRegistry,
+            makeStaticInstanceRegistry([[codexInstanceId, codex.adapter]]),
+          ),
+        ),
+        Layer.provide(defaultServerSettingsLayer),
+        Layer.provide(serverConfigTestLayer),
+        Layer.provide(recordedAnalytics.layer),
+        Layer.provide(
+          Layer.succeed(
+            ProviderEventLoggers.ProviderEventLoggers,
+            ProviderEventLoggers.NoOpProviderEventLoggers,
+          ),
+        ),
+      ),
+    ).pipe(Scope.provide(scope));
+    yield* TestClock.adjust("1 minute");
+    yield* Scope.close(scope, Exit.void);
+
+    const byThread = yield* readBindings;
+    assert.deepStrictEqual(byThread.get(settledId), settledBefore);
+    for (const threadId of [runningId, stoppedWithTurnId]) {
+      const binding = byThread.get(threadId);
+      assert.equal(binding?.status, "stopped");
+      assert.propertyVal(binding?.runtimePayload, "activeTurnId", null);
+      assert.propertyVal(binding?.runtimePayload, "lastRuntimeEvent", "provider.stopAll");
+    }
+    const [stoppedAll] = recordedAnalytics.eventsByName("provider.sessions.stopped_all");
+    assert.equal(stoppedAll?.properties?.stoppedSessionCount, 2);
+  }).pipe(Effect.provide(NodeServices.layer)),
 );
 
 it.effect("ProviderServiceLive flushes deferred completions during shutdown", () =>
@@ -2036,6 +2111,38 @@ routing.layer("ProviderServiceLive routing", (it) => {
       });
       yield* provider.compactThread(threadId);
       assert.equal(routing.codex.compactThread.mock.calls.length, 4);
+      yield* provider.stopSession({ threadId });
+    }),
+  );
+
+  it.effect("uses editable Space context for ordinary turns and keeps native commands exact", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-space-context");
+      const cwd = fixtureCwd("saved-context");
+      const contextFile = NodePath.join(cwd, ".doer-context.json");
+      NodeFS.writeFileSync(
+        contextFile,
+        '{"about":"Practice reports","preferences":"Use rupees","remembered":"West region"}',
+      );
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        cwd,
+        runtimeMode: "full-access",
+      });
+      yield* provider.sendTurn({ threadId, input: "Explain my report" });
+      assert.include(routing.codex.sendTurn.mock.calls.at(-1)![0].input!, "Use rupees");
+      NodeFS.writeFileSync(contextFile, '{"about":"","preferences":"","remembered":""}');
+      yield* provider.sendTurn({ threadId, input: "Explain again" });
+      assert.notInclude(routing.codex.sendTurn.mock.calls.at(-1)![0].input!, "West region");
+      NodeFS.writeFileSync(
+        contextFile,
+        '{"about":"Practice reports","preferences":"Use rupees","remembered":"West region"}',
+      );
+      yield* provider.sendTurn({ threadId, input: "/compact" });
+      assert.equal(routing.codex.sendTurn.mock.calls.at(-1)![0].input!, "/compact");
       yield* provider.stopSession({ threadId });
     }),
   );
@@ -4739,6 +4846,57 @@ validation.layer("ProviderServiceLive validation", (it) => {
     }),
   );
 
+  it.effect("rejects a file when its path cannot fit in the prompt", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      validation.codex.sendTurn.mockClear();
+      const failure = yield* provider
+        .sendTurn({
+          threadId: asThreadId("thread-file-path-context-limit"),
+          input: "x".repeat(PROVIDER_SEND_TURN_MAX_INPUT_CHARS),
+          attachments: [
+            {
+              type: "file",
+              id: "thread-attach-12345678-1234-1234-1234-123456789abc-zip",
+              name: "archive.zip",
+              mimeType: "application/zip",
+              sizeBytes: 1024,
+            },
+          ],
+        })
+        .pipe(Effect.flip);
+
+      assert.instanceOf(failure, ProviderValidationError);
+      assert.include(failure.issue, String(PROVIDER_SEND_TURN_MAX_INPUT_CHARS));
+      assert.equal(validation.codex.sendTurn.mock.calls.length, 0);
+    }),
+  );
+
+  it.effect("sends a native image when its path cannot fit in the prompt", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-image-path-context-limit");
+      yield* provider.startSession(threadId, {
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      validation.codex.sendTurn.mockClear();
+      const attachment = {
+        type: "image" as const,
+        id: "thread-attach-12345678-1234-1234-1234-123456789abc-png",
+        name: "screen.png",
+        mimeType: "image/png",
+        sizeBytes: 1024,
+      };
+      const input = "x".repeat(PROVIDER_SEND_TURN_MAX_INPUT_CHARS);
+      yield* provider.sendTurn({ threadId, input, attachments: [attachment] });
+      assert.equal(validation.codex.sendTurn.mock.calls[0]?.[0].input, input);
+      assert.deepEqual(validation.codex.sendTurn.mock.calls[0]?.[0].attachments, [attachment]);
+    }),
+  );
+
   it.effect("rejects citation-expanded input over the provider character limit", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;
@@ -4904,13 +5062,11 @@ const listThreadIds = vi.fn(() =>
   Effect.succeed([activeSessionThreadId, historicalSessionThreadId]),
 );
 const getBinding = vi.fn((threadId: ThreadId) =>
-  Effect.succeed(
-    Option.some({
-      threadId,
-      provider: CODEX_DRIVER,
-      providerInstanceId: codexInstanceId,
-    }),
-  ),
+  Effect.succeedSome({
+    threadId,
+    provider: CODEX_DRIVER,
+    providerInstanceId: codexInstanceId,
+  }),
 );
 const boundedListing = makeProviderServiceLayer({
   directory: {
@@ -4985,11 +5141,13 @@ describe("agent browser access", () => {
         getTurnStartMessage: () => Effect.die("unused"),
         getImportedAgentSessionSources: () => Effect.die("unused"),
         getUserInputActivity: () => Effect.die("unused"),
+        getThreadActivityPayload: () => Effect.die("unused"),
         listActivitiesByKind: () => Effect.die("unused"),
         getCommandReadModel: () => Effect.die("unused"),
         getSnapshot: () => Effect.die("unused"),
         getShellSnapshot: () => Effect.die("unused"),
         getDeletedWorktreeThreads: () => Effect.die("unused"),
+        listThreadsWithPullRequests: () => Effect.die("unused"),
         getArchivedShellSnapshot: () => Effect.die("unused"),
         getSnapshotSequence: () => Effect.die("unused"),
         getCounts: () => Effect.die("unused"),
@@ -5108,11 +5266,11 @@ describe("agent browser access", () => {
       return issued;
     });
 
-  // The capability on the credential is the observable that matters: a session
-  // always gets a credential (the pull request toolkit is never withheld), and
-  // `preview` on it is what actually grants or denies the browser tools.
+  // The connected-tool capabilities ride along on every credential: the
+  // handlers re-read the live switch on each call, so turning access off
+  // still revokes use while turning it on needs no session restart.
   it.effect(
-    "connected tool credentials follow the computer switches despite legacy Space overrides",
+    "connected tool credentials are always issued while legacy Space overrides still gate use",
     () =>
       Effect.gen(function* () {
         for (const enabled of [false, true]) {
@@ -5124,15 +5282,13 @@ describe("agent browser access", () => {
           assert.deepEqual(issued, [
             {
               threadId,
-              capabilities: enabled
-                ? [
-                    "automations",
-                    "gmail",
-                    "local-presentations",
-                    "local-spreadsheets",
-                    "pull-requests",
-                  ]
-                : ["automations", "pull-requests"],
+              capabilities: [
+                "automations",
+                "gmail",
+                "local-presentations",
+                "local-spreadsheets",
+                "pull-requests",
+              ],
             },
           ]);
         }
@@ -5144,7 +5300,18 @@ describe("agent browser access", () => {
 
       const issued = yield* startSessionWith(false, threadId);
 
-      assert.deepEqual(issued, [{ threadId, capabilities: ["automations", "pull-requests"] }]);
+      assert.deepEqual(issued, [
+        {
+          threadId,
+          capabilities: [
+            "automations",
+            "gmail",
+            "local-presentations",
+            "local-spreadsheets",
+            "pull-requests",
+          ],
+        },
+      ]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
@@ -5157,7 +5324,16 @@ describe("agent browser access", () => {
       assert.deepEqual(issued, [
         {
           threadId,
-          capabilities: ["automations", "computer", "device", "preview", "pull-requests"],
+          capabilities: [
+            "automations",
+            "computer",
+            "device",
+            "gmail",
+            "local-presentations",
+            "local-spreadsheets",
+            "preview",
+            "pull-requests",
+          ],
         },
       ]);
     }).pipe(Effect.provide(NodeServices.layer)),
@@ -5170,7 +5346,17 @@ describe("agent browser access", () => {
       const issued = yield* startSessionWith({ browser: false, device: true }, threadId);
 
       assert.deepEqual(issued, [
-        { threadId, capabilities: ["automations", "device", "pull-requests"] },
+        {
+          threadId,
+          capabilities: [
+            "automations",
+            "device",
+            "gmail",
+            "local-presentations",
+            "local-spreadsheets",
+            "pull-requests",
+          ],
+        },
       ]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
@@ -5179,7 +5365,18 @@ describe("agent browser access", () => {
     Effect.gen(function* () {
       const threadId = asThreadId("thread-project-browser-off");
       const issued = yield* startSessionWith({ browser: true, device: false }, threadId, false);
-      assert.deepEqual(issued, [{ threadId, capabilities: ["automations", "pull-requests"] }]);
+      assert.deepEqual(issued, [
+        {
+          threadId,
+          capabilities: [
+            "automations",
+            "gmail",
+            "local-presentations",
+            "local-spreadsheets",
+            "pull-requests",
+          ],
+        },
+      ]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
@@ -5188,7 +5385,18 @@ describe("agent browser access", () => {
       const threadId = asThreadId("thread-project-browser-off-device-on");
       const issued = yield* startSessionWith(true, threadId, false);
       assert.deepEqual(issued, [
-        { threadId, capabilities: ["automations", "computer", "device", "pull-requests"] },
+        {
+          threadId,
+          capabilities: [
+            "automations",
+            "computer",
+            "device",
+            "gmail",
+            "local-presentations",
+            "local-spreadsheets",
+            "pull-requests",
+          ],
+        },
       ]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
@@ -5198,7 +5406,17 @@ describe("agent browser access", () => {
       const threadId = asThreadId("thread-project-browser-on");
       const issued = yield* startSessionWith({ browser: false, device: false }, threadId, true);
       assert.deepEqual(issued, [
-        { threadId, capabilities: ["automations", "preview", "pull-requests"] },
+        {
+          threadId,
+          capabilities: [
+            "automations",
+            "gmail",
+            "local-presentations",
+            "local-spreadsheets",
+            "preview",
+            "pull-requests",
+          ],
+        },
       ]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
@@ -5210,7 +5428,17 @@ describe("agent browser access", () => {
         device: true,
       });
       assert.deepEqual(issued, [
-        { threadId, capabilities: ["automations", "device", "pull-requests"] },
+        {
+          threadId,
+          capabilities: [
+            "automations",
+            "device",
+            "gmail",
+            "local-presentations",
+            "local-spreadsheets",
+            "pull-requests",
+          ],
+        },
       ]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
@@ -5223,7 +5451,17 @@ describe("agent browser access", () => {
         threadId,
       );
       assert.deepEqual(issued, [
-        { threadId, capabilities: ["automations", "computer", "pull-requests"] },
+        {
+          threadId,
+          capabilities: [
+            "automations",
+            "computer",
+            "gmail",
+            "local-presentations",
+            "local-spreadsheets",
+            "pull-requests",
+          ],
+        },
       ]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
@@ -5237,7 +5475,17 @@ describe("agent browser access", () => {
           computer: true,
         });
         assert.deepEqual(issued, [
-          { threadId, capabilities: ["automations", "computer", "pull-requests"] },
+          {
+            threadId,
+            capabilities: [
+              "automations",
+              "computer",
+              "gmail",
+              "local-presentations",
+              "local-spreadsheets",
+              "pull-requests",
+            ],
+          },
         ]);
       }).pipe(Effect.provide(NodeServices.layer)),
   );
@@ -5254,8 +5502,252 @@ describe("agent browser access", () => {
         { withoutOrchestration: true },
       );
       assert.deepEqual(issued, [
-        { threadId, capabilities: ["automations", "preview", "pull-requests"] },
+        {
+          threadId,
+          capabilities: [
+            "automations",
+            "gmail",
+            "local-presentations",
+            "local-spreadsheets",
+            "preview",
+            "pull-requests",
+          ],
+        },
       ]);
     }).pipe(Effect.provide(NodeServices.layer)),
+  );
+});
+
+const chatGptAnalytics = makeRecordingAnalytics();
+const chatGptAdapter = makeFakeCodexAdapter();
+const chatGptTelemetry = makeProviderServiceLayer({
+  analyticsLayer: chatGptAnalytics.layer,
+  settingsLayer: ServerSettings.ServerSettingsService.layerTest({
+    providerInstances: {
+      [secondaryCodexInstanceId]: { driver: CODEX_DRIVER, config: { setupMode: "managed" } },
+    },
+  }),
+  registry: makeStaticInstanceRegistry([[secondaryCodexInstanceId, chatGptAdapter.adapter]]),
+});
+chatGptTelemetry.layer("ChatGPT connector turn analytics", (it) => {
+  it.effect("tags attempts, sends, and one terminal outcome without recording the prompt", () =>
+    Effect.gen(function* () {
+      chatGptAnalytics.reset();
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("chatgpt-analytics-success");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: secondaryCodexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      const turn = yield* provider.sendTurn({ threadId, input: "private test prompt" });
+      const drain = yield* Stream.take(provider.streamEvents, 2).pipe(
+        Stream.runDrain,
+        Effect.forkChild,
+      );
+      yield* Effect.yieldNow;
+      const completion: LegacyProviderRuntimeEvent = {
+        type: "turn.completed",
+        eventId: asEventId("chatgpt-completed"),
+        provider: CODEX_DRIVER,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        threadId,
+        turnId: turn.turnId,
+        payload: { state: "completed" },
+      };
+      chatGptAdapter.emit(completion);
+      chatGptAdapter.emit({ ...completion, eventId: asEventId("chatgpt-completed-duplicate") });
+      yield* Fiber.join(drain);
+      for (const event of [
+        "provider.turn.attempted",
+        "provider.turn.sent",
+        "provider.turn.completed",
+      ]) {
+        const events = chatGptAnalytics.eventsByName(event);
+        assert.equal(events.length, 1);
+        assert.equal(events[0]?.properties?.subscriptionSharing, true);
+        assert.notProperty(events[0]?.properties ?? {}, "input");
+        assert.notProperty(events[0]?.properties ?? {}, "threadId");
+        assert.notProperty(events[0]?.properties ?? {}, "providerInstanceId");
+      }
+    }),
+  );
+  it.effect("records rejected sends as failures without an accepted-turn event", () =>
+    Effect.gen(function* () {
+      chatGptAnalytics.reset();
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("chatgpt-analytics-rejection");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: secondaryCodexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      chatGptAdapter.sendTurn.mockImplementationOnce(() =>
+        Effect.fail(new ProviderAdapterSessionNotFoundError({ provider: CODEX_DRIVER, threadId })),
+      );
+      const result = yield* provider
+        .sendTurn({ threadId, input: "private rejected prompt" })
+        .pipe(Effect.result);
+      assert.equal(result._tag, "Failure");
+      assert.equal(chatGptAnalytics.eventsByName("provider.turn.attempted").length, 1);
+      assert.equal(chatGptAnalytics.eventsByName("provider.turn.sent").length, 0);
+      const rejected = chatGptAnalytics.eventsByName("provider.turn.rejected");
+      assert.equal(rejected.length, 1);
+      assert.deepStrictEqual(rejected[0]?.properties, {
+        provider: CODEX_DRIVER,
+        subscriptionSharing: true,
+        errorType: "ProviderAdapterSessionNotFoundError",
+      });
+    }),
+  );
+});
+
+describe("saved memory recall", () => {
+  const memoryShell = (projectId: ProjectId): OrchestrationThreadShell => ({
+    id: asThreadId("thread-memory-recall"),
+    projectId,
+    title: "Memory recall",
+    modelSelection: { instanceId: codexInstanceId, model: "gpt-5" },
+    runtimeMode: "full-access",
+    interactionMode: "default",
+    pullRequests: [],
+    branch: null,
+    worktreePath: null,
+    latestTurn: null,
+    createdAt: "2026-08-01T00:00:00.000Z",
+    updatedAt: "2026-08-20T00:00:00.000Z",
+    archivedAt: null,
+    settledOverride: null,
+    settledAt: null,
+    session: null,
+    latestUserMessageAt: "2026-08-20T00:00:00.000Z",
+    hasPendingApprovals: false,
+    hasPendingUserInput: false,
+    hasActionableProposedPlan: false,
+  });
+
+  it.effect("injects about-you and current-space memories, then picks up saves and switches", () =>
+    Effect.gen(function* () {
+      const codex = makeFakeCodexAdapter();
+      const registry = makeStaticInstanceRegistry([[codexInstanceId, codex.adapter]]);
+      const runtimeRepositoryLayer = ProviderSessionRuntime.layer.pipe(
+        Layer.provide(SqlitePersistenceMemory),
+      );
+      const directoryLayer = ProviderSessionDirectoryLive.pipe(
+        Layer.provide(runtimeRepositoryLayer),
+      );
+      const memoryLayer = DoerMemoryStoreLive.pipe(Layer.provide(SqlitePersistenceMemory));
+      const spaceRef = yield* Ref.make(ProjectId.make("project-memory-home"));
+      const snapshotLayer = Layer.mock(ProjectionSnapshotQuery.ProjectionSnapshotQuery)({
+        getThreadShellById: (threadId) =>
+          threadId === asThreadId("thread-memory-recall")
+            ? Ref.get(spaceRef).pipe(Effect.map((projectId) => Option.some(memoryShell(projectId))))
+            : Effect.succeed(Option.none()),
+      });
+      const recordedAnalytics = makeRecordingAnalytics();
+      const providerLayer = Layer.mergeAll(
+        makeProviderServiceLive().pipe(
+          Layer.provide(NodeServices.layer),
+          Layer.provide(Layer.succeed(ProviderAdapterRegistry.ProviderAdapterRegistry, registry)),
+          Layer.provide(directoryLayer),
+          Layer.provide(memoryLayer),
+          Layer.provide(snapshotLayer),
+          Layer.provide(defaultServerSettingsLayer),
+          Layer.provide(serverConfigTestLayer),
+          Layer.provide(recordedAnalytics.layer),
+          Layer.provide(
+            Layer.succeed(
+              ProviderEventLoggers.ProviderEventLoggers,
+              ProviderEventLoggers.NoOpProviderEventLoggers,
+            ),
+          ),
+        ),
+        directoryLayer,
+        memoryLayer,
+        runtimeRepositoryLayer,
+        NodeServices.layer,
+      );
+      const scope = yield* Scope.make();
+      const runtimeServices = yield* Layer.build(providerLayer).pipe(Scope.provide(scope));
+      const provider = yield* ProviderService.ProviderService.pipe(Effect.provide(runtimeServices));
+      const store = yield* Effect.provide(DoerMemoryStore, runtimeServices);
+      const threadId = asThreadId("thread-memory-recall");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      const seed = (
+        id: string,
+        content: string,
+        entryScope: "about-you" | "space",
+        project: string | null,
+      ) =>
+        store.create({
+          id,
+          scope: entryScope,
+          projectId: project,
+          content,
+          sourceThreadId: String(threadId),
+          createdAt: "2026-09-01T00:00:00.000Z",
+          updatedAt: "2026-09-01T00:00:00.000Z",
+        });
+      yield* seed("mem_recall_about", "Prefers concise summaries", "about-you", null);
+      yield* seed(
+        "mem_recall_home",
+        "Home renovation budget is 4000",
+        "space",
+        "project-memory-home",
+      );
+      yield* seed("mem_recall_away", "Foreign fact stays away", "space", "project-memory-away");
+
+      yield* provider.sendTurn({ threadId, input: "hello", attachments: [] });
+      const firstInput = String(codex.sendTurn.mock.calls[0]?.[0].input);
+      assert.include(firstInput, "<doer_saved_memories>");
+      assert.include(firstInput, "Prefers concise summaries");
+      assert.include(firstInput, "Home renovation budget is 4000");
+      assert.notInclude(firstInput, "Foreign fact stays away");
+
+      // A fresh save applies on the same Space next turn.
+      yield* seed("mem_recall_new", "Just saved for home", "space", "project-memory-home");
+      yield* provider.sendTurn({ threadId, input: "again", attachments: [] });
+      const secondInput = String(codex.sendTurn.mock.calls[1]?.[0].input);
+      assert.include(secondInput, "Just saved for home");
+      assert.include(secondInput, "Home renovation budget is 4000");
+      assert.notInclude(secondInput, "Foreign fact stays away");
+
+      // An update applies next turn with the corrected wording only.
+      assert.isTrue(
+        yield* store.updateById({
+          id: "mem_recall_home",
+          content: "Home renovation budget is 5000",
+          updatedAt: "2026-09-03T00:00:00.000Z",
+        }),
+      );
+      yield* provider.sendTurn({ threadId, input: "third", attachments: [] });
+      const thirdInput = String(codex.sendTurn.mock.calls[2]?.[0].input);
+      assert.include(thirdInput, "Home renovation budget is 5000");
+      assert.notInclude(thirdInput, "Home renovation budget is 4000");
+
+      // A forget applies next turn: the entry is gone.
+      assert.isTrue(yield* store.deleteById({ id: "mem_recall_home" }));
+      yield* provider.sendTurn({ threadId, input: "fourth", attachments: [] });
+      const fourthInput = String(codex.sendTurn.mock.calls[3]?.[0].input);
+      assert.notInclude(fourthInput, "Home renovation budget is 5000");
+      assert.include(fourthInput, "Just saved for home");
+      assert.include(fourthInput, "Prefers concise summaries");
+
+      // A switched Task recalls the new Space, not the old one.
+      yield* Ref.set(spaceRef, ProjectId.make("project-memory-away"));
+      yield* provider.sendTurn({ threadId, input: "fifth", attachments: [] });
+      const fifthInput = String(codex.sendTurn.mock.calls[4]?.[0].input);
+      assert.include(fifthInput, "Foreign fact stays away");
+      assert.include(fifthInput, "Prefers concise summaries");
+      assert.notInclude(fifthInput, "Just saved for home");
+      yield* Scope.close(scope, Exit.void);
+    }),
   );
 });

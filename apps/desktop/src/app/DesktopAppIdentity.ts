@@ -35,6 +35,11 @@ const normalizeCommitHash = (value: string): Option.Option<string> => {
 
 export const resolveUserDataPath = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
+  // Isolated development state must also isolate Chromium cookies and the
+  // single-instance lock, so verification can coexist with a running Doer app.
+  if (environment.isDevelopment) {
+    return environment.path.join(environment.stateDir, "electron-profile");
+  }
   // Doer always uses its own userData directory ("doer"/"doer-dev"), never a
   // T3 Code directory. Electron scopes its single-instance lock to userData,
   // so sharing T3's directory would stop both apps from running side by side.

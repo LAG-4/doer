@@ -1,3 +1,6 @@
+import { DoerContextEditor } from "./DoerContextEditor";
+import { MemoryManager } from "./MemoryManager";
+import { PERSONAL_CONTEXT_FILE } from "@t3tools/shared/doerContext";
 import { SettingsGroup } from "./SettingsGroup";
 import { Spinner } from "~/components/ui/spinner";
 import { NotificationSettings } from "./NotificationSettings";
@@ -22,6 +25,7 @@ import {
 import {
   DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE,
   DEFAULT_UNIFIED_SETTINGS,
+  type ChatWidth,
   type DiffLayout,
   type EnvironmentIdentificationMode,
   MAX_APPEARANCE_CONTRAST,
@@ -197,6 +201,12 @@ const TIMESTAMP_FORMAT_LABELS = {
   "24-hour": "24-hour",
 } as const;
 
+const CHAT_WIDTH_LABELS: Record<ChatWidth, string> = {
+  comfortable: "Comfortable",
+  wide: "Wide",
+  full: "Full",
+};
+
 const DIFF_LAYOUT_LABELS: Record<DiffLayout, string> = {
   stacked: "Stacked",
   split: "Split",
@@ -264,7 +274,7 @@ function AboutVersionTitle() {
   return (
     <span className="inline-flex items-baseline gap-2">
       <span>Version</span>
-      <code className="text-[11px] font-medium text-muted-foreground">{APP_VERSION}</code>
+      <code className="text-2xs font-medium text-muted-foreground">{APP_VERSION}</code>
     </span>
   );
 }
@@ -532,6 +542,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.diffColorScheme !== DEFAULT_UNIFIED_SETTINGS.diffColorScheme
         ? ["Diff colors"]
         : []),
+      ...(settings.chatWidth !== DEFAULT_UNIFIED_SETTINGS.chatWidth ? ["Chat width"] : []),
       ...(settings.panelAnimationDurationMs !== DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs
         ? ["Panel animations"]
         : []),
@@ -543,7 +554,7 @@ export function useSettingsRestore(onRestored?: () => void) {
         ? ["Time format"]
         : []),
       ...(settings.notificationMode !== DEFAULT_UNIFIED_SETTINGS.notificationMode
-        ? ["Thread notifications"]
+        ? ["Task notifications"]
         : []),
       ...(settings.inAppNotificationsEnabled !== DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled
         ? ["In-app notifications"]
@@ -555,9 +566,13 @@ export function useSettingsRestore(onRestored?: () => void) {
       DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode
         ? ["Project Grouping"]
         : []),
+      ...(settings.sidebarWorkingShelfEnabled !==
+      DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled
+        ? ["Working section"]
+        : []),
       ...(settings.sidebarAutoSettleAfterDays !==
       DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
-        ? ["Auto-settle inactive threads"]
+        ? ["Automatically finish inactive Tasks"]
         : []),
       ...(settings.sidebarAutoSettleOnMerge !== DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge
         ? ["Auto-settle merged threads"]
@@ -602,11 +617,11 @@ export function useSettingsRestore(onRestored?: () => void) {
         : []),
       ...(settings.continueThreadsAfterServerUpdate !==
       DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate
-        ? ["Continue threads after restarts"]
+        ? ["Continue Tasks after restarts"]
         : []),
       ...(isBackgroundActivityDirty ? ["Background activity"] : []),
       ...(settings.defaultThreadEnvMode !== DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode
-        ? ["New thread mode"]
+        ? ["New Task permissions"]
         : []),
       ...(settings.newWorktreesStartFromOrigin !==
       DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin
@@ -647,6 +662,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.browserAutoShowFloatingPreview,
       settings.appearanceContrast,
       settings.diffColorScheme,
+      settings.chatWidth,
       settings.enableAgentBrowserAccess,
       settings.enableAgentComputerAccess,
       settings.confirmQuit,
@@ -683,6 +699,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.sidebarAutoSettleAfterDays,
       settings.sidebarAutoSettleOnMerge,
       settings.sidebarProjectGroupingMode,
+      settings.sidebarWorkingShelfEnabled,
       settings.sidebarThreadPreviewCount,
       settings.showSkillsInSlashMenu,
       settings.timestampFormat,
@@ -760,6 +777,7 @@ export function useSettingsRestore(onRestored?: () => void) {
     updateSettings({
       appearanceContrast: DEFAULT_UNIFIED_SETTINGS.appearanceContrast,
       diffColorScheme: DEFAULT_UNIFIED_SETTINGS.diffColorScheme,
+      chatWidth: DEFAULT_UNIFIED_SETTINGS.chatWidth,
       timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
       notificationMode: DEFAULT_UNIFIED_SETTINGS.notificationMode,
       inAppNotificationsEnabled: DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled,
@@ -780,6 +798,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       panelAnimationDurationMs: DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs,
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
+      sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
@@ -855,7 +874,7 @@ function TokenStreamingWarningDialog({
 }) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogPopup className="max-w-lg">
+      <AlertDialogPopup>
         <AlertDialogHeader>
           <AlertDialogTitle>Token by token is a worse experience</AlertDialogTitle>
           <AlertDialogDescription>
@@ -909,7 +928,7 @@ function BackgroundActivityAdvancedDialog({
             Tune the shared power policy and the background intervals that feed it.
           </DialogDescription>
         </DialogHeader>
-        <DialogPanel className="space-y-0 px-6 pb-5">
+        <DialogPanel>
           <div className="overflow-hidden rounded-xl border bg-card text-card-foreground">
             <div className="flex flex-col gap-3 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0 space-y-1">
@@ -1378,8 +1397,8 @@ export function AppearanceSettingsPanel() {
                         : "flex shrink-0 gap-1"
                     }
                   >
-                    <span className="size-2 rounded-full bg-[var(--diff-deletion)]" />
-                    <span className="size-2 rounded-full bg-[var(--diff-addition)]" />
+                    <span className="size-2 rounded-full bg-diff-deletion" />
+                    <span className="size-2 rounded-full bg-diff-addition" />
                   </span>
                   <SelectValue>
                     {settings.diffColorScheme === "blue-orange" ? "Blue & orange" : "Red & green"}
@@ -1388,6 +1407,38 @@ export function AppearanceSettingsPanel() {
                 <SelectPopup align="end" alignItemWithTrigger={false}>
                   <SelectItem value="red-green">Red & green (default)</SelectItem>
                   <SelectItem value="blue-orange">Blue & orange</SelectItem>
+                </SelectPopup>
+              </Select>
+            </div>
+          }
+        />
+        <SettingsRow
+          {...searchableSetting("chat-width")}
+          description="Set how wide messages and the composer can grow on large screens."
+          resetAction={
+            settings.chatWidth !== DEFAULT_UNIFIED_SETTINGS.chatWidth ? (
+              <SettingResetButton
+                label="chat width"
+                onClick={() => updateSettings({ chatWidth: DEFAULT_UNIFIED_SETTINGS.chatWidth })}
+              />
+            ) : null
+          }
+          control={
+            <div className="w-full sm:w-40">
+              <Select
+                value={settings.chatWidth}
+                onValueChange={(value) => {
+                  if (value === "comfortable" || value === "wide" || value === "full")
+                    updateSettings({ chatWidth: value });
+                }}
+              >
+                <SelectTrigger size="sm" className="w-full min-w-0" aria-label="Chat width">
+                  <SelectValue>{CHAT_WIDTH_LABELS[settings.chatWidth]}</SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  <SelectItem value="comfortable">Comfortable (default)</SelectItem>
+                  <SelectItem value="wide">Wide</SelectItem>
+                  <SelectItem value="full">Full</SelectItem>
                 </SelectPopup>
               </Select>
             </div>
@@ -2012,7 +2063,7 @@ function AutoSettleDaysInput({
         }
       }}
       onBlur={() => setDraft(String(value))}
-      aria-label="Days of inactivity before auto-settle"
+      aria-label="Days before finishing inactive Tasks"
     />
   );
 }
@@ -2056,7 +2107,7 @@ function LegacyFeaturesSection() {
     <section id="legacy-features" ref={targetRef} tabIndex={-1} className="space-y-2.5">
       <Collapsible open={open} onOpenChange={setOpen}>
         <CollapsibleTrigger className="group flex min-h-8 w-full items-center gap-2 px-3 sm:px-4">
-          <h2 className="text-sm font-normal tracking-[-0.005em] text-foreground/70 transition-colors group-hover:text-foreground">
+          <h2 className="text-sm font-normal text-foreground/70 transition-colors group-hover:text-foreground">
             Legacy features
           </h2>
           <ChevronRightIcon className="size-4 text-muted-foreground transition-transform duration-200 group-data-panel-open:rotate-90" />
@@ -2199,6 +2250,23 @@ export function GeneralSettingsPanel() {
 
   return (
     <SettingsPageContainer>
+      {environmentId && environment?.serverConfig ? (
+        <DoerContextEditor
+          personal
+          environmentId={environmentId}
+          cwd={environment.serverConfig.keybindingsConfigPath.replace(/[^\\/]+$/, "")}
+          relativePath={PERSONAL_CONTEXT_FILE}
+        />
+      ) : null}
+      {environmentId ? (
+        <MemoryManager
+          environmentId={environmentId}
+          scope="about-you"
+          sectionId="about-you-memory"
+          title="What Doer remembers about you"
+          description="Used across your Spaces on this computer. You choose what Doer remembers — ask in chat or add it here, and review, correct, or forget it any time."
+        />
+      ) : null}
       <ProjectDefaultsSettings category="general" />
       <SettingsSection id="organization" title="Organization">
         <SettingsRow
@@ -2233,6 +2301,33 @@ export function GeneralSettingsPanel() {
                 });
               }}
               aria-label="Project grouping"
+            />
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("working-shelf")}
+          description="Fold working and monitoring threads into a Working section. They return to the top of the inbox when they need you."
+          resetAction={
+            settings.sidebarWorkingShelfEnabled !==
+            DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled ? (
+              <SettingResetButton
+                label="working section"
+                onClick={() =>
+                  updateSettings({
+                    sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.sidebarWorkingShelfEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ sidebarWorkingShelfEnabled: Boolean(checked) })
+              }
+              aria-label="Working section (beta)"
             />
           }
         />
@@ -2273,7 +2368,7 @@ export function GeneralSettingsPanel() {
               serverScoped
               settingKeys={["sidebarAutoSettleAfterDays"]}
               {...searchableSetting("auto-settle-inactive-threads")}
-              description="Sidebar threads with no activity for this long settle automatically."
+              description="Tasks with no activity for this long move to Finished automatically."
               resetAction={
                 settings.sidebarAutoSettleAfterDays !==
                 DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays ? (
@@ -2297,7 +2392,7 @@ export function GeneralSettingsPanel() {
                       sidebarAutoSettleAfterDays: checked ? AUTO_SETTLE_DEFAULT_DAYS : null,
                     })
                   }
-                  aria-label="Auto-settle inactive threads"
+                  aria-label="Automatically finish inactive Tasks"
                 />
               }
             />
@@ -2306,7 +2401,7 @@ export function GeneralSettingsPanel() {
                 serverScoped
                 settingKeys={["sidebarAutoSettleAfterDays"]}
                 title={searchableSetting("days-before-auto-settle").title}
-                description="Any new activity un-settles a thread automatically."
+                description="Any new activity reopens a Task automatically."
                 control={
                   <AutoSettleDaysInput
                     value={settings.sidebarAutoSettleAfterDays}
@@ -2323,7 +2418,7 @@ export function GeneralSettingsPanel() {
         <NotificationSettings />
         <SettingsRow
           {...searchableSetting("simple-mode")}
-          description="Hide commit, branch, worktree, pull request, and terminal controls for a simpler interface. Turn off to show Git and terminal options."
+          description="Keep the everyday interface simple. Turn off to show Advanced settings and developer tools."
           resetAction={
             settings.simpleModeEnabled !== DEFAULT_UNIFIED_SETTINGS.simpleModeEnabled ? (
               <SettingResetButton
@@ -2346,7 +2441,7 @@ export function GeneralSettingsPanel() {
         />
         <SettingsRow
           {...searchableSetting("in-app-notifications")}
-          description="Show a toast when another thread finishes, fails, or needs input or approval while this app has focus."
+          description="Show a toast when another Task finishes, fails, or needs input or approval while this app has focus."
           control={
             <Switch
               checked={settings.inAppNotificationsEnabled}
@@ -2649,7 +2744,7 @@ export function GeneralSettingsPanel() {
 
         <SettingsRow
           {...searchableSetting("composer-collapse")}
-          description="Rest the composer of an existing thread into a single line when you scroll the conversation. Focus the composer or start typing to expand it again."
+          description="Collapse the message box to one line when you scroll a Task. Click it or start typing to expand it again."
           resetAction={
             settings.composerCollapseOnScroll !==
             DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll ? (
@@ -2797,10 +2892,10 @@ export function GeneralSettingsPanel() {
           {...searchableSetting("continue-threads-after-server-update")}
           serverScoped
           settingKeys={["continueThreadsAfterServerUpdate"]}
-          description="Automatically resume interrupted threads after an update, crash, or machine restart on the selected environments. Update older servers first."
+          description="Automatically resume interrupted Tasks after an update, crash, or computer restart on the selected computers. Update older connected computers first."
           status={
             !supportsRestartContinuation
-              ? "All selected connected environments must support restart continuation."
+              ? "Update all selected computers to support continuing after restarts."
               : undefined
           }
           resetAction={
@@ -2826,7 +2921,7 @@ export function GeneralSettingsPanel() {
               onCheckedChange={(checked) =>
                 updateSettings({ continueThreadsAfterServerUpdate: Boolean(checked) })
               }
-              aria-label="Continue threads after restarts"
+              aria-label="Continue Tasks after restarts"
             />
           }
         />
@@ -2991,7 +3086,7 @@ export function GeneralSettingsPanel() {
       <SettingsSection id="confirmations" title="Confirmations">
         <SettingsRow
           {...searchableSetting("unpin-confirmation")}
-          description="Ask before unpinning a thread from the pinned section."
+          description="Ask before unpinning a Task from the pinned section."
           resetAction={
             settings.confirmThreadUnpin !== DEFAULT_UNIFIED_SETTINGS.confirmThreadUnpin ? (
               <SettingResetButton
@@ -3010,14 +3105,14 @@ export function GeneralSettingsPanel() {
               onCheckedChange={(checked) =>
                 updateSettings({ confirmThreadUnpin: Boolean(checked) })
               }
-              aria-label="Confirm thread unpinning"
+              aria-label="Confirm Task unpinning"
             />
           }
         />
 
         <SettingsRow
           {...searchableSetting("archive-confirmation")}
-          description="Require a second click on the inline archive action before a thread is archived."
+          description="Require a second click on the inline archive action before a Task is archived."
           resetAction={
             settings.confirmThreadArchive !== DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive ? (
               <SettingResetButton
@@ -3036,14 +3131,14 @@ export function GeneralSettingsPanel() {
               onCheckedChange={(checked) =>
                 updateSettings({ confirmThreadArchive: Boolean(checked) })
               }
-              aria-label="Confirm thread archiving"
+              aria-label="Confirm Task archiving"
             />
           }
         />
 
         <SettingsRow
           {...searchableSetting("delete-confirmation")}
-          description="Ask before deleting a thread and its chat history."
+          description="Ask before deleting a Task and its chat history."
           resetAction={
             settings.confirmThreadDelete !== DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete ? (
               <SettingResetButton
@@ -3062,7 +3157,7 @@ export function GeneralSettingsPanel() {
               onCheckedChange={(checked) =>
                 updateSettings({ confirmThreadDelete: Boolean(checked) })
               }
-              aria-label="Confirm thread deletion"
+              aria-label="Confirm Task deletion"
             />
           }
         />
@@ -3146,7 +3241,6 @@ export function GeneralSettingsPanel() {
                   lockedProvider={null}
                   instanceEntries={textGenerationModelInstanceEntries}
                   modelOptionsByInstance={textGenerationModelOptionsByInstance}
-                  triggerVariant="outline"
                   triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
                   {...(mixedTextGenerationModel ? { triggerLabel: "Mixed" } : {})}
                   getModelDisabledReason={textGenerationModelDisabledReason}
@@ -3197,7 +3291,6 @@ export function GeneralSettingsPanel() {
                     modelOptions={textGenModelOptions}
                     allowPromptInjectedEffort={false}
                     planModeEnabled={settings.planModeEnabled}
-                    triggerVariant="outline"
                     triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
                     onModelOptionsChange={(nextOptions) => {
                       updateSettings({
@@ -3232,42 +3325,48 @@ export function GeneralSettingsPanel() {
           />
         )}
       </SettingsSection>
-      <SettingsSection title="Diagnostics">
-        <SettingsRow
-          {...searchableSetting("diagnostics")}
-          description={
-            isEnvironmentScope
-              ? "Inspect processes, resource use, and logs on this environment."
-              : "Inspect processes, resource use, and logs on one environment at a time."
-          }
-          control={
-            <Button
-              render={
-                <Link to="/settings/diagnostics" search={{ machine: environmentId ?? undefined }} />
-              }
-              size="sm"
-              variant="outline"
-            >
-              View diagnostics
-            </Button>
-          }
-        />
-        <SettingsRow
-          {...searchableSetting("open-source-licenses")}
-          description="Notices for dependencies, assets, and optional tools used by Doer."
-          control={
-            <Button
-              render={<Link to="/settings/open-source-licenses" />}
-              size="sm"
-              variant="outline"
-            >
-              View licenses
-            </Button>
-          }
-        />
-      </SettingsSection>
+      <details>
+        <summary className="cursor-pointer text-sm font-medium">Advanced troubleshooting</summary>
+        <SettingsSection title="Diagnostics">
+          <SettingsRow
+            {...searchableSetting("diagnostics")}
+            description={
+              isEnvironmentScope
+                ? "Inspect processes, resource use, and logs on this environment."
+                : "Inspect processes, resource use, and logs on one environment at a time."
+            }
+            control={
+              <Button
+                render={
+                  <Link
+                    to="/settings/diagnostics"
+                    search={{ machine: environmentId ?? undefined }}
+                  />
+                }
+                size="sm"
+                variant="outline"
+              >
+                View diagnostics
+              </Button>
+            }
+          />
+          <SettingsRow
+            {...searchableSetting("open-source-licenses")}
+            description="Notices for dependencies, assets, and optional tools used by Doer."
+            control={
+              <Button
+                render={<Link to="/settings/open-source-licenses" />}
+                size="sm"
+                variant="outline"
+              >
+                View licenses
+              </Button>
+            }
+          />
+        </SettingsSection>
 
-      <LegacyFeaturesSection />
+        <LegacyFeaturesSection />
+      </details>
     </SettingsPageContainer>
   );
 }
@@ -3392,7 +3491,7 @@ export function ArchivedThreadsPanel() {
             title={
               <span className="inline-flex items-center gap-2">
                 {isLoadingArchive ? (
-                  <Spinner className="size-3.5 text-muted-foreground" />
+                  <Spinner size="sm" tone="muted" />
                 ) : (
                   <ArchiveIcon className="size-3.5 text-muted-foreground" />
                 )}

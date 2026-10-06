@@ -32,20 +32,21 @@ function insertAutomation(input: {
   readonly nextFireAt: string | null;
   readonly deletedAt?: string | null;
   readonly lastFiredAt?: string | null;
+  readonly dedicatedThread?: boolean;
 }) {
   return Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     yield* sql`
       INSERT INTO projection_automations (
         automation_id, project_id, thread_id, title, prompt, schedule_json,
-        state, next_fire_at, last_fired_at, runs_json,
+        state, next_fire_at, last_fired_at, runs_json, dedicated_thread,
         created_at, updated_at, deleted_at
       )
       VALUES (
         ${input.automationId}, 'project-1', ${`thread-for-${input.automationId}`},
         ${`Automation ${input.automationId}`}, 'Summarize overnight activity.',
         '{"kind":"daily","time":"09:00","timezone":"UTC"}',
-        ${input.state}, ${input.nextFireAt}, ${input.lastFiredAt ?? null}, '[]',
+        ${input.state}, ${input.nextFireAt}, ${input.lastFiredAt ?? null}, '[]', ${input.dedicatedThread === false ? 0 : 1},
         '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z', ${input.deletedAt ?? null}
       )
     `;
@@ -53,6 +54,35 @@ function insertAutomation(input: {
 }
 
 snapshotLayer("ProjectionSnapshotQuery automations", (it) => {
+  it.effect(
+    "settles completed one-offs and paused runs, excluding stopped and shared reminders",
+    () =>
+      Effect.gen(function* () {
+        const snapshots = yield* ProjectionSnapshotQuery;
+        for (const input of [
+          { automationId: "settle-completed", state: "completed" },
+          { automationId: "settle-paused", state: "paused" },
+          { automationId: "settle-deleted", state: "active", deletedAt: NOW },
+          { automationId: "settle-shared", state: "active", dedicatedThread: false },
+          { automationId: "settle-settled", state: "completed" },
+        ]) {
+          yield* insertAutomation({ ...input, nextFireAt: null, lastFiredAt: SLOT });
+        }
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`
+        INSERT INTO projection_threads
+          (thread_id, project_id, title, model_selection_json, runtime_mode, interaction_mode, created_at, updated_at, settled_override)
+        VALUES ('thread-for-settle-settled', 'project-1', 'Finished reminder', '{"instanceId":"codex","model":"gpt-5"}', 'full-access', 'default', ${NOW}, ${NOW}, 'settled')
+      `;
+        const candidates = yield* snapshots.listSettleCandidateAutomations({ firedBeforeIso: NOW });
+        assert.deepStrictEqual(
+          candidates.map((row) => row.id),
+          ["settle-completed", "settle-paused"],
+        );
+        yield* sql`DELETE FROM projection_automations WHERE automation_id LIKE 'settle-%'`;
+        yield* sql`DELETE FROM projection_threads WHERE thread_id = 'thread-for-settle-settled'`;
+      }),
+  );
   it.effect("reads automations across the command, shell, and scheduler queries", () =>
     Effect.gen(function* () {
       const snapshots = yield* ProjectionSnapshotQuery;
@@ -74,7 +104,7 @@ snapshotLayer("ProjectionSnapshotQuery automations", (it) => {
       yield* insertAutomation({
         automationId: "automation-gone",
         state: "active",
-        nextFireAt: null,
+        nextFireAt: SLOT,
         deletedAt: NOW,
       });
       yield* insertAutomation({

@@ -1,3 +1,4 @@
+// @effect-diagnostics globalFetch:off - The Electron protocol bridge returns native Responses and uses Node HTTP to avoid Chromium request limits.
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -9,6 +10,7 @@ import * as Mime from "effect/unstable/http/Mime";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
+import * as Semaphore from "effect/Semaphore";
 
 import * as Electron from "electron";
 
@@ -84,7 +86,8 @@ export function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrat
   // the build-configured Clerk, relay, and OTLP endpoints. Those environment
   // origins are not known when this response policy is created, so restrict
   // connections by the network schemes the client supports instead of by host.
-  const connectSources = ["'self'", "http:", "https:", "ws:", "wss:"];
+  // GLTFLoader fetches embedded textures through blob URLs after parsing the model.
+  const connectSources = ["'self'", "blob:", "http:", "https:", "ws:", "wss:"];
 
   return [
     "default-src 'self'",
@@ -125,6 +128,9 @@ function registerDesktopSchemePrivilegesSync(): void {
         supportFetchAPI: true,
         corsEnabled: true,
         stream: true,
+        // Custom schemes skip Chromium's V8 code cache unless they opt in.
+        // Dev stays off: Vite serves changing code at stable URLs.
+        codeCache: true,
       },
     },
     {
@@ -187,8 +193,25 @@ async function proxyRequest(
   const response =
     request.method === "GET" || request.method === "HEAD"
       ? await fetchWithTransientRetry(targetUrl.toString(), init)
-      : await Electron.net.fetch(targetUrl.toString(), init);
-  return withContentSecurityPolicy(response, contentSecurityPolicy);
+      : await fetch(targetUrl.toString(), init);
+  // Node fetch decodes compressed bodies. Forwarding the original encoding or
+  // byte count would make Chromium try to decode the body a second time.
+  const responseHeaders = new Headers(response.headers);
+  responseHeaders.delete("content-encoding");
+  responseHeaders.delete("content-length");
+  return withContentSecurityPolicy(
+    new Response(
+      request.method === "HEAD" || [204, 205, 304].includes(response.status)
+        ? null
+        : await response.arrayBuffer(),
+      {
+        status: response.status,
+        statusText: response.statusText,
+        headers: responseHeaders,
+      },
+    ),
+    contentSecurityPolicy,
+  );
 }
 
 const TRANSIENT_FETCH_RETRY_DELAYS_MS = [0, 50, 150] as const;
@@ -243,7 +266,10 @@ async function fetchWithTransientRetry(url: string, init: RequestInit): Promise<
     }
 
     try {
-      return await Electron.net.fetch(url, init);
+      // Vite serves hundreds of concurrent modules during development. Routing
+      // those proxy requests back through Chromium's URL loader exhausts its
+      // outstanding-request quota and leaves the renderer unable to start.
+      return await fetch(url, init);
     } catch (error) {
       lastError = error;
     }
@@ -255,6 +281,7 @@ async function fetchWithTransientRetry(url: string, init: RequestInit): Promise<
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const registered = yield* Ref.make(false);
+  const proxyRequests = yield* Semaphore.make(16);
   const context = yield* Effect.context<FileSystem.FileSystem | Path.Path>();
   const runPromise = Effect.runPromiseWith(context);
 
@@ -274,7 +301,13 @@ export const make = Effect.gen(function* () {
                   contentSecurityPolicy,
                 );
               }
-              return proxyRequest(request, input.targetOrigin, contentSecurityPolicy);
+              return runPromise(
+                proxyRequests.withPermits(1)(
+                  Effect.tryPromise(() =>
+                    proxyRequest(request, input.targetOrigin, contentSecurityPolicy),
+                  ),
+                ),
+              );
             });
           },
           catch: (cause) => new ElectronProtocolRegistrationError({ scheme: input.scheme, cause }),

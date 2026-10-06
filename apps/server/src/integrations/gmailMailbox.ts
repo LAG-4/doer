@@ -186,7 +186,14 @@ export async function readGmailMessage(token: string, id: string, request: typeo
       );
       const charset = /charset=["']?([^\s;"']+)/i.exec(contentType)?.[1] ?? "utf-8";
       if (typeof body.data === "string") {
-        const decoded = new TextDecoder(charset).decode(Buffer.from(body.data, "base64url"));
+        // An unknown charset must not fail the whole message: fall back to
+        // UTF-8 deterministically so the remaining parts still render.
+        let decoded: string;
+        try {
+          decoded = new TextDecoder(charset).decode(Buffer.from(body.data, "base64url"));
+        } catch {
+          decoded = new TextDecoder("utf-8").decode(Buffer.from(body.data, "base64url"));
+        }
         (part.mimeType === "text/plain" ? text : html).push(decoded);
       }
     }

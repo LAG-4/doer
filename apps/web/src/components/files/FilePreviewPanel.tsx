@@ -1,3 +1,4 @@
+import { OfficeDocumentSurface } from "./OfficeDocumentSurface";
 import { Spinner } from "~/components/ui/spinner";
 import type {
   ChatFileAttachment,
@@ -84,6 +85,7 @@ import { projectFileCacheKey, projectFileEditorCacheKey } from "./fileContentRev
 import {
   isMarkdownPreviewFile,
   isSpreadsheetPreviewFile,
+  resolveFilePreviewPath,
   setMarkdownTaskChecked,
   shouldShowFileExplorer,
 } from "./filePreviewMode";
@@ -172,7 +174,7 @@ function WorkspaceImagePreview(props: {
     </div>
   ) : (
     <div className="flex min-h-0 flex-1 items-center justify-center text-muted-foreground">
-      <Spinner className="size-5" />
+      <Spinner size="lg" />
     </div>
   );
 }
@@ -217,7 +219,7 @@ function WorkspaceBrowserPreview(props: {
   if (assetUrl._tag !== "Success") {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center text-muted-foreground">
-        <Spinner className="size-5" />
+        <Spinner size="lg" />
       </div>
     );
   }
@@ -910,7 +912,7 @@ export default function FilePreviewPanel({
   environmentId,
   cwd,
   projectName,
-  relativePath,
+  relativePath: requestedPath,
   attachment,
   threadRef,
   composerDraftTarget,
@@ -923,8 +925,11 @@ export default function FilePreviewPanel({
   selectedFilePending,
   workspaceMutationId,
 }: FilePreviewPanelProps) {
+  const relativePath =
+    attachment === undefined ? resolveFilePreviewPath(requestedPath, cwd) : requestedPath;
   const { resolvedTheme } = useTheme();
   const wordWrap = useClientSettings((settings) => settings.wordWrap);
+  const simpleMode = useClientSettings((settings) => settings.simpleModeEnabled);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const remoteOpenState = useRemoteOpenState(environmentId);
   const environmentHttpBaseUrl = useEnvironmentHttpBaseUrl(environmentId);
@@ -947,6 +952,8 @@ export default function FilePreviewPanel({
   // Spreadsheets open in the editable Sheet grid backed by base64 over the
   // same file API. Host files and attachments have no writable path, so only
   // workspace files get the editable surface.
+  const isOffice =
+    relativePath !== null && attachment === undefined && /\.(?:docx|pptx)$/i.test(relativePath);
   const isSheetEditable =
     relativePath !== null &&
     attachment === undefined &&
@@ -961,7 +968,7 @@ export default function FilePreviewPanel({
     environmentId,
     cwd,
     relativePath,
-    attachment === undefined && !isSheetEditable,
+    attachment === undefined && relativePath !== null && !isSheetEditable && !isOffice,
   );
   // A chat link cannot tell a folder from a file, so a folder arrives here as
   // a file surface and the read fails. Keep the breadcrumbs, drop the preview
@@ -1104,14 +1111,15 @@ export default function FilePreviewPanel({
   }, [absolutePath, createAssetUrl, cwd, environmentHttpBaseUrl, openPreview, threadRef]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
+    <div className="@container/file-surface flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
       {relativePath && attachment === undefined ? (
         <div className={FILE_SURFACE_SUBHEADER_CLASS} data-surface-subheader>
           <ScrollArea
+            radius="none"
             ref={breadcrumbRef}
             hideScrollbars
             scrollFade
-            className="min-w-0 flex-1 rounded-none"
+            className="min-w-0 flex-1"
             data-file-breadcrumbs
           >
             <div className="flex h-full w-max min-w-full items-center text-xs">
@@ -1125,7 +1133,8 @@ export default function FilePreviewPanel({
               />
             </div>
           </ScrollArea>
-          {absolutePath &&
+          {!simpleMode &&
+          absolutePath &&
           (environmentId === primaryEnvironmentId || remoteOpenState.mode !== "local-exec") ? (
             <OpenInPicker
               environmentId={environmentId}
@@ -1189,11 +1198,11 @@ export default function FilePreviewPanel({
       !isMedia &&
       !renderBrowserFile &&
       file.data?.truncated ? (
-        <div className="shrink-0 border-b border-warning/20 bg-warning-surface px-3 py-1.5 text-[11px] text-warning-foreground">
+        <div className="shrink-0 border-b border-warning/20 bg-warning-surface px-3 py-1.5 text-2xs text-warning-foreground">
           Preview limited to the first 1 MB of a {file.data.byteLength.toLocaleString()} byte file.
         </div>
       ) : null}
-      <div className="flex min-h-0 flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden @max-[40rem]/file-surface:flex-col">
         <div
           className={cn("min-w-0 flex-1 flex-col overflow-hidden", previewPath ? "flex" : "hidden")}
         >
@@ -1256,6 +1265,13 @@ export default function FilePreviewPanel({
             <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs leading-relaxed text-destructive">
               {file.error}
             </div>
+          ) : relativePath && isOffice ? (
+            <OfficeDocumentSurface
+              key={relativePath}
+              environmentId={environmentId}
+              cwd={cwd}
+              relativePath={relativePath}
+            />
           ) : relativePath && isSheetEditable ? (
             <SpreadsheetSurface
               key={relativePath}
@@ -1272,7 +1288,7 @@ export default function FilePreviewPanel({
             />
           ) : relativePath && file.data === null ? (
             <div className="flex min-h-0 flex-1 items-center justify-center text-muted-foreground">
-              <Spinner className="size-5" />
+              <Spinner size="lg" />
             </div>
           ) : relativePath && file.data ? (
             isMarkdown && renderMarkdown ? (
@@ -1327,7 +1343,7 @@ export default function FilePreviewPanel({
             className={cn(
               "flex min-h-0 shrink-0 bg-background",
               previewPath
-                ? "w-[min(22rem,46%)] min-w-64 border-l border-border/60"
+                ? "w-[min(22rem,46%)] min-w-64 border-l border-border/60 @max-[40rem]/file-surface:h-40 @max-[40rem]/file-surface:w-full @max-[40rem]/file-surface:min-w-0 @max-[40rem]/file-surface:border-l-0 @max-[40rem]/file-surface:border-t"
                 : "min-w-0 flex-1",
             )}
           >

@@ -5,6 +5,7 @@ import * as NodePath from "node:path";
 import { assert, describe, it } from "vite-plus/test";
 
 import {
+  developmentBundleId,
   makeDevelopmentEnvironmentScript,
   makeDevelopmentLauncherScript,
   resolveElectronBinaryPath,
@@ -16,6 +17,16 @@ import {
 } from "./electron-launcher.mjs";
 
 describe("electron development launcher", () => {
+  it("distinguishes worktrees with the same folder name and keeps identity stable", () => {
+    assert.notEqual(
+      developmentBundleId("/worktrees/first/doer"),
+      developmentBundleId("/worktrees/second/doer"),
+    );
+    assert.equal(
+      developmentBundleId("/worktrees/first/doer"),
+      developmentBundleId("/worktrees/first/doer/../doer"),
+    );
+  });
   it("uses captured values only as fallbacks for a live runner environment", () => {
     const environmentScript = makeDevelopmentEnvironmentScript({
       VITE_DEV_SERVER_URL: "http://127.0.0.1:8526",

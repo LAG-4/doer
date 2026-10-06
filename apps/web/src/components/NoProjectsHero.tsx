@@ -1,17 +1,24 @@
-import { PlusIcon } from "lucide-react";
+import { MessageSquareDashedIcon, PlusIcon } from "lucide-react";
 import { useCallback, useState } from "react";
 
 import { openCommandPalette } from "../commandPaletteBus";
 import { useEnsureInboxProject } from "../hooks/useEnsureInboxProject";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { useScratchProject } from "../hooks/useScratchProject";
+import { usePrimaryEnvironmentId } from "../state/environments";
+import { isElectron } from "../env";
 import { Button } from "./ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "./ui/empty";
 import { SidebarInset } from "./ui/sidebar";
+import { WorkspacePageHeader } from "./WorkspacePageHeader";
 
 export function NoProjectsHero() {
   const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
   const { handleNewThread } = useHandleNewThread();
   const { prepareInboxProject, settleInboxProject, isInboxCapable } = useEnsureInboxProject();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const { scratchEnvironmentId, startScratchThread } = useScratchProject();
+  const scratchTargetEnvironmentId = scratchEnvironmentId(primaryEnvironmentId);
   const [failed, setFailed] = useState(false);
 
   // Opens the inbox draft instantly; creation settles behind it. A null
@@ -36,25 +43,25 @@ export function NoProjectsHero() {
   }, [handleNewThread, prepareInboxProject, settleInboxProject]);
 
   return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
+    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
-        <Empty className="flex-1">
+        {/* The desktop window only moves where CSS opts in, so keep a titlebar strip. */}
+        {isElectron ? <WorkspacePageHeader electron /> : null}
+        <Empty size="hero" className="flex-1">
           <div className="w-full max-w-lg px-8 py-12">
             <EmptyHeader className="max-w-none">
-              <EmptyTitle className="text-foreground text-2xl sm:text-3xl">
-                What should we work on?
-              </EmptyTitle>
-              <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
+              <EmptyTitle>What should we work on?</EmptyTitle>
+              <EmptyDescription className="mt-2">
                 {isInboxCapable
-                  ? "Start chatting right away, or add a project folder first."
-                  : "Add a project to start your first thread."}
+                  ? "Start chatting right away, or add a folder as a Space first."
+                  : "Add a Space to start your first Task."}
               </EmptyDescription>
               {failed ? (
                 <p role="alert" className="mt-3 text-sm text-destructive">
-                  Could not set up your space. Try again or add a project.
+                  Could not set up your space. Try again or add a Space.
                 </p>
               ) : null}
-              <div className="mt-6 flex justify-center gap-3">
+              <div className="mt-6 flex flex-wrap justify-center gap-3">
                 {isInboxCapable ? (
                   <>
                     <Button size="sm" onClick={() => void startChatting()}>
@@ -62,13 +69,23 @@ export function NoProjectsHero() {
                     </Button>
                     <Button size="sm" variant="ghost-muted" onClick={openAddProject}>
                       <PlusIcon className="size-4" />
-                      Add project
+                      Add Space
                     </Button>
                   </>
                 ) : (
                   <Button size="sm" onClick={openAddProject}>
                     <PlusIcon className="size-4" />
-                    Add project
+                    Add Space
+                  </Button>
+                )}
+                {scratchTargetEnvironmentId === null ? null : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void startScratchThread(scratchTargetEnvironmentId)}
+                  >
+                    <MessageSquareDashedIcon className="size-4" />
+                    Start without a Space
                   </Button>
                 )}
               </div>

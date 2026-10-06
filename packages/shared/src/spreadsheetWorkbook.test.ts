@@ -13,10 +13,12 @@ import {
   normalizeSpreadsheetGrid,
   parseSheetGrid,
   parseSpreadsheet,
+  readZipEntries,
   replaceSpreadsheetCell,
   serializeSpreadsheet,
   spreadsheetCellInputFromText,
   spreadsheetGridsEqual,
+  writeZipEntries,
 } from "./spreadsheetWorkbook.ts";
 
 describe("spreadsheet runtime", () => {
@@ -31,6 +33,49 @@ describe("targeted spreadsheet editing", () => {
     const edited = await replaceSpreadsheetCell(original, "A1", "Updated & safe");
     expect((await parseSpreadsheet(edited)).rows).toEqual([["Updated & safe", "Keep"]]);
     await expect(replaceSpreadsheetCell(original, "C1", "new")).rejects.toThrow(/does not exist/);
+  });
+
+  it("replaces a self-closing styled blank cell without consuming its neighbor", async () => {
+    const base = await createSpreadsheet([["", "KEEP"]]);
+    const entries = await readZipEntries(base);
+    const sheet = entries.find((entry) => entry.name === "xl/worksheets/sheet1.xml");
+    expect(sheet).toBeDefined();
+    const decoder = new TextDecoder();
+    const encoder = new TextEncoder();
+    const xml = decoder.decode(sheet!.data);
+    // Simulate Excel's styled blank: self-closing <c> with a style index.
+    const styled = xml.replace(/<c r="A1"[^>]*?(?:\/>|>[\s\S]*?<\/c>)/, '<c r="A1" s="1"/>');
+    expect(styled).toContain('<c r="A1" s="1"/>');
+    expect(styled).toContain("KEEP");
+    sheet!.data = encoder.encode(styled);
+    sheet!.passthrough = null;
+    const original = await writeZipEntries(entries);
+    const edited = await replaceSpreadsheetCell(original, "A1", "NEW");
+    const editedXml = decoder.decode((await readZipEntries(edited)).find((e) => e.name === "xl/worksheets/sheet1.xml")!.data);
+    expect(editedXml).toContain("NEW");
+    expect(editedXml).toContain("KEEP");
+    expect(editedXml).not.toMatch(/s="1"\/ t=/);
+    expect((await parseSpreadsheet(edited)).rows).toEqual([["NEW", "KEEP"]]);
+  });
+
+  it("preserves neighboring cells, attributes, namespaces and refuses formulas", async () => {
+    const base = await createSpreadsheet([["a", "KEEP"], ["", "other"]]);
+    const entries = await readZipEntries(base);
+    const sheet = entries.find((entry) => entry.name === "xl/worksheets/sheet1.xml")!;
+    const decoder = new TextDecoder();
+    const encoder = new TextEncoder();
+    // Give A2 a real formula body; the replacement path must refuse it.
+    const withFormula = decoder.decode(sheet.data).replace(/<c r="A2"[^>]*?(?:\/>|>[\s\S]*?<\/c>)/, '<c r="A2"><f>1+1</f><v>2</v></c>');
+    expect(withFormula).toContain("<f>1+1</f>");
+    sheet.data = encoder.encode(withFormula);
+    sheet.passthrough = null;
+    const original = await writeZipEntries(entries);
+    await expect(replaceSpreadsheetCell(original, "A2", "x")).rejects.toThrow(/Formula/);
+    const edited = await replaceSpreadsheetCell(original, "B1", "NEWB");
+    const editedXml = decoder.decode((await readZipEntries(edited)).find((e) => e.name === "xl/worksheets/sheet1.xml")!.data);
+    expect(editedXml).toContain("NEWB");
+    expect(editedXml).toContain("<f>1+1</f>");
+    expect((await parseSpreadsheet(edited)).rows[0]?.[0]).toBe("a");
   });
 });
 

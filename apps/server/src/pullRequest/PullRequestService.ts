@@ -163,7 +163,7 @@ export type PullRequestError = PullRequestUnavailableError | PullRequestOperatio
 const routingCredential = Context.Reference<{
   readonly credentialFingerprint: string;
   readonly viewer: string;
-} | null>("t3/PullRequestService/routingCredential", { defaultValue: () => null });
+} | null>("@lag4/doer-cli/PullRequestService/routingCredential", { defaultValue: () => null });
 // Internal only: the client cannot choose its cache's credential namespace.
 const credentialNamespace = Symbol("pullRequestCredentialNamespace");
 type CredentialRef = PullRequestRef & { readonly [credentialNamespace]?: string };
@@ -1596,6 +1596,7 @@ export const make = Effect.gen(function* () {
             ...(changeRequest.mergeability === undefined
               ? {}
               : { mergeability: changeRequest.mergeability }),
+            ...(changeRequest.stack === undefined ? {} : { stack: changeRequest.stack }),
           })),
         );
       }),
@@ -2751,7 +2752,7 @@ export const make = Effect.gen(function* () {
       `project:${input.projectId}`,
       refScope(input),
     ]);
-    const decoded = yield* Schema.decodeUnknownEffect(codec)(payload).pipe(Effect.option);
+    const decoded = yield* Schema.decodeEffect(codec)(payload).pipe(Effect.option);
     return Option.isSome(decoded) ? decoded.value : yield* lookup;
   });
   const summaryCodec = Schema.fromJsonString(PullRequestSummary);

@@ -1,3 +1,5 @@
+import { scheduledRunStatus } from "../scheduledTaskStatus";
+import { useThreadShell } from "../state/entities";
 import type { EnvironmentAutomation } from "@t3tools/client-runtime/state/models";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
@@ -12,13 +14,16 @@ import {
   PauseIcon,
   Trash2Icon,
 } from "lucide-react";
-import { memo, useMemo, useState } from "react";
+import { memo, useMemo, useRef, useState } from "react";
 import { useRouter } from "@tanstack/react-router";
 
 import { useLocalStorage } from "../hooks/useLocalStorage";
+import { useComposerHandleContext } from "../composerHandleContext";
 import { cn } from "../lib/utils";
 import { buildThreadRouteParams } from "../threadRoutes";
 import { automationEnvironment } from "../state/automations";
+import { describeReminderSchedule, reminderTimezone } from "../scheduledTaskForm";
+import { requestConfirmDialog } from "../confirmDialog";
 import { useAutomations } from "../state/automations";
 import { useProjects } from "../state/entities";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -27,19 +32,28 @@ import { ScheduledTaskEditor, useScheduledTaskEditorStore } from "./ScheduledTas
 
 const SECTION_EXPANDED_KEY = "t3code:sidebar:scheduled-expanded";
 
-const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+/**
+ * One-tap starters for the empty state. They write plain words into the chat
+ * composer — the agent configures the reminder from there — instead of
+ * opening the form. Mapped to the jobs non-dev users actually asked for.
+ */
+const REMINDER_STARTERS: ReadonlyArray<{ label: string; text: string }> = [
+  {
+    label: "Bills summary",
+    text: "Remind me every Monday at 9am to send me my bills summary.",
+  },
+  {
+    label: "Job follow-ups",
+    text: "Remind me every Friday at 5pm to nudge me on open job applications and follow-ups.",
+  },
+  {
+    label: "Morning brief",
+    text: "Remind me every day at 8am to give me a morning brief from my files.",
+  },
+];
 
-export function describeAutomationSchedule(schedule: AutomationSchedule): string {
-  if (schedule.kind === "once") {
-    const date = new Date(schedule.at);
-    return Number.isNaN(date.getTime())
-      ? "Once"
-      : `Once · ${date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`;
-  }
-  if (schedule.kind === "daily") {
-    return `Daily · ${schedule.time}`;
-  }
-  return `${WEEKDAY_SHORT[schedule.weekday] ?? ""} · ${schedule.time}`;
+function describeAutomationSchedule(schedule: AutomationSchedule): string {
+  return describeReminderSchedule(schedule);
 }
 
 function describeNextFire(automation: Automation): string | null {
@@ -55,9 +69,9 @@ function describeNextFire(automation: Automation): string | null {
 }
 
 function describeRunOutcome(run: AutomationRun): string {
-  if (run.outcome === "manual") return "Manual run";
-  if (run.outcome === "missed-then-ran") return "Ran late";
-  return "Ran";
+  if (run.outcome === "manual") return "Requested manually";
+  if (run.outcome === "missed-then-ran") return "Requested late";
+  return "Run requested";
 }
 
 const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
@@ -65,6 +79,9 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
   projectTitle: string | null;
 }) {
   const { automation } = props;
+  const thread = useThreadShell(scopeThreadRef(automation.environmentId, automation.threadId));
+  const status = scheduledRunStatus(automation.runs.at(-1), thread);
+  const running = status === "Running" || status === "Needs your attention";
   const router = useRouter();
   const openEdit = useScheduledTaskEditorStore((s) => s.openEdit);
   const pauseAutomation = useAtomCommand(automationEnvironment.pause, { reportFailure: false });
@@ -73,25 +90,35 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
   const runAutomationNow = useAtomCommand(automationEnvironment.runNow, { reportFailure: false });
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
+  const pending = useRef(false);
 
   const nextFire = describeNextFire(automation);
   const runs = useMemo(() => [...automation.runs].toReversed(), [automation.runs]);
 
   const runCommand = async (
     label: string,
-    effect: Promise<AtomCommandResult<unknown, unknown>>,
+    effect: () => Promise<AtomCommandResult<unknown, unknown>>,
     successTitle: string,
+    confirmMessage?: string,
   ) => {
-    if (busy) return;
+    if (pending.current) return;
+    pending.current = true;
     setBusy(true);
     try {
-      const result = await effect;
+      if (confirmMessage && !(await requestConfirmDialog(confirmMessage))) return;
+      const result = await effect();
       if (result._tag === "Failure") {
         toastManager.add({ type: "error", title: `${label} failed.` });
         return;
       }
       toastManager.add({ type: "success", title: successTitle });
+    } catch {
+      toastManager.add({
+        type: "error",
+        title: `${label} failed. Check the connection and try again.`,
+      });
     } finally {
+      pending.current = false;
       setBusy(false);
     }
   };
@@ -122,8 +149,8 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
           </span>
         </button>
         {(paused || done) && (
-          <span className="shrink-0 rounded border border-sidebar-border px-1 text-[10px] text-sidebar-muted-foreground">
-            {done ? "Done" : "Paused"}
+          <span className="shrink-0 rounded border border-sidebar-border px-1 text-3xs text-sidebar-muted-foreground">
+            {done ? "No more runs" : "Paused"}
           </span>
         )}
         <span className="flex shrink-0 items-center gap-0.5">
@@ -135,16 +162,17 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
               onClick={() =>
                 runCommand(
                   paused ? "Resume" : "Pause",
-                  paused
-                    ? resumeAutomation({
-                        environmentId: automation.environmentId,
-                        input: { automationId: automation.id },
-                      })
-                    : pauseAutomation({
-                        environmentId: automation.environmentId,
-                        input: { automationId: automation.id },
-                      }),
-                  paused ? "Scheduled task resumed." : "Scheduled task paused.",
+                  () =>
+                    paused
+                      ? resumeAutomation({
+                          environmentId: automation.environmentId,
+                          input: { automationId: automation.id },
+                        })
+                      : pauseAutomation({
+                          environmentId: automation.environmentId,
+                          input: { automationId: automation.id },
+                        }),
+                  paused ? "Reminder resumed." : "Reminder paused.",
                 )
               }
               className="cursor-pointer rounded p-1 text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground disabled:opacity-50"
@@ -152,30 +180,32 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
               {paused ? <PlayIcon className="size-3.5" /> : <PauseIcon className="size-3.5" />}
             </button>
           )}
-          {!done && (
+          {
             <button
               type="button"
               aria-label={`Run ${automation.title} now`}
-              disabled={busy}
+              disabled={busy || running}
               onClick={() =>
                 runCommand(
                   "Run now",
-                  runAutomationNow({
-                    environmentId: automation.environmentId,
-                    input: { automationId: automation.id },
-                  }),
-                  "Task run started in its thread.",
+                  () =>
+                    runAutomationNow({
+                      environmentId: automation.environmentId,
+                      input: { automationId: automation.id },
+                    }),
+                  "Run requested. Open the task to follow its progress.",
                 )
               }
               className="cursor-pointer rounded p-1 text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground disabled:opacity-50"
             >
               <ClockIcon className="size-3.5" />
             </button>
-          )}
+          }
           {!done && (
             <button
               type="button"
               aria-label={`Edit ${automation.title}`}
+              disabled={busy}
               onClick={() =>
                 openEdit({
                   environmentId: automation.environmentId,
@@ -194,11 +224,13 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
             onClick={() =>
               runCommand(
                 "Delete",
-                deleteAutomation({
-                  environmentId: automation.environmentId,
-                  input: { automationId: automation.id },
-                }),
-                "Scheduled task deleted. Its thread is kept.",
+                () =>
+                  deleteAutomation({
+                    environmentId: automation.environmentId,
+                    input: { automationId: automation.id },
+                  }),
+                "Reminder stopped. Its task and past results are kept.",
+                `Stop "${automation.title}"? It will not run again. Its task and past results will be kept. Work already started will continue.`,
               )
             }
             className="cursor-pointer rounded p-1 text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-destructive disabled:opacity-50"
@@ -207,11 +239,19 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
           </button>
         </span>
       </div>
-      <div className="flex items-center gap-2 pl-0.5 pt-0.5 text-[11px] text-sidebar-muted-foreground/70">
+      <button
+        type="button"
+        onClick={openThread}
+        className="block cursor-pointer pt-1 text-left text-xs text-sidebar-muted-foreground hover:text-sidebar-foreground"
+        aria-label={`Latest result for ${automation.title}: ${status}`}
+      >
+        {status}
+      </button>
+      <div className="flex items-center gap-2 pl-0.5 pt-0.5 text-2xs text-sidebar-muted-foreground/70">
         {nextFire !== null && !done ? (
           <span>Next {nextFire}</span>
         ) : done ? (
-          <span>Finished its one run</span>
+          <span>One-time run requested · open task for results</span>
         ) : (
           <span>Not scheduled</span>
         )}
@@ -222,7 +262,7 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
             aria-expanded={historyExpanded}
             className="inline-flex cursor-pointer items-center gap-0.5 hover:text-sidebar-foreground"
           >
-            {runs.length} run{runs.length === 1 ? "" : "s"}
+            {runs.length} recent run{runs.length === 1 ? "" : "s"}
             <ChevronDownIcon
               aria-hidden
               className={cn("size-3 transition-transform", historyExpanded && "rotate-180")}
@@ -233,9 +273,9 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
       {historyExpanded && runs.length > 0 && (
         <ul className="mt-1 flex flex-col gap-0.5 border-l border-sidebar-border pl-2">
           {runs.slice(0, 5).map((run) => (
-            <li key={run.occurrenceKey} className="flex items-center gap-2 text-[11px]">
+            <li key={run.occurrenceKey} className="flex items-center gap-2 text-2xs">
               <span className="text-sidebar-muted-foreground">
-                {describeRunOutcome(run)} ·{" "}
+                {scheduledRunStatus(run, thread)} · {describeRunOutcome(run)} ·{" "}
                 {new Date(run.firedAt).toLocaleString(undefined, {
                   month: "short",
                   day: "numeric",
@@ -248,7 +288,7 @@ const ScheduledTaskRow = memo(function ScheduledTaskRow(props: {
                 onClick={openThread}
                 className="cursor-pointer text-sidebar-muted-foreground underline-offset-2 hover:text-sidebar-foreground hover:underline"
               >
-                Open thread
+                Open task
               </button>
             </li>
           ))}
@@ -262,7 +302,24 @@ export function ScheduledTasksSection() {
   const automations = useAutomations();
   const projects = useProjects();
   const openCreate = useScheduledTaskEditorStore((s) => s.openCreate);
+  const composerHandleRef = useComposerHandleContext();
   const [expanded, setExpanded] = useLocalStorage(SECTION_EXPANDED_KEY, true, Schema.Boolean);
+
+  // Chat-first: starters write plain words into the composer so the agent
+  // configures the reminder. The form is only the fallback when no composer
+  // is mounted to receive the text.
+  const startReminderFromChat = (text: string) => {
+    const inserted =
+      composerHandleRef?.current?.insertTextAtEnd(
+        `${text}\nMy local timezone is ${reminderTimezone()}.`,
+        { ensureLeadingBoundary: true },
+      ) ?? false;
+    if (inserted) {
+      composerHandleRef?.current?.focusAtEnd();
+    } else {
+      openCreate();
+    }
+  };
 
   const projectTitleByKey = useMemo(() => {
     const map = new Map<string, string>();
@@ -295,17 +352,34 @@ export function ScheduledTasksSection() {
         <div className="mx-0.5 mt-1">
           <div className="flex h-8 w-full items-center gap-2 px-2">
             <span className="shrink-0 text-xs font-medium text-sidebar-muted-foreground/60">
-              Scheduled
+              Reminders
             </span>
             <span aria-hidden className="h-px min-w-2 flex-1 bg-sidebar-border/60" />
             <button
               type="button"
-              aria-label="New scheduled task"
+              aria-label="New reminder"
               onClick={() => openCreate()}
               className="cursor-pointer rounded p-1 text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
             >
               <PlusIcon className="size-3.5" />
             </button>
+          </div>
+          <div className="flex flex-col gap-1.5 px-2 py-1">
+            <p className="text-2xs leading-snug text-sidebar-muted-foreground/70">
+              No reminders yet — e.g. every Monday 9am: send me my bills summary.
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {REMINDER_STARTERS.map((starter) => (
+                <button
+                  key={starter.label}
+                  type="button"
+                  onClick={() => startReminderFromChat(starter.text)}
+                  className="cursor-pointer rounded-full border border-sidebar-border px-2 py-0.5 text-2xs text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                >
+                  {starter.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
         <ScheduledTaskEditor automationsByRef={automationsByRef} />
@@ -325,7 +399,7 @@ export function ScheduledTasksSection() {
             className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left text-xs font-medium text-sidebar-muted-foreground/60"
           >
             <span className="shrink-0">
-              {expanded ? "Scheduled" : `Scheduled (${automations.length})`}
+              {expanded ? "Reminders" : `Reminders (${automations.length})`}
             </span>
             <span aria-hidden className="h-px min-w-2 flex-1 bg-sidebar-border/60" />
             <ChevronDownIcon
@@ -335,7 +409,7 @@ export function ScheduledTasksSection() {
           </button>
           <button
             type="button"
-            aria-label="New scheduled task"
+            aria-label="New reminder"
             onClick={() => openCreate()}
             className="cursor-pointer rounded p-1 text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
           >

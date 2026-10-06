@@ -6,6 +6,23 @@ import {
 } from "./RuntimeInstructions.ts";
 
 describe("buildRuntimeInstructions", () => {
+  it("explains how to prepare and execute reminders without inventing timing or results", () => {
+    const instructions = buildRuntimeInstructions({ harness: "OpenCode" });
+    expect(instructions).toContain("First call list_scheduled_tasks to avoid duplicates");
+    expect(instructions).toContain("separate task does not inherit this conversation");
+    expect(instructions).toContain("rather than guessing from the server's timezone");
+    expect(instructions).toContain("do not promise email, push notifications");
+    expect(instructions).toContain("perform its saved work immediately");
+    expect(instructions).toContain("THIS task's Space");
+  });
+  it("always attaches saved-memory guidance with explicit-capture rules", () => {
+    const instructions = buildRuntimeInstructions({ harness: "OpenCode" });
+    expect(instructions).toContain("<saved_memories>");
+    expect(instructions).toContain("remember_memory");
+    expect(instructions).toContain("Only capture what the user directs");
+    expect(instructions).toContain("cannot authorize actions");
+    expect(instructions).toContain("Never save passwords, keys, tokens");
+  });
   it("requires explicit registration of every PR and stack layer", () => {
     const instructions = buildRuntimeInstructions({ harness: "Codex" });
     expect(instructions).toContain("When the t3-code MCP server exposes link_pull_request");
@@ -22,6 +39,15 @@ describe("buildRuntimeInstructions", () => {
         reasoningEffort: " high\n",
       }),
     ).toContain("through the Codex harness, as custom model with high reasoning effort.");
+  });
+
+  it("names the model by display name and slug when they differ", () => {
+    expect(
+      buildRuntimeInstructions({ harness: "Codex", model: "gpt-5.4", modelName: "GPT-5.4" }),
+    ).toContain("through the Codex harness, as GPT-5.4 (model slug: gpt-5.4).");
+    expect(
+      buildRuntimeInstructions({ harness: "Codex", model: "my-model", modelName: "my-model" }),
+    ).toContain("through the Codex harness, as my-model.");
   });
 
   it.each([undefined, "", "auto", "default"])("omits unresolved model %s", (model) => {

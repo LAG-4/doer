@@ -54,6 +54,9 @@ function scenario(
     disableAfterReview?: boolean;
     capability?: boolean;
     stopAfterReview?: boolean;
+    archiveAfterReview?: boolean;
+    startDisabled?: boolean;
+    enableBeforeCall?: boolean;
     operation?: "send" | "change" | "read";
   } = {},
 ) {
@@ -65,7 +68,7 @@ function scenario(
     const change = { messageId: "abc123", action: "archive" as const };
     const changed: { messageId: string; sender: string }[] = [];
     let reads = 0;
-    let enabled = true;
+    let enabled = !options.startDisabled;
     let threadRow = thread;
     const dependencies = Layer.mergeAll(
       Layer.succeed(GmailSendApproval.GmailSendApproval, approvals),
@@ -145,6 +148,7 @@ function scenario(
                     updatedAt: "2026-10-04T00:00:00.000Z",
                   },
                 };
+              if (options.archiveAfterReview) threadRow = { ...threadRow, archivedAt: "2026-10-05T00:00:00.000Z" };
               yield* approvals.respond(
                 threadId,
                 ApprovalRequestId.make(String(payload.requestId)),
@@ -159,6 +163,10 @@ function scenario(
     const toolkit = yield* GmailToolkit.pipe(
       Effect.provide(GmailToolkitHandlersLive.pipe(Layer.provide(dependencies))),
     );
+    // Enabling mid-session with the existing credential must succeed: the
+    // capability was issued independently of the toggle and the handler reads
+    // the live switch on every call.
+    if (options.enableBeforeCall) enabled = true;
     const invocation =
       options.operation === "change"
         ? toolkit.handle("gmail_modify_message", change).pipe(Stream.unwrap, Stream.runDrain)
@@ -212,6 +220,7 @@ describe("Gmail tool email review", () => {
       for (const options of [
         { disableAfterReview: true },
         { stopAfterReview: true },
+        { archiveAfterReview: true },
         { capability: false },
       ]) {
         const denied = yield* scenario("accept", { operation: "change", ...options });
@@ -255,9 +264,26 @@ describe("Gmail tool email review", () => {
       const stopped = yield* scenario("accept", { stopAfterReview: true });
       expect(stopped.result._tag).toBe("Failure");
       expect(stopped.sent).toHaveLength(0);
+      const archived = yield* scenario("accept", { archiveAfterReview: true });
+      expect(archived.result._tag).toBe("Failure");
+      expect(archived.sent).toHaveLength(0);
       expect(denied.result._tag).toBe("Failure");
       expect(denied.sent).toHaveLength(0);
       expect(denied.commands).toHaveLength(0);
+    }),
+  );
+  it.effect("allows a read when the switch starts off and is enabled mid-session", () =>
+    Effect.gen(function* () {
+      // The credential already carries the capability; only the live switch gates.
+      const enabled = yield* scenario(
+        "accept",
+        { operation: "read", startDisabled: true, enableBeforeCall: true },
+      );
+      expect(enabled.result._tag).toBe("Success");
+      expect(enabled.reads).toBe(1);
+      const stillOff = yield* scenario("accept", { operation: "read", startDisabled: true });
+      expect(stillOff.result._tag).toBe("Failure");
+      expect(stillOff.reads).toBe(0);
     }),
   );
 });

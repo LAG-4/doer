@@ -20,7 +20,12 @@ const EMPTY_PROJECT_FILE_PATH = "";
 const EMPTY_PROJECT_FILE_QUERY_ATOM = Atom.make(
   AsyncResult.initial<ProjectReadFileResult, never>(false),
 ).pipe(Atom.withLabel("project-file-query:empty"));
-function optimisticFileAtom(environmentId: EnvironmentId, cwd: string, relativePath: string) {
+/** A pending in-app write to the file, overlaying the query until confirmed. */
+export function optimisticFileAtom(
+  environmentId: EnvironmentId,
+  cwd: string,
+  relativePath: string,
+) {
   return projectEnvironment.optimisticFile({ environmentId, cwd, relativePath });
 }
 
@@ -64,7 +69,7 @@ export function getProjectFileQueryAtom(
  * module is deliberately untouched so binary payloads can never read as text
  * elsewhere (mentions, defaults, text preview).
  */
-export function getProjectBinaryFileQueryAtom(
+function getProjectBinaryFileQueryAtom(
   environmentId: EnvironmentId,
   cwd: string,
   relativePath: string | null,
@@ -259,7 +264,7 @@ export function useProjectBinaryFileQuery(
   const refresh = useCallback(() => refreshAtom(), [refreshAtom]);
   return {
     data: Option.getOrNull(AsyncResult.value(result)),
-    error: errorMessage(result),
+    error: errorMessage(failureCause(result)),
     isPending: result.waiting,
     refresh,
   };

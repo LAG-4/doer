@@ -1,51 +1,71 @@
 import { describe, expect, it } from "vite-plus/test";
+import {
+  GUIDED_STARTER_TASKS,
+  buildStarterRequest,
+  buildStarterSummary,
+  starterFileRequirement,
+} from "./guidedStarterTasks";
 
-import { DRAFT_HERO_SUGGESTIONS, shouldShowHeroSuggestions } from "./DraftHeroSuggestions";
+const jobs = GUIDED_STARTER_TASKS.find((task) => task.id === "jobs")!;
+const reports = GUIDED_STARTER_TASKS.find((task) => task.id === "reports")!;
 
-describe("DraftHeroSuggestions", () => {
-  it("offers eight spoonfeeding starters with usable prompts", () => {
-    expect(DRAFT_HERO_SUGGESTIONS).toHaveLength(8);
-    const titles = DRAFT_HERO_SUGGESTIONS.map((suggestion) => suggestion.title);
-    expect(new Set(titles).size).toBe(8);
-    for (const suggestion of DRAFT_HERO_SUGGESTIONS) {
-      expect(suggestion.description.trim().length).toBeGreaterThan(0);
-      expect(suggestion.prompt.trim().length).toBeGreaterThan(40);
-      // Every starter tells the agent to keep things simple for a first-time user.
-      expect(suggestion.prompt.toLowerCase()).toContain("simple words");
-    }
+describe("guided starter requests", () => {
+  it("includes the supplied preferences, existing draft, files and expected result", () => {
+    const answers = {
+      work: "Marketing",
+      location: "Bengaluru or remote",
+      experience: "Five years in sales",
+    };
+    const summary = buildStarterSummary(jobs, answers, ["Resume.pdf"]);
+    const request = buildStarterRequest({
+      task: jobs,
+      answers,
+      summary,
+      existingPrompt: "Part-time would suit me",
+      fileNames: ["Resume.pdf"],
+    });
+    expect(summary).toContain("five current job openings");
+    expect(summary).toContain("Bengaluru or remote");
+    expect(request).toContain("Five years in sales");
+    expect(request).toContain("Part-time would suit me");
+    expect(request).toContain("Resume.pdf");
+    expect(request).toContain("Do not apply automatically");
+    expect(request).toContain("user-controlled handoff");
   });
 
-  it("covers jobs, trips, documents, browser work and everyday computer chores", () => {
-    const haystack = DRAFT_HERO_SUGGESTIONS.map((suggestion) =>
-      `${suggestion.title} ${suggestion.prompt}`.toLowerCase(),
-    ).join("\n");
-    expect(haystack).toContain("job");
-    expect(haystack).toContain("trip");
-    expect(haystack).toContain("browser");
-    expect(haystack).toContain("printer");
-    expect(haystack).toContain("wi-fi");
-    expect(haystack).toContain("driver");
-    expect(haystack).toContain("form");
-  });
-
-  it("asks for the user's OK before touching the computer or submitting anything", () => {
-    const computerChores = DRAFT_HERO_SUGGESTIONS.filter((suggestion) =>
-      [
-        "Fix my printer or Wi-Fi",
-        "Set up my computer",
-        "Fix a slow computer",
-        "Fill a boring form",
-      ].includes(suggestion.title),
+  it("keeps skipped and uncertain answers unknown instead of inventing a location or currency", () => {
+    const prices = GUIDED_STARTER_TASKS.find((task) => task.id === "prices")!;
+    const request = buildStarterRequest({
+      task: prices,
+      answers: { item: "Laptop", location: "I'm not sure" },
+      summary: "Compare laptops",
+      existingPrompt: "",
+      fileNames: [],
+    });
+    expect(request).toContain("Where are you shopping? I'm not sure");
+    expect(request).toContain(
+      "What is your budget, and what matters to you? Unknown; not supplied.",
     );
-    expect(computerChores).toHaveLength(4);
-    for (const suggestion of computerChores) {
-      expect(suggestion.prompt.toLowerCase()).toContain("ask for my ok");
-    }
+    expect(request).toContain("do not assume India or a currency");
+    expect(request).toContain("Attached files: None.");
+    expect(request).not.toContain("Additional notes");
   });
 
-  it("hides the cards once the composer holds a prompt", () => {
-    expect(shouldShowHeroSuggestions("")).toBe(true);
-    expect(shouldShowHeroSuggestions("   ")).toBe(true);
-    expect(shouldShowHeroSuggestions("I am looking for a better job")).toBe(false);
+  it("uses the edited review and names both source reports", () => {
+    const request = buildStarterRequest({
+      task: reports,
+      answers: { goal: "Performance", detail: "Quick overview" },
+      summary: "Compare spending instead, in detail.",
+      existingPrompt: "",
+      fileNames: ["May.xlsx", "June.xlsx"],
+    });
+    expect(request.startsWith("Compare spending instead, in detail.")).toBe(true);
+    expect(request).toContain("follow the reviewed summary");
+    expect(request).toContain("May.xlsx, June.xlsx");
+    expect(request).toContain("mismatched periods or units");
+    expect(starterFileRequirement(reports, 0)).toBeTruthy();
+    expect(starterFileRequirement(reports, 1)).toBeTruthy();
+    expect(starterFileRequirement(reports, 2)).toBeNull();
+    expect(starterFileRequirement(jobs, 0)).toBeNull();
   });
 });

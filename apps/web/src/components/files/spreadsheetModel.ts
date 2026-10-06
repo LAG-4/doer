@@ -6,6 +6,9 @@ import {
 export type SpreadsheetGrid = string[][];
 
 export interface SpreadsheetDocument {
+  readonly cachedRows?: SpreadsheetGrid | undefined;
+  readonly editingBlockedReason?: string | null | undefined;
+  readonly sheetIndex?: number | undefined;
   readonly sheetName: string;
   readonly sheetNames: string[];
   readonly savedRows: SpreadsheetGrid;
@@ -19,10 +22,16 @@ export function createSpreadsheetDocument(input: {
   readonly sheetNames: string[];
   readonly rows: SpreadsheetGrid;
   readonly sourceBytes: Uint8Array;
+  readonly cachedRows?: SpreadsheetGrid | undefined;
+  readonly editingBlockedReason?: string | null | undefined;
+  readonly sheetIndex?: number | undefined;
 }): SpreadsheetDocument {
   const rows = normalizeSpreadsheetGrid(input.rows);
   return {
     sheetName: input.sheetName,
+    cachedRows: input.cachedRows,
+    editingBlockedReason: input.editingBlockedReason,
+    sheetIndex: input.sheetIndex,
     sheetNames: input.sheetNames,
     savedRows: rows,
     rows,

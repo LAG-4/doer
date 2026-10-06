@@ -2,6 +2,7 @@ import type { ChatFileAttachment, EnvironmentId } from "@t3tools/contracts";
 import {
   isSpreadsheetRuntimeSupported,
   parseSpreadsheet,
+  type ParsedSpreadsheet,
 } from "@t3tools/shared/spreadsheetWorkbook";
 import { useEffect, useMemo, useState } from "react";
 import { useAssetUrlState } from "~/assets/assetUrls";
@@ -33,9 +34,11 @@ export function SpreadsheetAttachmentSurface({
   );
   const assetUrl = useAssetUrlState(environmentId, resource);
   const currentUrl = assetUrl._tag === "Success" ? assetUrl.url : null;
+  const [sheetIndex, setSheetIndex] = useState(0);
   const [loaded, setLoaded] = useState<{
     url: string;
-    grid: string[][] | null;
+    bytes: Uint8Array | null;
+    parsed: ParsedSpreadsheet | null;
     error: string | null;
   } | null>(null);
 
@@ -48,18 +51,23 @@ export function SpreadsheetAttachmentSurface({
         const response = await fetch(url);
         if (!response.ok) throw new Error(`Attachment fetch failed: ${response.status}`);
         const bytes = new Uint8Array(await response.arrayBuffer());
-        const parsed = await parseSpreadsheet(bytes);
-        if (!cancelled) setLoaded({ url, grid: parsed.rows, error: null });
+        const parsed = await parseSpreadsheet(bytes, sheetIndex);
+        if (!cancelled) setLoaded({ url, bytes, parsed, error: null });
       } catch {
         if (!cancelled) {
-          setLoaded({ url, grid: null, error: "This spreadsheet couldn't be opened." });
+          setLoaded({
+            url,
+            bytes: null,
+            parsed: null,
+            error: "This spreadsheet couldn't be opened.",
+          });
         }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [currentUrl]);
+  }, [currentUrl, sheetIndex]);
 
   const visible = loaded && currentUrl !== null && loaded.url === currentUrl ? loaded : null;
 
@@ -77,7 +85,7 @@ export function SpreadsheetAttachmentSurface({
       </div>
     );
   }
-  if (visible?.grid === undefined || visible.grid === null) {
+  if (visible?.parsed === undefined || visible.parsed === null) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center text-muted-foreground">
         <Spinner className="size-5" />
@@ -87,10 +95,22 @@ export function SpreadsheetAttachmentSurface({
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="flex h-9 min-h-9 shrink-0 items-center gap-2 border-b border-border/60 px-3">
-        <span className="rounded-sm bg-accent px-1.5 py-0.5 text-[11px] font-medium">Sheet</span>
-        <span className="truncate text-xs text-muted-foreground">Previewing attachment</span>
+        <span className="rounded-sm bg-accent px-1.5 py-0.5 text-2xs font-medium">Sheet</span>
+        <select
+          aria-label="Worksheet"
+          value={sheetIndex}
+          onChange={(event) => setSheetIndex(Number(event.target.value))}
+          className="rounded border border-input bg-background text-xs"
+        >
+          {visible.parsed.sheetNames.map((name, index) => (
+            <option key={name} value={index}>
+              {name}
+            </option>
+          ))}
+        </select>
+        <span className="truncate text-xs text-muted-foreground">Previewing saved values</span>
       </div>
-      <SpreadsheetGridEditor grid={visible.grid} readOnly />
+      <SpreadsheetGridEditor key={sheetIndex} grid={visible.parsed.cachedRows} readOnly />
     </div>
   );
 }

@@ -28,6 +28,11 @@ export interface MakeDesktopEnvironmentInput {
   readonly isPackaged: boolean;
   readonly resourcesPath: string;
   readonly runningUnderArm64Translation: boolean;
+  // True only inside the installed Microsoft Store package (AppX/MSIX), read
+  // from process.windowsStore in main. The Store owns updates there, so the
+  // self-update pipeline stays off. Optional so existing callers keep
+  // compiling; absent means a direct-download (non-Store) build.
+  readonly isWindowsStore?: boolean;
 }
 
 export class DesktopEnvironment extends Context.Service<
@@ -42,6 +47,7 @@ export class DesktopEnvironment extends Context.Service<
     readonly appVersion: string;
     readonly appPath: string;
     readonly resourcesPath: string;
+    readonly isWindowsStore: boolean;
     readonly homeDirectory: string;
     readonly appDataDirectory: string;
     readonly baseDir: string;
@@ -66,6 +72,8 @@ export class DesktopEnvironment extends Context.Service<
     readonly clientAssetsDir: string;
     readonly backendCwd: string;
     readonly preloadPath: string;
+    // Preload that turns on the V8 compile cache for the local backend.
+    readonly compileCachePath: string;
     readonly appUpdateYmlPath: string;
     readonly devServerUrl: Option.Option<URL>;
     readonly devRemoteT3ServerEntryPath: Option.Option<string>;
@@ -202,6 +210,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
     platform: input.platform,
     processArch: input.processArch,
     isPackaged: input.isPackaged,
+    isWindowsStore: input.isWindowsStore === true,
     isDevelopment,
     appVersion: input.appVersion,
     appPath: input.appPath,
@@ -223,6 +232,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
     clientAssetsDir: path.join(serverRoot, "apps/server/dist/client"),
     backendCwd: input.isPackaged ? homeDirectory : appRoot,
     preloadPath: path.join(input.dirname, "preload.cjs"),
+    compileCachePath: path.join(input.dirname, "compileCache.cjs"),
     appUpdateYmlPath: input.isPackaged
       ? path.join(resourcesPath, "app-update.yml")
       : path.join(input.appPath, "dev-app-update.yml"),

@@ -44,3 +44,7 @@ node_modules/
 
 # pnpm content-addressable store; never belongs in the repo.
 .pnpm-store/
+
+# Marketing installer endpoints are generated during builds.
+apps/marketing/public/install.sh
+apps/marketing/public/install.ps1

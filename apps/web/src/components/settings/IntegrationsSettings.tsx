@@ -1,3 +1,4 @@
+import { MicrosoftConnectionCard } from "./MicrosoftConnectionCard";
 import { DeviceHostUpdates } from "../device/DeviceHostUpdates";
 import { DeviceToolVersions } from "../device/DeviceToolVersions";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
@@ -305,7 +306,7 @@ function BrowserViewportSetting({ disabled }: { readonly disabled: boolean }) {
             >
               <SelectValue>{viewportSelectLabel(viewport)}</SelectValue>
             </SelectTrigger>
-            <SelectPopup align="end" alignItemWithTrigger={false} className="min-w-64">
+            <SelectPopup align="end" alignItemWithTrigger={false}>
               <SelectItem value={FILL_VALUE}>Fill panel</SelectItem>
               <SelectItem value={RESPONSIVE_VALUE}>Responsive</SelectItem>
               <SelectGroup>
@@ -1184,7 +1185,7 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
             <PlusIcon />
             Add profile
           </MenuTrigger>
-          <MenuPopup align="end" className="min-w-56">
+          <MenuPopup align="end">
             <MenuItem
               disabled={!settingsHydrated || atProfileLimit}
               onClick={() => createProfile("New profile")}
@@ -1279,14 +1280,11 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
                     onCommit={(next) => renameProfile(profile.id, next)}
                   />
                 )}
-                {/*
-                  Dimmed with the rest of the row: a `Badge` has no disabled
-                  treatment of its own, so a solid `bg-primary` pill would
-                  otherwise sit at full strength beside a name, rename field
-                  and menu button that are all at 0.64.
-                */}
+                {/* Dimmed with the rest of the row, whose controls are all disabled. */}
                 {isDefault ? (
-                  <Badge className={cn(profileWritesDisabled && "opacity-64")}>Default</Badge>
+                  <span className={cn("flex", profileWritesDisabled && "opacity-64")}>
+                    <Badge>Default</Badge>
+                  </span>
                 ) : null}
               </span>
               <Menu>
@@ -1302,7 +1300,7 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
                 >
                   <MoreVertical />
                 </MenuTrigger>
-                <MenuPopup align="end" className="min-w-44">
+                <MenuPopup align="end">
                   <MenuItem
                     disabled={!settingsHydrated || isDefault}
                     onClick={() => {
@@ -1449,18 +1447,24 @@ export function IntegrationsSettingsPanel() {
     <SettingsPageContainer>
       {/* Server-authoritative agent access is scoped by the header selection;
           the preview defaults below are device-local and ignore it. */}
-      <ProjectDefaultsSettings category="integrations" />
+      <MicrosoftConnectionCard />
       <ConnectedToolsSettings />
-      <SettingsSection id="browser" title="Browser">
-        {previewDefaultsDisabled ? (
-          <SettingsUnavailableGroup message="Only available in the desktop app.">
-            {previewDefaults}
-          </SettingsUnavailableGroup>
-        ) : (
-          previewDefaults
-        )}
-      </SettingsSection>
-      <DeviceIntegrationSettings />
+      <details>
+        <summary className="cursor-pointer text-sm font-medium">
+          Advanced browser and device settings
+        </summary>
+        <ProjectDefaultsSettings category="integrations" />
+        <SettingsSection id="browser" title="Browser">
+          {previewDefaultsDisabled ? (
+            <SettingsUnavailableGroup message="Only available in the desktop app.">
+              {previewDefaults}
+            </SettingsUnavailableGroup>
+          ) : (
+            previewDefaults
+          )}
+        </SettingsSection>
+        <DeviceIntegrationSettings />
+      </details>
     </SettingsPageContainer>
   );
 }

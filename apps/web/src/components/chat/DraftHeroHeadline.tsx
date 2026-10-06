@@ -2,15 +2,24 @@ import type { DraftId } from "~/composerDraftStore";
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { resolveEnvironmentMachineKind, type ScopedProjectRef } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { FolderPlusIcon } from "lucide-react";
-import { useCallback, useMemo } from "react";
+import { isScratchProject } from "@t3tools/client-runtime/state/projects";
+import { FolderPlusIcon, MessageSquareDashedIcon } from "lucide-react";
+import { useAtomValue } from "@effect/atom-react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
 import { useEnsureInboxProject } from "~/hooks/useEnsureInboxProject";
 import { useHandleNewThread } from "~/hooks/useHandleNewThread";
+import { shortcutLabelForCommand } from "~/keybindings";
+import { projectIconColorClassName } from "~/projectIconColors";
+import { primaryServerKeybindingsAtom } from "~/state/server";
+import { useScratchProject } from "~/hooks/useScratchProject";
 import { useClientSettings } from "~/hooks/useSettings";
 import { hasExplicitComposerModelSelection } from "~/lib/chatThreadActions";
-import { selectProjectGroupingSettings } from "~/logicalProject";
+import {
+  deriveLogicalProjectKeyFromSettings,
+  selectProjectGroupingSettings,
+} from "~/logicalProject";
 import {
   buildSidebarProjectPickerEntries,
   buildSidebarProjectSnapshots,
@@ -31,7 +40,11 @@ import {
   MenuTrigger,
 } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { InlineButton } from "../ui/button";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+
+// Menu value for "No Space"; real entries are keyed by logical project key.
+const NO_PROJECT_VALUE = "no-project";
 
 interface DraftHeroHeadlineProps {
   readonly draftId: DraftId | null;
@@ -79,6 +92,8 @@ export function DraftHeroHeadline({
       await handleNewThread(finalRef, { replace: true }).catch(() => undefined);
     }
   }, [handleNewThread, openAddProject, prepareInboxProject, settleInboxProject]);
+  const { scratchEnvironmentId, scratchWorkspaceRootFor, openScratchProject } = useScratchProject();
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
 
   const environmentLabelById = useMemo(
     () =>
@@ -154,6 +169,85 @@ export function DraftHeroHeadline({
   const hasResolvedProject = activeProjectTitle !== null;
   const canChooseProject = projectPickerEntries.length > 0;
   const shouldShowProjectMenu = canChooseProject;
+  // The project that hosts threads without a Space appears once, as the
+  // "No Space" item, not as a project row.
+  const menuEntries = projectPickerEntries.filter(
+    ({ targetProject }) =>
+      !isScratchProject(targetProject, scratchWorkspaceRootFor(targetProject.environmentId)),
+  );
+  const activeProject =
+    activeProjectRef === null
+      ? null
+      : (projects.find(
+          (project) =>
+            project.environmentId === activeProjectRef.environmentId &&
+            project.id === activeProjectRef.projectId,
+        ) ?? null);
+  const scratchTargetEnvironmentId = scratchEnvironmentId(
+    activeProjectRef?.environmentId ?? primaryEnvironmentId,
+  );
+  const scratchWorkspaceRoot = scratchWorkspaceRootFor(scratchTargetEnvironmentId);
+  const isScratchDraft =
+    activeProject !== null && isScratchProject(activeProject, scratchWorkspaceRoot);
+
+  // The picker can change the draft's target while the no-project home is
+  // still being opened; a stale continuation must not retarget it again.
+  const latestTargetRef = useRef({ draftId, activeProjectKey, scratchTargetEnvironmentId });
+  useEffect(() => {
+    latestTargetRef.current = { draftId, activeProjectKey, scratchTargetEnvironmentId };
+  }, [activeProjectKey, scratchTargetEnvironmentId, draftId]);
+  // Project selection changes the target of the open draft in place. The
+  // prompt stays in the same composer session, so the sidebar only gets a
+  // draft row if the user later navigates away.
+  const selectProject = (project: (typeof projects)[number], logicalProjectKey: string) => {
+    if (!draftId) {
+      return;
+    }
+    latestTargetRef.current = {
+      draftId,
+      activeProjectKey: logicalProjectKey,
+      scratchTargetEnvironmentId: project.environmentId,
+    };
+    const currentDraft = getComposerDraft(draftId);
+    setLogicalProjectDraftThreadId(
+      logicalProjectKey,
+      scopeProjectRef(project.environmentId, project.id),
+      draftId,
+    );
+    if (!hasExplicitComposerModelSelection(currentDraft)) {
+      applyStickyState(draftId);
+      const environmentSettings = environments.find(
+        (environment) => environment.environmentId === project.environmentId,
+      )?.serverConfig?.settings;
+      const defaultModelSelection = environmentSettings
+        ? resolveProjectSettings(environmentSettings, project.id, project).settings
+            .defaultModelSelection
+        : project.defaultModelSelection;
+      if (defaultModelSelection) {
+        setModelSelection(draftId, defaultModelSelection, {
+          replaceOptions: true,
+        });
+      }
+    }
+  };
+  const startScratch = async (): Promise<boolean> => {
+    if (scratchTargetEnvironmentId === null || isScratchDraft) {
+      return false;
+    }
+    const requested = { draftId, activeProjectKey, scratchTargetEnvironmentId };
+    const project = await openScratchProject(scratchTargetEnvironmentId);
+    const latest = latestTargetRef.current;
+    if (
+      !project ||
+      latest.draftId !== requested.draftId ||
+      latest.activeProjectKey !== requested.activeProjectKey ||
+      latest.scratchTargetEnvironmentId !== requested.scratchTargetEnvironmentId
+    ) {
+      return false;
+    }
+    selectProject(project, deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings));
+    return true;
+  };
 
   const projectSelector = shouldShowProjectMenu ? (
     <Menu>
@@ -164,87 +258,77 @@ export function DraftHeroHeadline({
             // project title) so the hero sentence reads naturally: an
             // aria-label here would replace the title with an action phrase
             // mid-sentence and baffle screen-reader users.
-            <MenuTrigger className="pointer-events-auto inline-block max-w-64 truncate border-foreground/60 border-b border-dotted align-baseline text-foreground transition-colors hover:border-foreground/80 focus-visible:rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring" />
+            <MenuTrigger
+              render={<InlineButton tone="picker" />}
+              data-draft-project-trigger=""
+              className="pointer-events-auto max-w-64 align-baseline"
+            />
           }
         >
-          {activeProjectDisplayName ?? "Choose a project"}
+          <span className="min-w-0 truncate">
+            {isScratchDraft ? "No Space" : (activeProjectDisplayName ?? "Choose a Space")}
+          </span>
         </TooltipTrigger>
-        {activeProjectDisplayName ? (
-          <TooltipPopup side="top" className="max-w-80">
-            {activeProjectDisplayName}
-          </TooltipPopup>
+        {activeProjectDisplayName && !isScratchDraft ? (
+          <TooltipPopup side="top">{activeProjectDisplayName}</TooltipPopup>
         ) : null}
       </Tooltip>
-      <MenuPopup align="center" className="max-h-80 min-w-40! w-max max-w-64 overflow-y-auto">
+      <MenuPopup align="center" className="max-h-80 overflow-y-auto">
         <MenuRadioGroup
-          value={activeProjectKey}
+          value={isScratchDraft ? NO_PROJECT_VALUE : activeProjectKey}
           onValueChange={(value) => {
+            if (value === NO_PROJECT_VALUE) {
+              void startScratch();
+              return;
+            }
             const entry = projectEntryByKey.get(value as string);
             if (!entry || value === activeProjectKey) {
               return;
             }
-            const project = entry.targetProject;
-            if (!draftId) {
-              return;
-            }
-            // Project selection changes the target of the open draft in
-            // place. The prompt stays in the same composer session, so the
-            // sidebar only gets a draft row if the user later navigates away.
-            const currentDraft = getComposerDraft(draftId);
-            setLogicalProjectDraftThreadId(
-              entry.group.projectKey,
-              scopeProjectRef(project.environmentId, project.id),
-              draftId,
-            );
-            if (!hasExplicitComposerModelSelection(currentDraft)) {
-              applyStickyState(draftId);
-              const environmentSettings = environments.find(
-                (environment) => environment.environmentId === project.environmentId,
-              )?.serverConfig?.settings;
-              const defaultModelSelection = environmentSettings
-                ? resolveProjectSettings(environmentSettings, project.id, project).settings
-                    .defaultModelSelection
-                : project.defaultModelSelection;
-              if (defaultModelSelection) {
-                setModelSelection(draftId, defaultModelSelection, {
-                  replaceOptions: true,
-                });
-              }
-            }
+            selectProject(entry.targetProject, entry.group.projectKey);
           }}
         >
-          {projectPickerEntries.map(({ group }) => {
+          {scratchWorkspaceRoot === null ? null : (
+            <MenuRadioItem value={NO_PROJECT_VALUE} closeOnClick>
+              <span className="flex min-w-0 items-center gap-2">
+                {/* Boxed like ProjectFavicon so the label lines up with project rows. */}
+                <span
+                  aria-hidden="true"
+                  className={`inline-flex size-4 shrink-0 ${projectIconColorClassName("gray")}`}
+                >
+                  <MessageSquareDashedIcon className="size-full" />
+                </span>
+                No Space
+              </span>
+            </MenuRadioItem>
+          )}
+          {menuEntries.map(({ group }) => {
             return (
-              <MenuRadioItem
-                key={group.projectKey}
-                value={group.projectKey}
-                closeOnClick
-                className="[&>span:last-child]:flex [&>span:last-child]:min-w-0 [&>span:last-child]:items-center [&>span:last-child]:gap-2"
-              >
-                <ProjectFavicon project={group} className="size-4 shrink-0" />
-                <Tooltip>
-                  <TooltipTrigger render={<span className="block min-w-0 truncate" />}>
-                    {group.displayName}
-                  </TooltipTrigger>
-                  <TooltipPopup side="top" className="max-w-80">
-                    {group.displayName}
-                  </TooltipPopup>
-                </Tooltip>
-                {showProjectEnvironments ? (
-                  <ProjectEnvironmentBadge
-                    group={group}
-                    primaryEnvironmentId={primaryEnvironmentId}
-                    machineByEnvironmentId={environmentMachineById}
-                  />
-                ) : null}
+              <MenuRadioItem key={group.projectKey} value={group.projectKey} closeOnClick>
+                <span className="flex min-w-0 items-center gap-2">
+                  <ProjectFavicon project={group} className="size-4 shrink-0" />
+                  <Tooltip>
+                    <TooltipTrigger render={<span className="block min-w-0 truncate" />}>
+                      {group.displayName}
+                    </TooltipTrigger>
+                    <TooltipPopup side="top">{group.displayName}</TooltipPopup>
+                  </Tooltip>
+                  {showProjectEnvironments ? (
+                    <ProjectEnvironmentBadge
+                      group={group}
+                      primaryEnvironmentId={primaryEnvironmentId}
+                      machineByEnvironmentId={environmentMachineById}
+                    />
+                  ) : null}
+                </span>
               </MenuRadioItem>
             );
           })}
         </MenuRadioGroup>
-        <MenuSeparator />
+        {projectPickerEntries.length > 0 ? <MenuSeparator /> : null}
         <MenuItem onClick={openAddProject}>
           <FolderPlusIcon />
-          New project
+          New Space
         </MenuItem>
       </MenuPopup>
     </Menu>
@@ -259,7 +343,7 @@ export function DraftHeroHeadline({
         ? "Setting up…"
         : isInboxCapable
           ? "Start chatting"
-          : (activeProjectTitle ?? "Add a project")}
+          : (activeProjectTitle ?? "Add a Space")}
     </button>
   );
 
@@ -267,30 +351,65 @@ export function DraftHeroHeadline({
   // a complete sentence too. The project picker is a control rendered inline
   // in the h1; without an explicit label its widget state bleeds into the
   // announced phrase.
-  const headingLabel = hasResolvedProject
-    ? `What should we build in ${activeProjectDisplayName}?`
-    : canChooseProject
-      ? `${activeProjectDisplayName ?? "Choose a project"} to start`
-      : "Add a project to start";
+  const headingLabel =
+    isScratchDraft || isInboxProject
+      ? "What can Doer help you with?"
+      : hasResolvedProject
+        ? `What would you like to do in ${activeProjectDisplayName}?`
+        : canChooseProject
+          ? `${activeProjectDisplayName ?? "Choose a Space"} to start`
+          : "Add a Space to start";
+
+  // One click out of the project, phrased as the alternative to the question
+  // above it. Focus moves to the project picker once this line has gone.
+  const noProjectShortcut = shortcutLabelForCommand(keybindings, "chat.newWithoutProject");
+  const orStartWithoutProject =
+    scratchWorkspaceRoot !== null && !isScratchDraft && (hasResolvedProject || canChooseProject) ? (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <InlineButton
+              tone="muted"
+              className="pointer-events-auto"
+              onClick={() =>
+                void startScratch().then((started) => {
+                  if (started) {
+                    document.querySelector<HTMLElement>("[data-draft-project-trigger]")?.focus();
+                  }
+                })
+              }
+            />
+          }
+        >
+          or start without a Space
+        </TooltipTrigger>
+        {noProjectShortcut ? <TooltipPopup side="bottom">{noProjectShortcut}</TooltipPopup> : null}
+      </Tooltip>
+    ) : null;
 
   return (
-    <h1
-      aria-label={headingLabel}
-      className="mx-auto w-full max-w-5xl text-center font-normal text-2xl text-foreground tracking-tight sm:text-3xl"
-    >
-      {hasResolvedProject ? (
-        isInboxProject ? (
-          <>What should we build?</>
+    <div className="mx-auto flex w-full max-w-5xl flex-col items-center">
+      <h1
+        aria-label={headingLabel}
+        className="w-full text-center font-normal text-2xl text-foreground tracking-tight sm:text-3xl"
+      >
+        {isScratchDraft || isInboxProject ? (
+          <>What can Doer help you with?</>
+        ) : hasResolvedProject ? (
+          <>What would you like to do in {projectSelector}?</>
+        ) : canChooseProject || isInboxCapable ? (
+          <>{projectSelector} to start</>
         ) : (
-          <>What should we build in {projectSelector}?</>
-        )
-      ) : canChooseProject ? (
-        <>{projectSelector} to start</>
-      ) : isInboxCapable ? (
-        <>{projectSelector} to start</>
-      ) : (
-        <>Add a project to start</>
+          <>Add a Space to start</>
+        )}
+      </h1>
+      {/* Reserved whenever threads can skip a project, so the heading does not
+          move. Without a project, the picker moves here to choose one. */}
+      {scratchWorkspaceRoot === null ? null : (
+        <p className="mt-2 flex h-6 items-center text-sm">
+          {isScratchDraft ? projectSelector : orStartWithoutProject}
+        </p>
       )}
-    </h1>
+    </div>
   );
 }

@@ -32,7 +32,7 @@ import {
   View,
 } from "react-native";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
-import type { EnvironmentId, ToolActivityIcon } from "@t3tools/contracts";
+import type { EnvironmentId, ThreadId, ToolActivityIcon } from "@t3tools/contracts";
 import { toolActivityFaviconUrl } from "@t3tools/shared/favicon";
 
 import { AppText as Text } from "../../components/AppText";
@@ -55,6 +55,9 @@ import {
   workEntryViewedImagePath,
 } from "@t3tools/client-runtime/work-log/presentation";
 import { resolveWorkGroupScrollAnchor } from "@t3tools/client-runtime/work-log/scroll-anchor";
+import { toolOutputImageResources } from "@t3tools/client-runtime/work-log/tool-output";
+import type { FilePreviewSource } from "../../components/FilePreviewModal.types";
+import { ThreadMarkdownImage } from "./ThreadMarkdownImage";
 import type { MarkdownImageRenderer } from "../../native/SelectableMarkdownText";
 import Animated, {
   cancelAnimation,
@@ -416,6 +419,7 @@ interface ThreadWorkLogProps {
   readonly activities: ReadonlyArray<ThreadFeedActivity>;
   readonly anchorKey: string;
   readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
   readonly copiedRowId: string | null;
   readonly expandedRows: Readonly<Record<string, boolean>>;
   readonly rowSizing: ReturnType<typeof deriveThreadWorkLogSizing>;
@@ -427,6 +431,7 @@ interface ThreadWorkLogProps {
   readonly onCopyRow: (rowId: string, value: string) => void;
   readonly onToggleRow: (rowId: string, anchorKey: string) => void;
   readonly renderImage: MarkdownImageRenderer;
+  readonly onPressPreview: (source: FilePreviewSource) => void;
 }
 
 export function ThreadWorkLog(props: ThreadWorkLogProps) {
@@ -439,10 +444,12 @@ export function ThreadWorkLog(props: ThreadWorkLogProps) {
         copied={props.copiedRowId === row.id}
         expanded={props.expandedRows[row.id] ?? false}
         environmentId={props.environmentId}
+        threadId={props.threadId}
         iconSubtleColor={props.iconSubtleColor}
         onCopyRow={props.onCopyRow}
         onToggleRow={props.onToggleRow}
         renderImage={props.renderImage}
+        onPressPreview={props.onPressPreview}
         themeAppearance={props.themeAppearance}
       />
     ),
@@ -451,10 +458,12 @@ export function ThreadWorkLog(props: ThreadWorkLogProps) {
       props.copiedRowId,
       props.expandedRows,
       props.environmentId,
+      props.threadId,
       props.iconSubtleColor,
       props.onCopyRow,
       props.onToggleRow,
       props.renderImage,
+      props.onPressPreview,
       props.themeAppearance,
     ],
   );
@@ -749,6 +758,16 @@ const ThreadWorkLogRow = memo(function ThreadWorkLogRow(
   const canExpand = row.canExpand;
   const fullDetail = expanded ? row.getFullDetail() : null;
   const viewedImagePath = workEntryViewedImagePath(row.workEntry);
+  // Screenshots a tool returned inline load as signed image assets by their
+  // marker order; the expanded text keeps the projected summary.
+  const outputImages =
+    expanded && row.workEntry.toolData !== undefined
+      ? toolOutputImageResources({
+          threadId: props.threadId,
+          activityId: row.workEntry.id,
+          toolData: row.workEntry.toolData,
+        })
+      : [];
   const toolPresentation = resolveWorkEntryToolPresentation(row.workEntry);
   const previewText = workEntryRowLabel(row.workEntry);
   const answerPreview = row.workEntry.questionAnswer
@@ -879,7 +898,8 @@ const ThreadWorkLogRow = memo(function ThreadWorkLogRow(
         </View>
       </Pressable>
 
-      {expanded && (fullDetail || viewedImagePath || row.workEntry.questionAnswer) ? (
+      {expanded &&
+      (fullDetail || viewedImagePath || outputImages.length > 0 || row.workEntry.questionAnswer) ? (
         <Animated.View
           entering={WORK_LOG_DETAIL_ENTER_TRANSITION}
           exiting={WORK_LOG_DETAIL_EXIT_TRANSITION}
@@ -897,6 +917,16 @@ const ThreadWorkLogRow = memo(function ThreadWorkLogRow(
               {props.renderImage({ href: viewedImagePath, alt: null, title: null })}
             </View>
           ) : null}
+          {outputImages.map((resource) => (
+            <View key={resource.index} className="pb-1.5">
+              <ThreadMarkdownImage
+                environmentId={props.environmentId}
+                resource={resource}
+                alt={null}
+                onPressPreview={props.onPressPreview}
+              />
+            </View>
+          ))}
           <ScrollView
             nestedScrollEnabled
             directionalLockEnabled

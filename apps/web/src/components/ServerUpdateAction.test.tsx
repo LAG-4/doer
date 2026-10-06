@@ -16,6 +16,8 @@ vi.mock("~/hooks/useCopyToClipboard", () => ({
   useCopyToClipboard: () => ({ copyToClipboard: vi.fn() }),
 }));
 vi.mock("~/hooks/useSettings", () => ({
+  useClientSettings: (selector: (settings: { simpleModeEnabled: boolean }) => unknown) =>
+    selector({ simpleModeEnabled: false }),
   useEnvironmentSettings: (
     _environmentId: EnvironmentId,
     selector: (settings: { continueThreadsAfterServerUpdate: boolean }) => unknown,

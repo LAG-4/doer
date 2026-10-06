@@ -38,6 +38,10 @@ function quoteProviderBinary(
 export function getOnboardingProviderState(provider: ServerProvider | undefined) {
   if (provider === undefined) return "checking";
   if (!provider.enabled || provider.status === "disabled") return "disabled";
+  if (!provider.installed && provider.status === "warning" && provider.auth.status === "unknown")
+    return "checking";
+  if (!provider.installed && provider.status === "error" && provider.driver === "opencode")
+    return "attention";
   if (!provider.installed) return "install";
   if (provider.auth.status === "unauthenticated") return "signIn";
   if (provider.status === "ready") return "ready";

@@ -12,7 +12,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
-import { computeNextFireAt } from "../../../orchestration/AutomationSchedule.ts";
+import { validateAutomationSchedule } from "../../../orchestration/AutomationSchedule.ts";
 import * as OrchestrationEngine from "../../../orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -46,6 +46,8 @@ export function summarizeScheduledTask(automation: Automation): ScheduledTaskSum
     projectId: automation.projectId,
     threadId: automation.threadId,
     title: automation.title,
+    prompt: automation.prompt,
+    dedicatedThread: automation.dedicatedThread !== false,
     state: automation.state,
     schedule: automation.schedule,
     nextFireAt: automation.nextFireAt,
@@ -136,6 +138,13 @@ const make = Effect.gen(function* () {
           });
         }
         const occurredAt = yield* nowIso;
+        const scheduleError = validateAutomationSchedule({
+          schedule: input.schedule,
+          nowIso: occurredAt,
+        });
+        if (scheduleError !== null) {
+          return yield* new ScheduledTaskCreateFailedError({ cause: new Error(scheduleError) });
+        }
         const threadId = useCurrentThread ? thread.id : yield* newId(ThreadId.make);
         if (!useCurrentThread) {
           yield* engine
@@ -147,7 +156,7 @@ const make = Effect.gen(function* () {
               title: input.title,
               modelSelection: thread.modelSelection,
               runtimeMode: "full-access",
-              interactionMode: thread.interactionMode,
+              interactionMode: "default",
               branch: null,
               worktreePath: null,
               createdAt: occurredAt,
@@ -155,7 +164,6 @@ const make = Effect.gen(function* () {
             .pipe(Effect.catchCause(dispatchFailure(ScheduledTaskCreateFailedError)));
         }
         const automationId = yield* newId(AutomationId.make);
-        const nextFireAt = computeNextFireAt(input.schedule as AutomationSchedule, occurredAt);
         yield* engine
           .dispatch({
             type: "automation.create",
@@ -170,8 +178,7 @@ const make = Effect.gen(function* () {
             createdAt: occurredAt,
           })
           .pipe(Effect.catchCause(dispatchFailure(ScheduledTaskCreateFailedError)));
-        const summary = yield* summarizeById(automationId, ScheduledTaskCreateFailedError);
-        return { ...summary, nextFireAt: summary.nextFireAt ?? nextFireAt };
+        return yield* summarizeById(automationId, ScheduledTaskCreateFailedError);
       }),
 
     list_scheduled_tasks: () =>
@@ -181,6 +188,7 @@ const make = Effect.gen(function* () {
           .listVisibleAutomations()
           .pipe(Effect.mapError((cause) => new ScheduledTaskListFailedError({ cause })));
         return {
+          currentTime: yield* nowIso,
           tasks: automations
             .filter((automation) => automation.projectId === thread.projectId)
             .map(summarizeScheduledTask),

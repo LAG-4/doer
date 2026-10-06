@@ -37,6 +37,12 @@ const make = Effect.gen(function* () {
         .getThreadShellById(scope.threadId)
         .pipe(Effect.orElseSucceed(() => Option.none()));
       if (Option.isNone(thread)) return yield* failure("Task was not found.");
+      if (
+        thread.value.archivedAt !== null ||
+        ["stopped", "interrupted", "error"].includes(thread.value.session?.status ?? "")
+      ) {
+        return yield* failure("Task is no longer active. Inspect it again from the current task.");
+      }
       const settings = yield* settingsService.getSettings.pipe(
         Effect.mapError(() => failure("Could not read tool settings.")),
       );

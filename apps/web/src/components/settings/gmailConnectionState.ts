@@ -1,5 +1,35 @@
 import type { EnvironmentId, GmailConnectionStatus } from "@t3tools/contracts";
 
+/** Where the selected computer can be reached from, for honest host guidance. */
+export function resolveGmailHostAccess(input: {
+  readonly httpBaseUrl: string | null;
+  readonly targetTag: string | null;
+  readonly computerLabel: string | null;
+  readonly isLoopback: (hostname: string) => boolean;
+}): { readonly reachable: boolean; readonly onHost: boolean; readonly guidance: string | null } {
+  if (input.httpBaseUrl === null) return { reachable: false, onHost: false, guidance: null };
+  let hostname: string;
+  try {
+    hostname = new URL(input.httpBaseUrl).hostname;
+  } catch {
+    return { reachable: false, onHost: false, guidance: null };
+  }
+  // The Google sign-in finishes on the host itself (loopback callback), so a
+  // browser viewing a remote computer must never pretend it can connect here.
+  // A loopback URL alone is not proof: SSH tunnels and forwarded transports
+  // serve remote computers over localhost too. Only the primary local target
+  // over loopback means this browser runs on the host.
+  if (input.targetTag === "PrimaryConnectionTarget" && input.isLoopback(hostname)) {
+    return { reachable: true, onHost: true, guidance: null };
+  }
+  const computer = input.computerLabel?.trim() ? input.computerLabel.trim() : "that computer";
+  return {
+    reachable: true,
+    onHost: false,
+    guidance: `Open Doer on ${computer} to connect Gmail. The Google sign-in must finish on that computer.`,
+  };
+}
+
 /** One snapshot and operation lock for every Gmail control connected to a host. */
 export function createGmailConnectionState() {
   let snapshot: { status: GmailConnectionStatus | null; busy: boolean } = {

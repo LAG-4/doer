@@ -299,6 +299,7 @@ describe("CheckpointReactor", () => {
     readonly hasSession?: boolean;
     readonly seedFilesystemCheckpoints?: boolean;
     readonly initializeGit?: boolean;
+    readonly ordinaryFolders?: boolean;
     readonly projectWorkspaceRoot?: string;
     readonly threadWorktreePath?: string | null;
     readonly threadBranch?: string | null;
@@ -382,6 +383,8 @@ describe("CheckpointReactor", () => {
           CheckpointStore.make.pipe(
             Effect.map((store) => ({
               ...store,
+              supportsOrdinaryFolders:
+                options?.ordinaryFolders ?? store.supportsOrdinaryFolders ?? false,
               hasCheckpointRef: (input) => {
                 const failure = options?.checkpointLookupFailure?.(input.cwd);
                 return failure ? Effect.fail(failure) : store.hasCheckpointRef(input);
@@ -518,6 +521,75 @@ describe("CheckpointReactor", () => {
       pullRequestRefreshes,
     };
   }
+
+  effectIt.effect(
+    "captures and restores ordinary Space files while retaining later unrelated work",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* Effect.promise(() =>
+          createHarness({
+            initializeGit: false,
+            seedFilesystemCheckpoints: false,
+            threadWorktreePath: null,
+            secondThreadSharingWorktree: true,
+          }),
+        );
+        const threadId = ThreadId.make("thread-1");
+        const turnId = asTurnId("ordinary-folder-turn");
+        const createdAt = "2026-01-01T00:00:00.000Z";
+        harness.provider.emit({
+          type: "turn.started",
+          eventId: EventId.make("ordinary-start"),
+          provider: ProviderDriverKind.make("codex"),
+          createdAt,
+          threadId,
+          turnId,
+        });
+        yield* Effect.promise(harness.drain);
+        expect(yield* harness.nextReceipt).toMatchObject({ type: "checkpoint.baseline.captured" });
+        NodeFS.writeFileSync(NodePath.join(harness.cwd, "README.md"), "Task edit\n");
+        harness.provider.emit({
+          type: "turn.completed",
+          eventId: EventId.make("ordinary-finish"),
+          provider: ProviderDriverKind.make("codex"),
+          createdAt,
+          threadId,
+          turnId,
+          payload: { state: "completed" },
+        });
+        yield* Effect.promise(harness.drain);
+        const thread = (yield* Effect.promise(harness.readModel)).threads.find(
+          (entry) => entry.id === threadId,
+        );
+        expect(thread?.checkpoints[0]).toMatchObject({
+          status: "ready",
+          files: [{ path: "README.md" }],
+        });
+        expect(yield* harness.nextReceipt).toMatchObject({
+          type: "checkpoint.diff.finalized",
+          turnId,
+        });
+        expect(yield* harness.nextReceipt).toMatchObject({ type: "turn.processing.quiesced" });
+        NodeFS.writeFileSync(NodePath.join(harness.cwd, "sibling.txt"), "Later unrelated work");
+        yield* harness.engine.dispatch({
+          type: "thread.checkpoint.revert",
+          commandId: CommandId.make("ordinary-revert"),
+          threadId,
+          turnCount: 0,
+          createdAt,
+        });
+        yield* Effect.promise(harness.drain);
+        expect(NodeFS.readFileSync(NodePath.join(harness.cwd, "README.md"), "utf8")).toBe("v1\n");
+        expect(NodeFS.readFileSync(NodePath.join(harness.cwd, "sibling.txt"), "utf8")).toBe(
+          "Later unrelated work",
+        );
+        expect(NodeFS.existsSync(NodePath.join(harness.cwd, ".git"))).toBe(false);
+        expect(harness.provider.rollbackConversation).toHaveBeenCalledWith({
+          threadId,
+          numTurns: 1,
+        });
+      }),
+  );
 
   effectIt.effect.each([
     "active",
@@ -1540,7 +1612,11 @@ describe("CheckpointReactor", () => {
   ])("resumes checkpointing after git init $timing (commit: $commit)", ({ timing, commit }) =>
     Effect.gen(function* () {
       const harness = yield* Effect.promise(() =>
-        createHarness({ initializeGit: false, seedFilesystemCheckpoints: false }),
+        createHarness({
+          initializeGit: false,
+          seedFilesystemCheckpoints: false,
+          ordinaryFolders: false,
+        }),
       );
       const threadId = ThreadId.make("thread-1");
       const createdAt = "2026-01-01T00:00:00.000Z";
@@ -1810,6 +1886,7 @@ describe("CheckpointReactor", () => {
     const harness = await createHarness({
       seedFilesystemCheckpoints: false,
       providerSessionCwd: nonRepositorySessionCwd,
+      ordinaryFolders: false,
     });
     const createdAt = "2026-01-01T00:00:00.000Z";
 

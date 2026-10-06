@@ -5,8 +5,9 @@ desktop, web, or mobile app. Set up the machine where the agents will work first
 
 ## Requirements
 
-You need an installed, authenticated provider before starting a thread. You can
-launch T3 Code and configure providers afterwards.
+Doer sets up OpenCode's free AI service automatically on a new installation.
+Other AI services may require an account or subscription. You can configure
+them after opening the app.
 
 ## Command line
 
@@ -43,8 +44,8 @@ Doer offers it in-app and installs it on restart.
 ### Windows Subsystem for Linux
 
 Choose a WSL distro in **Settings → Connections** to run agents and projects
-there. Install the provider CLIs inside that distro. T3 Code installs its own
-server runtime there automatically; the first launch after an app update can
+there. Select that computer in **Settings → Providers** to set up its AI services.
+Doer installs its own server runtime there automatically; the first launch after an app update can
 take longer.
 
 ### Open a project from a terminal
@@ -76,24 +77,29 @@ before sharing.
 
 ## Providers
 
-Open **Settings → Providers** in the web or desktop app, select the environment,
-and enable the provider you want. Installation, login, and configuration belong
-to that environment's machine, even when you connect from a phone or another
-computer.
+Open **Settings → Providers** in the web or desktop app and select the computer
+where your tasks will run. Choose **Install and enable** for OpenCode, Claude,
+Cursor, or Grok. Doer downloads and checks the service for you; no terminal
+commands are needed for installation. If a download fails, choose **Try setup
+again**. Setup runs on the selected computer, even when you control it remotely.
 
-| Provider    | Install and authenticate                                                                                                                                           |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| OpenCode    | Install [OpenCode](https://opencode.ai), then run `opencode auth login`. The default for new threads: Big Pickle first, then other free Zen models when available. |
-| Codex       | Install [Codex CLI](https://developers.openai.com/codex/cli), then run `codex login`.                                                                              |
-| Claude      | Install [Claude Code](https://claude.com/product/claude-code), then run `claude auth login`.                                                                       |
-| Cursor      | Install [Cursor CLI](https://cursor.com/cli), then run `agent login`.                                                                                              |
-| Grok Build  | Install [Grok Build CLI](https://x.ai/cli), then run `grok login`.                                                                                                 |
-| Antigravity | Install and sign in with Google from T3 Code's provider settings.                                                                                                  |
+For Codex, choose **Set up with ChatGPT** to install it and connect your account.
+Antigravity has installation and Google sign-in in the same settings page.
+Claude, Cursor, and Grok still require their own account sign-in after installation.
 
-Provider CLIs must be on the server's `PATH`. If T3 Code cannot find one, set its
-**Binary path** in provider settings, especially when using a version manager.
-Cursor's executable is `cursor-agent`, although its login command is
-`agent login`. Antigravity can use its managed runtime without a `PATH` entry.
+| Provider    | Install and authenticate                                                                                                      |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| OpenCode    | Automatic setup; the free models work without signing in. See [OpenCode](./providers-opencode.md) for optional paid accounts. |
+| Codex       | Set up with ChatGPT in Doer. See [Codex](./providers-codex.md) for existing accounts.                                         |
+| Claude      | Install in Doer, then follow [Claude's sign-in instructions](./providers-claude.md).                                          |
+| Cursor      | Install in Doer, then follow [Cursor's account setup](https://cursor.com/docs/cli/installation).                              |
+| Grok Build  | Install in Doer, then follow [Grok's account setup](https://github.com/xai-org/grok-build).                                   |
+| Antigravity | Install and sign in with Google in Doer.                                                                                      |
+
+Doer remembers where it installed each service, so you do not need to restart
+the app or change system settings after installation. A custom installation
+can still be selected through **Advanced** settings; automatic setup preserves
+that choice.
 
 OpenCode is on by default. Codex, Claude, Cursor, and Grok are opt-in:
 enable them in **Settings → Providers** and they appear in the model picker
