@@ -935,6 +935,7 @@ it.layer(NodeServices.layer)("openCodeProviderMaintenance", (it) => {
         env: { PATH: "" },
       }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn));
 
+      expect(capabilities.packageName).toBe("@opencode/cli");
       expect(capabilities.update).toBeNull();
     }),
   );
@@ -962,6 +963,8 @@ it.layer(NodeServices.layer)("openCodeProviderMaintenance", (it) => {
         env: { PATH: "" },
       }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn));
 
+      // Ambiguous ownership must not guess a line for registry comparison.
+      expect(capabilities.packageName).toBeNull();
       expect(capabilities.update).toBeNull();
     }),
   );
@@ -980,6 +983,7 @@ it.layer(NodeServices.layer)("openCodeProviderMaintenance", (it) => {
         env: { PATH: "" },
       }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn));
 
+      expect(capabilities.packageName).toBeNull();
       expect(capabilities.update).toBeNull();
     }),
   );
@@ -996,6 +1000,7 @@ it.layer(NodeServices.layer)("openCodeProviderMaintenance", (it) => {
       }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn));
 
       // `upgrade` may fetch any release line, so the channel proves nothing.
+      expect(capabilities.packageName).toBeNull();
       expect(capabilities.update).toBeNull();
     }),
   );
@@ -1023,15 +1028,31 @@ it.layer(NodeServices.layer)("openCodeProviderMaintenance", (it) => {
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn),
         );
 
-      // Both lines installed: ownership is impossible to prove, so manual.
+      // Both lines installed: ownership is impossible to prove, so manual
+      // with no registry package to compare against.
       writeManifest("opencode-ai");
       writeManifest("@opencode/cli");
-      expect((yield* resolveShim()).update).toBeNull();
+      const both = yield* resolveShim();
+      expect(both.packageName).toBeNull();
+      expect(both.update).toBeNull();
 
       // Even exactly one adjacent manifest does not prove this particular
       // shim points at that package, so manual as well.
       NodeFS.rmSync(NodePath.join(shimDir, "node_modules", "opencode-ai"), { recursive: true });
-      expect((yield* resolveShim()).update).toBeNull();
+      const single = yield* resolveShim();
+      expect(single.packageName).toBeNull();
+      expect(single.update).toBeNull();
+    }),
+  );
+
+  it.effect("returns manual with no package for a missing binary", () =>
+    Effect.gen(function* () {
+      const capabilities = yield* resolveProviderMaintenanceCapabilitiesEffect(openCodeUpdate, {
+        env: { PATH: "" },
+      }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn));
+
+      expect(capabilities.packageName).toBeNull();
+      expect(capabilities.update).toBeNull();
     }),
   );
 });
