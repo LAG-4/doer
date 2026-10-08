@@ -1,4 +1,3 @@
-import { TaskResults } from "./chat/TaskResults";
 import { isAdvancedCommand, isAdvancedPanel } from "~/simpleMode";
 import { isChatGptUsageLimitError } from "@t3tools/shared/usageLimits";
 import { useLoadBalancedEnvironment } from "../hooks/useLoadBalancedEnvironment";
@@ -2714,6 +2713,11 @@ export default function ChatView(props: ChatViewProps) {
   const versionMismatchSelfUpdate = resolveServerSelfUpdateCapability(serverConfig);
   const versionMismatchDesktopAppUpdate = supportsDesktopAppUpdate(serverConfig);
   const versionMismatchThreadContinuation = supportsServerUpdateThreadContinuation(serverConfig);
+  // Manual-only updates have no one-click path (the copied terminal command is
+  // hidden in simple mode), so the banner would be a title with no action.
+  const manualServerUpdateOnly =
+    versionMismatchSelfUpdate === null ||
+    (versionMismatchSelfUpdate === "desktop-managed" && !versionMismatchDesktopAppUpdate);
   const serverUpdateState = useAtomValue(
     serverEnvironment.updateStateAtom(serverUpdateEnvironmentId),
   );
@@ -2781,10 +2785,16 @@ export default function ChatView(props: ChatViewProps) {
       serverUpdateEnvironmentId &&
       (serverUpdateState.status === "idle"
         ? showVersionMismatchBanner
-        : !serverUpdateFailureDismissed)
+        : !serverUpdateFailureDismissed) &&
+      // Simple mode hides manual-only update banners: with no supported
+      // one-click action the banner would be a title with nothing to do.
+      // In-flight and failed updates stay visible for recovery.
+      (!simpleModeEnabled || serverUpdateState.status !== "idle" || !manualServerUpdateOnly)
     ) {
       const updateInProgress = serverUpdateState.status === "running";
       const updateFailed = serverUpdateState.status === "failed";
+      // Simple mode names the app, not the server; Advanced keeps server terms.
+      const updateServerLabel = simpleModeEnabled ? "Doer" : versionMismatchServerLabel;
       items.push({
         id: `server-version:${serverUpdateEnvironmentId}`,
         variant: updateFailed ? "error" : "default",
@@ -2793,10 +2803,7 @@ export default function ChatView(props: ChatViewProps) {
         icon: <ComposerServerUpdateIcon status={serverUpdateState.status} />,
         title:
           updateInProgress || updateFailed ? (
-            <ComposerServerUpdateStatus
-              state={serverUpdateState}
-              serverLabel={versionMismatchServerLabel}
-            />
+            <ComposerServerUpdateStatus state={serverUpdateState} serverLabel={updateServerLabel} />
           ) : versionMismatch ? (
             <Tooltip>
               <TooltipTrigger
@@ -2805,7 +2812,7 @@ export default function ChatView(props: ChatViewProps) {
                     type="button"
                     className="block max-w-full cursor-help truncate rounded-sm text-left"
                   >
-                    Server update available
+                    {simpleModeEnabled ? "Doer update available" : "Server update available"}
                   </button>
                 }
               />
@@ -2815,7 +2822,7 @@ export default function ChatView(props: ChatViewProps) {
               </TooltipPopup>
             </Tooltip>
           ) : (
-            "Server update available"
+            <>{simpleModeEnabled ? "Doer update available" : "Server update available"}</>
           ),
         description:
           !updateInProgress &&
@@ -2869,6 +2876,8 @@ export default function ChatView(props: ChatViewProps) {
     setDismissedVersionMismatchKey,
     showVersionMismatchBanner,
     serverUpdateFailureDismissed,
+    simpleModeEnabled,
+    manualServerUpdateOnly,
     serverUpdateState,
     versionMismatch,
     versionMismatchDismissKey,
@@ -9780,39 +9789,28 @@ export default function ChatView(props: ChatViewProps) {
       ) : null
     ) : null;
 
-  const showTaskExplanation = useCallback(() => {
-    const entry = displayedTimeline.entries.findLast(
-      (entry) => entry.kind === "message" && entry.message.role === "assistant",
-    );
-    const list = legendListRef.current;
-    const index = entry && list?.getState().indexByKey(entry.id);
-    if (!list || index === undefined) return;
-    cancelTimelineLiveFollowForUserNavigation();
-    void list.scrollToIndex({ index, animated: true, viewPosition: 0, viewOffset: 8 });
-  }, [displayedTimeline.entries, cancelTimelineLiveFollowForUserNavigation]);
-
-  const taskResults = useMemo(
-    () =>
-      isServerThread && !paintOnlyDisplayedTimeline ? (
-        <TaskResults
-          key={activeThreadKey}
-          environmentId={activeThread.environmentId}
-          threadId={activeThread.id}
-          checkpoints={activeThread.checkpoints}
-          onOpen={openFileSurface}
-          onSources={showTaskExplanation}
-        />
-      ) : null,
-    [
-      isServerThread,
-      paintOnlyDisplayedTimeline,
-      activeThreadKey,
-      activeThread.environmentId,
-      activeThread.id,
-      activeThread.checkpoints,
-      openFileSurface,
-      showTaskExplanation,
-    ],
+  const showTaskResultSources = useCallback(
+    (info: { turnId: TurnId; assistantMessageId: MessageId | null }) => {
+      const terminalEntry = displayedTimeline.entries.findLast(
+        (entry) =>
+          entry.kind === "message" &&
+          entry.message.role === "assistant" &&
+          entry.message.turnId === info.turnId,
+      );
+      const directEntry =
+        info.assistantMessageId !== null
+          ? displayedTimeline.entries.find(
+              (entry) => entry.kind === "message" && entry.message.id === info.assistantMessageId,
+            )
+          : undefined;
+      const entry = terminalEntry ?? directEntry;
+      const list = legendListRef.current;
+      const index = entry === undefined ? undefined : list?.getState().indexByKey(entry.id);
+      if (!list || typeof index !== "number") return;
+      cancelTimelineLiveFollowForUserNavigation();
+      void list.scrollToIndex({ index, animated: true, viewPosition: 0, viewOffset: 8 });
+    },
+    [displayedTimeline.entries, cancelTimelineLiveFollowForUserNavigation],
   );
 
   const workspaceFileDropHandlers = makeWorkspaceFileDropHandlers({
@@ -10011,7 +10009,8 @@ export default function ChatView(props: ChatViewProps) {
                 anchorMessageId={paintOnlyDisplayedTimeline ? null : timelineAnchorMessageId}
                 onAnchorReady={onTimelineAnchorReady}
                 contentInsetEndAdjustment={composerTimelineInset}
-                endContent={taskResults}
+                onOpenTaskResultFile={paintOnlyDisplayedTimeline ? null : openFileSurface}
+                onShowTaskResultSources={paintOnlyDisplayedTimeline ? null : showTaskResultSources}
                 liveFollowEnabled={!paintOnlyDisplayedTimeline && timelineLiveFollowEnabled}
                 onIsAtEndChange={onIsAtEndChange}
                 onContentOverflowChange={setTimelineOverflows}

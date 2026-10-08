@@ -21,6 +21,8 @@ import * as Schema from "effect/Schema";
 import { HttpClient } from "effect/unstable/http";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+
 import { makeOpenCodeTextGeneration } from "../../textGeneration/OpenCodeTextGeneration.ts";
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import { ServerConfig } from "../../config.ts";
@@ -50,6 +52,11 @@ import {
 } from "../ProviderDriver.ts";
 import { withInstanceIdentity } from "./instanceIdentity.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
+import {
+  OPENCODE_XDG_DATA_HOME_VAR,
+  ensureOpenCodeDataHome,
+  resolveOpenCodeDataHome,
+} from "../openCodeDataHome.ts";
 import { openCodeManagedDir } from "../opencodeInstall.ts";
 import {
   enrichProviderSnapshotWithVersionAdvisory,
@@ -114,7 +121,7 @@ export const OpenCodeDriver: ProviderDriver<OpenCodeSettings, OpenCodeDriverEnv>
       const httpClient = yield* HttpClient.HttpClient;
       const serverSettings = yield* ServerSettingsService;
       const eventLoggers = yield* ProviderEventLoggers;
-      const processEnv = mergeProviderInstanceEnvironment(environment);
+      const baseProcessEnv = mergeProviderInstanceEnvironment(environment);
       const continuationIdentity = defaultProviderContinuationIdentity({
         driverKind: DRIVER_KIND,
         instanceId,
@@ -131,6 +138,26 @@ export const OpenCodeDriver: ProviderDriver<OpenCodeSettings, OpenCodeDriverEnv>
       // automatically, and every spawn path consults it after PATH and
       // `~/.opencode/bin` so GUI-launched servers still find the CLI.
       const managedDir = openCodeManagedDir(serverConfig.baseDir);
+      // Isolate Doer's OpenCode runtime off the user's shared global database
+      // (`opencode serve` exits when another app migrated that schema). The
+      // same env feeds health, serve, CLI probes, adapter, and text
+      // generation, so every path shares one namespace; only an
+      // instance-configured `XDG_DATA_HOME` bypasses it (see resolver).
+      const openCodeDataHome = yield* ensureOpenCodeDataHome(
+        resolveOpenCodeDataHome({
+          instanceEnvironment: environment,
+          environment: baseProcessEnv,
+          managedDir,
+          instanceId,
+          // Host-wide constant (not per-request state): the shared runtime
+          // reference's default, injectable per-platform in resolve tests.
+          platform: HostProcessPlatform.defaultValue(),
+        }),
+      );
+      const processEnv =
+        openCodeDataHome === undefined
+          ? baseProcessEnv
+          : { ...baseProcessEnv, [OPENCODE_XDG_DATA_HOME_VAR]: openCodeDataHome };
       const resolveMaintenance = yield* makeCachedProviderMaintenanceResolution(
         resolveProviderMaintenanceCapabilitiesEffect(UPDATE, {
           binaryPath: effectiveConfig.binaryPath,

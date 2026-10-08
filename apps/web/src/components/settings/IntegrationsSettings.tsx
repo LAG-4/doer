@@ -1,4 +1,6 @@
 import { MicrosoftConnectionCard } from "./MicrosoftConnectionCard";
+import { ExperimentalConnectionsSetting } from "./ExperimentalConnectionsSetting";
+import { useExperimentalConnections } from "./useExperimentalConnections";
 import { DeviceHostUpdates } from "../device/DeviceHostUpdates";
 import { DeviceToolVersions } from "../device/DeviceToolVersions";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
@@ -1430,6 +1432,14 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
 export function IntegrationsSettingsPanel() {
   // Client-local preview defaults are editable only where the preview exists.
   const previewDefaultsDisabled = !isElectron;
+  // Explicit enable only: gated connections hide until the host master
+  // switch answers on. Unknown, loading, and off all hide; the server denies
+  // their tools regardless of these rows.
+  const { target } = useSettingsScope();
+  const { enabled: experimentalConnections } = useExperimentalConnections(
+    target?.environmentId ?? null,
+  );
+  const connectionsVisible = experimentalConnections === true;
   const previewDefaults = (
     <>
       <BrowserProfilesSetting disabled={previewDefaultsDisabled} />
@@ -1447,10 +1457,11 @@ export function IntegrationsSettingsPanel() {
     <SettingsPageContainer>
       {/* Server-authoritative agent access is scoped by the header selection;
           the preview defaults below are device-local and ignore it. */}
-      <MicrosoftConnectionCard />
-      <ConnectedToolsSettings />
-      <details>
-        <summary className="cursor-pointer text-sm font-medium">
+      <ExperimentalConnectionsSetting />
+      <MicrosoftConnectionCard connectionsVisible={connectionsVisible} />
+      <ConnectedToolsSettings connectionsVisible={connectionsVisible} />
+      <details className="min-w-0">
+        <summary className="min-w-0 cursor-pointer text-sm font-medium break-words whitespace-normal">
           Advanced browser and device settings
         </summary>
         <ProjectDefaultsSettings category="integrations" />

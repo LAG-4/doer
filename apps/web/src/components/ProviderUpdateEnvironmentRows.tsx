@@ -8,6 +8,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 
 import { cn } from "~/lib/utils";
+import { getClientSettings } from "~/hooks/useSettings";
 import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useLocalEnvironmentUpdateGroups } from "./ProviderUpdateLaunchNotification.environments";
@@ -323,6 +324,8 @@ export function ProviderUpdateEnvironmentRows({
         const view = getProviderUpdateProgressToastView({
           providers: collectProviderUpdateOutcomeSnapshots(results),
           providerCount,
+          // Read live at dispatch: no settings subscription for a transient toast.
+          simpleMode: getClientSettings().simpleModeEnabled,
         });
         // Only persist a terminal outcome. A non-terminal ("running"/"initial")
         // view means this dispatch could not confirm completion — e.g. a snapshot

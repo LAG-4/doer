@@ -1,5 +1,11 @@
 # Microsoft connected apps
 
+Microsoft connections are experimental: turn on **Experimental connections** in
+**Settings → Connected apps** first. Until then the Microsoft section stays hidden
+and new connections are refused, even with a saved sign-in. Disconnecting a
+connected account stays available while the switch is off, and your credentials
+are kept for re-enabling.
+
 Open **Settings → Connected apps** on the computer hosting your Tasks. Choose
 **Connect Microsoft account**, open Microsoft's sign-in page, enter the displayed
 code, then return to Doer and check the connection. You can cancel and restart

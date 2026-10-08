@@ -876,6 +876,85 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
+  it.effect("starts new installations supervised without rewriting existing files", () =>
+    Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      // No settings file: fresh installs seed an explicit supervised default.
+      const initial = yield* serverSettings.getSettings;
+      assert.strictEqual(initial.defaultRuntimeMode, "approval-required");
+      // @effect-diagnostics-next-line preferSchemaOverJson:off
+      const persisted = JSON.parse(yield* fileSystem.readFileString(serverConfig.settingsPath));
+      assert.strictEqual(persisted.defaultRuntimeMode, "approval-required");
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("leaves an existing implicit full-access default alone", () =>
+    Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      yield* fileSystem.writeFileString(serverConfig.settingsPath, "{}");
+      const settings = yield* serverSettings.getSettings;
+      assert.strictEqual(settings.defaultRuntimeMode, "full-access");
+      // The old implicit default is preserved, never seeded to supervised.
+      // @effect-diagnostics-next-line preferSchemaOverJson:off
+      const persisted = JSON.parse(yield* fileSystem.readFileString(serverConfig.settingsPath));
+      assert.isUndefined(persisted.defaultRuntimeMode);
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("persists the supervised seed across restarts", () =>
+    Effect.gen(function* () {
+      const configLayer = Layer.fresh(
+        ServerConfig.layerTest(process.cwd(), {
+          prefix: "t3code-server-settings-restart-test-",
+        }),
+      );
+      const settingsLayer = () =>
+        Layer.fresh(ServerSettingsModule.layer).pipe(
+          Layer.provide(ServerSecretStore.layer),
+          Layer.provideMerge(Layer.fresh(SqlitePersistenceMemory)),
+          Layer.provideMerge(configLayer),
+        );
+      // Read inside the provided scope: the layer owns the database
+      // connection, so the getSettings call itself must run before the
+      // layer scope closes ("database is not open" otherwise).
+      const first = yield* ServerSettingsModule.ServerSettingsService.pipe(
+        Effect.flatMap((service) => service.getSettings),
+        Effect.provide(settingsLayer()),
+      );
+      assert.strictEqual(first.defaultRuntimeMode, "approval-required");
+      // A rebuilt service (server restart) reads the persisted seed back.
+      const second = yield* ServerSettingsModule.ServerSettingsService.pipe(
+        Effect.flatMap((service) => service.getSettings),
+        Effect.provide(settingsLayer()),
+      );
+      assert.strictEqual(second.defaultRuntimeMode, "approval-required");
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("preserves an explicit saved full-access default", () =>
+    Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      yield* fileSystem.writeFileString(
+        serverConfig.settingsPath,
+        '{"defaultRuntimeMode":"full-access"}',
+      );
+      const settings = yield* serverSettings.getSettings;
+      assert.strictEqual(settings.defaultRuntimeMode, "full-access");
+      // Saving other settings must not reset the explicit choice.
+      const next = yield* serverSettings.updateSettings({ defaultAutoPull: true });
+      assert.strictEqual(next.defaultRuntimeMode, "full-access");
+      // @effect-diagnostics-next-line preferSchemaOverJson:off
+      const persisted = JSON.parse(yield* fileSystem.readFileString(serverConfig.settingsPath));
+      assert.strictEqual(persisted.defaultRuntimeMode, "full-access");
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
   it.effect("folds a legacy in-config enabled flag into the envelope on load", () =>
     Effect.gen(function* () {
       const serverConfig = yield* ServerConfig.ServerConfig;
@@ -1056,6 +1135,8 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       // @effect-diagnostics-next-line preferSchemaOverJson:off
       assert.deepEqual(JSON.parse(raw), {
         addProjectBaseDirectory: "~/Development",
+        // Fresh installs pin their supervised seed in the file.
+        defaultRuntimeMode: "approval-required",
         observability: {
           otlpTracesUrl: "http://localhost:4318/v1/traces",
           otlpMetricsUrl: "http://localhost:4318/v1/metrics",

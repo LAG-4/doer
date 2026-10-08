@@ -12,6 +12,16 @@ Doer explains sources, dates and assumptions. Check these before using an output
 Word and presentation previews show their text. Open the downloaded original in
 your usual office app to inspect the full formatting, charts and images.
 
+Blank files cannot be created: every document, spreadsheet, and presentation
+needs a short title and at least some real content. Very large files are
+refused before they become too big to use reliably — split them into smaller
+parts and try again. Slides are kept to short titles and a limited amount of
+text per slide so the words fit; open the downloaded file in your usual
+office app to check the final look. Spreadsheet cells are plain text by design: numbers and dates travel
+as typed text, formula-like entries are stored as text for safety, and totals
+should already be computed in the conversation. Unsupported or cross-sheet
+formulas show the file's saved result when available.
+
 For imported Excel workbooks, choose a worksheet to browse it. Doer preserves
 unchanged formatting and worksheets when saving supported edits. Complex layouts
 are read-only; download the original and edit it in your spreadsheet app.

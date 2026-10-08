@@ -480,6 +480,121 @@ describe("resolveDefaultProviderModelSelection", () => {
     expect(resolveDefaultProviderModelSelection(providers, stored)).toBe(stored);
   });
 
+  it("falls back a removed free OpenCode model to the available free default", () => {
+    const providers = [
+      provider({
+        provider: ProviderDriverKind.make("opencode"),
+        instanceId: "opencode",
+        models: [model("opencode/exo-free"), model("opencode/paid")],
+      }),
+    ];
+
+    expect(
+      resolveDefaultProviderModelSelection(providers, {
+        instanceId: ProviderInstanceId.make("opencode"),
+        model: "opencode/big-pickle",
+        options: [{ id: "variant", value: "high" }],
+      }),
+    ).toEqual({ instanceId: "opencode", model: "opencode/exo-free" });
+  });
+
+  it("fail-clears a removed Big Pickle when no free model remains", () => {
+    const providers = [
+      provider({
+        provider: ProviderDriverKind.make("opencode"),
+        instanceId: "opencode",
+        models: [model("opencode/paid")],
+      }),
+    ];
+
+    expect(
+      resolveDefaultProviderModelSelection(providers, {
+        instanceId: ProviderInstanceId.make("opencode"),
+        model: "opencode/big-pickle",
+      }),
+    ).toBeNull();
+  });
+
+  it("preserves a removed paid OpenCode model instead of silently switching", () => {
+    const providers = [
+      provider({
+        provider: ProviderDriverKind.make("opencode"),
+        instanceId: "opencode",
+        models: [model("opencode/exo-free")],
+      }),
+    ];
+    const stored = {
+      instanceId: ProviderInstanceId.make("opencode"),
+      model: "opencode/paid",
+    };
+
+    expect(resolveDefaultProviderModelSelection(providers, stored)).toBe(stored);
+  });
+
+  it("preserves a present custom OpenCode model over the free default", () => {
+    const providers = [
+      provider({
+        provider: ProviderDriverKind.make("opencode"),
+        instanceId: "opencode",
+        models: [model("opencode/exo-free"), model("my-custom", true)],
+      }),
+    ];
+    const stored = {
+      instanceId: ProviderInstanceId.make("opencode"),
+      model: "my-custom",
+    };
+
+    expect(resolveDefaultProviderModelSelection(providers, stored)).toBe(stored);
+  });
+
+  it("never switches a removed custom free-like model", () => {
+    const providers = [
+      provider({
+        provider: ProviderDriverKind.make("opencode"),
+        instanceId: "opencode",
+        models: [model("opencode/exo-free")],
+      }),
+    ];
+    const stored = {
+      instanceId: ProviderInstanceId.make("opencode"),
+      model: "my-free",
+    };
+
+    expect(resolveDefaultProviderModelSelection(providers, stored)).toBe(stored);
+  });
+
+  it("never switches a removed dynamic free model that is not retired", () => {
+    const providers = [
+      provider({
+        provider: ProviderDriverKind.make("opencode"),
+        instanceId: "opencode",
+        models: [model("opencode/exo-free")],
+      }),
+    ];
+    const stored = {
+      instanceId: ProviderInstanceId.make("opencode"),
+      model: "opencode/old-free",
+    };
+
+    expect(resolveDefaultProviderModelSelection(providers, stored)).toBe(stored);
+  });
+
+  it("preserves a removed model on other providers without fallback", () => {
+    const providers = [
+      provider({
+        provider: ProviderDriverKind.make("claudeAgent"),
+        instanceId: "claudeAgent",
+        models: [model("claude-opus-4-8")],
+      }),
+    ];
+    const stored = {
+      instanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "removed-model",
+    };
+
+    expect(resolveDefaultProviderModelSelection(providers, stored)).toBe(stored);
+  });
+
   it("does not replace a removed service with another paid service", () => {
     const providers = [
       provider({

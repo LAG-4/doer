@@ -981,6 +981,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     // the live switch (and task state) on each call, so turning access off
     // still revokes use while turning it on needs no session restart. The
     // registry is in-memory, so a server restart re-mints credentials anyway.
+    // The experimental-connections master switch is enforced live inside
+    // those handlers, so flipping it on works in the current session with no
+    // restart, and flipping it off stops the next call.
     capabilities.add("gmail");
     capabilities.add("local-spreadsheets");
     capabilities.add("local-presentations");

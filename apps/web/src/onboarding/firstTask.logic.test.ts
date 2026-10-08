@@ -4,10 +4,12 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   checkFirstTaskFile,
   FIRST_TASK_MIN_ASSISTANT_CHARS,
+  firstTaskAssistantText,
   formatFirstTaskFileSize,
   getFirstTaskTurnOutcome,
   type FirstTaskTurnSnapshot,
 } from "./firstTask.logic";
+import type { OrchestrationSessionStatus } from "@t3tools/contracts";
 
 function snapshot(overrides: Partial<FirstTaskTurnSnapshot> = {}): FirstTaskTurnSnapshot {
   return {
@@ -59,10 +61,23 @@ describe("getFirstTaskTurnOutcome", () => {
           messages: [{ role: "assistant", text: EXPLANATION, turnId: "t1" }],
         }),
       ),
-    ).toBe("waiting");
+    ).toBe("failed");
   });
 
-  it("waits when the finished turn has no substantive text yet", () => {
+  it("waits while a finished turn's detail is still syncing", () => {
+    expect(
+      getFirstTaskTurnOutcome(
+        snapshot({
+          latestTurn: { turnId: "t1", state: "completed", assistantMessageId: null },
+          session: { status: "running" },
+          messages: [{ role: "assistant", text: "ok", turnId: "t1" }],
+        }),
+      ),
+    ).toBe("waiting");
+    expect(EXPLANATION.length).toBeGreaterThanOrEqual(FIRST_TASK_MIN_ASSISTANT_CHARS);
+  });
+
+  it("fails a settled completed turn with no useful visible result", () => {
     expect(
       getFirstTaskTurnOutcome(
         snapshot({
@@ -71,8 +86,57 @@ describe("getFirstTaskTurnOutcome", () => {
           messages: [{ role: "assistant", text: "ok", turnId: "t1" }],
         }),
       ),
-    ).toBe("waiting");
-    expect(EXPLANATION.length).toBeGreaterThanOrEqual(FIRST_TASK_MIN_ASSISTANT_CHARS);
+    ).toBe("failed");
+  });
+
+  it("settles empty completed turns by session state, including a missing session", () => {
+    const completedNoText = (status: OrchestrationSessionStatus | null) =>
+      getFirstTaskTurnOutcome(
+        snapshot({
+          latestTurn: { turnId: "t1", state: "completed", assistantMessageId: null },
+          session: status === null ? null : { status },
+          messages: [{ role: "assistant", text: "ok", turnId: "t1" }],
+        }),
+      );
+    expect(completedNoText("idle")).toBe("failed");
+    expect(completedNoText("starting")).toBe("waiting");
+    // No session left to sync: an empty completed turn is actionable, not forever waiting.
+    expect(completedNoText(null)).toBe("failed");
+    expect(
+      getFirstTaskTurnOutcome(
+        snapshot({
+          latestTurn: { turnId: "t1", state: "running", assistantMessageId: null },
+          session: { status: "stopped" },
+        }),
+      ),
+    ).toBe("stopped");
+  });
+
+  it("ignores reasoning-only text when judging the visible result", () => {
+    expect(
+      getFirstTaskTurnOutcome(
+        snapshot({
+          latestTurn: { turnId: "t1", state: "completed", assistantMessageId: null },
+          session: { status: "ready" },
+          messages: [{ role: "reasoning", text: EXPLANATION, turnId: "t1" }],
+        }),
+      ),
+    ).toBe("failed");
+    expect(
+      firstTaskAssistantText([{ role: "reasoning", text: EXPLANATION, turnId: "t1" }], "t1"),
+    ).toBe("");
+  });
+
+  it("classifies a retry turn in the same task on its own result", () => {
+    expect(
+      getFirstTaskTurnOutcome(
+        snapshot({
+          latestTurn: { turnId: "t2", state: "running", assistantMessageId: null },
+          session: { status: "running" },
+          messages: [{ role: "assistant", text: EXPLANATION, turnId: "t1" }],
+        }),
+      ),
+    ).toBe("running");
   });
 
   it("treats turn and session errors as terminal failures", () => {
@@ -96,7 +160,7 @@ describe("getFirstTaskTurnOutcome", () => {
     ).toBe("failed");
   });
 
-  it("does not fail an interrupted turn the user stopped", () => {
+  it("reports an interrupted turn as stopped with a retry path", () => {
     expect(
       getFirstTaskTurnOutcome(
         snapshot({
@@ -104,7 +168,15 @@ describe("getFirstTaskTurnOutcome", () => {
           session: { status: "ready" },
         }),
       ),
-    ).toBe("waiting");
+    ).toBe("stopped");
+    expect(
+      getFirstTaskTurnOutcome(
+        snapshot({
+          latestTurn: { turnId: "t1", state: "running", assistantMessageId: null },
+          session: { status: "stopped" },
+        }),
+      ),
+    ).toBe("stopped");
   });
 });
 

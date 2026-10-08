@@ -258,12 +258,11 @@ export function ServerUpdateAction({
   }
 
   const manualCommand = selfUpdate === null ? manualServerUpdateCommand(targetVersion) : null;
+  // Simple mode hides non-actionable manual paths: a copied terminal command
+  // is not something Doer can run for the user. One-click updates still render
+  // below; Advanced settings keeps the manual command.
   if (simpleMode && manualCommand !== null) {
-    return (
-      <span className="text-xs text-muted-foreground">
-        Update instructions are available in Advanced settings.
-      </span>
-    );
+    return null;
   }
   const actionLabel = manualCommand !== null ? "Copy update command" : label;
   const onClick =

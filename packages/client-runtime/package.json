@@ -135,6 +135,10 @@
       "types": "./src/doerMemory.ts",
       "default": "./src/doerMemory.ts"
     },
+    "./experimental-connections": {
+      "types": "./src/experimentalConnections.ts",
+      "default": "./src/experimentalConnections.ts"
+    },
     "./state/connections": {
       "types": "./src/state/connections.ts",
       "default": "./src/state/connections.ts"

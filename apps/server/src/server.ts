@@ -139,6 +139,8 @@ import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as GmailConnection from "./integrations/GmailConnection.ts";
 import * as GmailSendApproval from "./integrations/GmailSendApproval.ts";
 import { gmailCallbackRouteLayer, integrationsHttpApiLayer } from "./integrations/http.ts";
+import * as ExperimentalConnections from "./integrations/ExperimentalConnections.ts";
+import { experimentalConnectionsRouteLayer } from "./integrations/ExperimentalConnectionsRoutes.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import {
   connectHttpApiLayer,
@@ -635,6 +637,7 @@ export const makeRoutesLayer = Layer.mergeAll(
     otlpTracesProxyRouteLayer,
     telemetryConfigRouteLayer,
     doerMemoryRouteLayer,
+    experimentalConnectionsRouteLayer,
     assetRouteLayer,
     attachmentUploadRouteLayer,
     deviceHubProxyRouteLayer,
@@ -651,6 +654,7 @@ export const makeRoutesLayer = Layer.mergeAll(
   Layer.provide(PullRequestServiceLive),
   Layer.provide(PreviewAutomationBroker.layer),
   Layer.provide(GmailConnection.layer),
+  Layer.provide(ExperimentalConnections.layer),
   Layer.provide(ServerSelfUpdate.layer.pipe(Layer.provide(DesktopAppUpdateLayerLive))),
   Layer.provide(commandReadinessLayer),
   Layer.provide(browserApiCorsLayer),
@@ -1008,6 +1012,7 @@ const makeServerLayer = Layer.unwrap(
 
     return serverApplicationLayer.pipe(
       Layer.provide(GmailConnection.layer),
+      Layer.provide(ExperimentalConnections.layer),
       Layer.provideMerge(runtimeServicesLive),
       Layer.provide(activationLayer),
       Layer.provideMerge(serverRelayBrokerTracingLayer),

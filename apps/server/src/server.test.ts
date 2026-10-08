@@ -118,6 +118,7 @@ import * as ComputerService from "./computer/ComputerService.ts";
 import { HTTP_ROUTER_CONFIG, makeRoutesLayer } from "./server.ts";
 import { GmailConnection } from "./integrations/GmailConnection.ts";
 import * as GmailSendApproval from "./integrations/GmailSendApproval.ts";
+import * as ExperimentalConnections from "./integrations/ExperimentalConnections.ts";
 import {
   isThreadDetailEvent,
   resolveAvailableEditorsForConfig,
@@ -586,6 +587,7 @@ const buildAppUnderTest = (options?: {
     desktopTelemetryReceiver?: Partial<
       DesktopTelemetryReceiver.DesktopTelemetryReceiver["Service"]
     >;
+    experimentalConnections?: boolean;
   };
 }) =>
   Effect.gen(function* () {
@@ -808,6 +810,9 @@ const buildAppUnderTest = (options?: {
             }),
           ),
           GmailSendApproval.layer,
+          // Host-wide experimental-connections switch: off unless a test opts
+          // in, so gated tools stay denied by default in full-stack tests.
+          ExperimentalConnections.layerTest(options?.layers?.experimentalConnections ?? false),
           // HttpRouter.serve exposes request-handler context outward, so the saved-memory
           // store is provided here (one shared instance) rather than inside makeRoutesLayer.
           DoerMemoryStoreLive.pipe(Layer.provide(SqlitePersistenceMemory)),

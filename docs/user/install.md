@@ -1,22 +1,14 @@
-# Install T3 Code
+# Install Doer
 
-T3 Code runs coding agents on your computer and lets you control them from its
-desktop, web, or mobile app. Set up the machine where the agents will work first.
+Doer runs AI helpers on your computer and lets you control them from its
+desktop or web app. Install the desktop app first — Doer sets up its free AI
+automatically on first run, with no terminal commands needed.
 
 ## Requirements
 
 Doer sets up OpenCode's free AI service automatically on a new installation.
 Other AI services may require an account or subscription. You can configure
 them after opening the app.
-
-## Command line
-
-```bash
-npx @lag4/doer-cli@latest
-```
-
-This starts the server and opens the local web app. Run
-`npx @lag4/doer-cli@latest --help` for command-line options.
 
 ## Desktop app
 
@@ -44,40 +36,13 @@ Doer offers it in-app and installs it on restart.
 ### Windows Subsystem for Linux
 
 Choose a WSL distro in **Settings → Connections** to run agents and projects
-there. Select that computer in **Settings → Providers** to set up its AI services.
+there. Select that computer in **Settings → AI services** to set up its AI services.
 Doer installs its own server runtime there automatically; the first launch after an app update can
 take longer.
 
-### Open a project from a terminal
-
-With the desktop app already running on the same machine:
-
-```bash
-npx @lag4/doer-cli app
-```
-
-This opens a new thread for the current directory, adding the project if needed.
-Pass a path, such as `npx @lag4/doer-cli app ../my-project`, to open another directory. It requires
-the desktop app, so a standalone server or an SSH session is not enough. If the
-command cannot reach the app, start or update the desktop app and try again.
-
-## Mobile app
-
-Install T3 Code from the
-[App Store](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824) or
-[Google Play](https://play.google.com/store/apps/details?id=com.t3tools.t3code).
-The phone connects to a server on another machine. Follow
-[remote access](./remote-access.md) to link it through T3 Connect or a pairing URL.
-
-If the app crashes during launch, open Settings → Diagnostics on the next launch
-that succeeds. It lists startup crashes from the last 7 days with the error and
-component stack that store crash reports leave out. Copy the report and paste it
-into a GitHub issue. Error messages can quote values from the app, so read it over
-before sharing.
-
 ## Providers
 
-Open **Settings → Providers** in the web or desktop app and select the computer
+Open **Settings → AI services** in the web or desktop app and select the computer
 where your tasks will run. Choose **Install and enable** for OpenCode, Claude,
 Cursor, or Grok. Doer downloads and checks the service for you; no terminal
 commands are needed for installation. If a download fails, choose **Try setup
@@ -102,11 +67,11 @@ can still be selected through **Advanced** settings; automatic setup preserves
 that choice.
 
 OpenCode is on by default. Codex, Claude, Cursor, and Grok are opt-in:
-enable them in **Settings → Providers** and they appear in the model picker
+enable them in **Settings → AI services** and they appear in the model picker
 from the next refresh.
 
 When a provider CLI is behind its latest release, its provider card shows the
-available version. **Update now** appears only when T3 Code can tell which
+available version. **Update now** appears only when Doer can tell which
 installer owns the CLI (its own update command, Homebrew, or a global npm, pnpm,
 bun, or Vite+ install) and runs that installer. Otherwise update the CLI the same
 way you installed it. Homebrew installs compare against the version Homebrew
@@ -114,12 +79,62 @@ offers, which can trail the npm release by a few hours.
 
 Add another provider instance for a separate account or configuration. Each
 instance can have its own environment variables, such as API keys or a custom
-base URL. Mark secret values as sensitive; after saving, T3 Code does not display
+base URL. Mark secret values as sensitive; after saving, Doer does not display
 their original values.
 
 For provider-specific setup and accounts, see [OpenCode](./providers-opencode.md),
 [Codex](./providers-codex.md), [Claude](./providers-claude.md), and
 [Antigravity](./providers-antigravity.md).
+
+## If setup fails
+
+- **Setup failed or a download failed:** open **Settings → AI services** and
+  choose **Try setup again**. Automatic setup preserves a custom installation
+  you selected through **Advanced** settings.
+- **The AI does not answer or looks disconnected:** check
+  **Settings → AI services** for that computer. Re-enable the provider or sign
+  in again, then start a new task.
+- **Your work is safe:** when available, History lets you review or restore
+  saved file changes. Review the task before retrying.
+- **If an email send looks uncertain:** check Gmail before retrying — a lost
+  network response can leave delivery uncertain, and retrying blindly may send
+  it twice.
+
+## Advanced
+
+### Run from the command line
+
+```bash
+npx @lag4/doer-cli@latest
+```
+
+This starts the server and opens the local web app. Run
+`npx @lag4/doer-cli@latest --help` for command-line options.
+
+### Open a project from a terminal
+
+With the desktop app already running on the same machine:
+
+```bash
+npx @lag4/doer-cli app
+```
+
+This opens a new thread for the current directory, adding the project if needed.
+Pass a path, such as `npx @lag4/doer-cli app ../my-project`, to open another directory. It requires
+the desktop app, so a standalone server or an SSH session is not enough. If the
+command cannot reach the app, start or update the desktop app and try again.
+
+### Mobile app
+
+There are no Doer phone apps yet. From your phone's browser, open the pairing
+link from the desktop app to control Doer on your computer. Follow
+[remote access](./remote-access.md) to link it through T3 Connect or a pairing URL.
+
+If the app crashes during launch, open Settings → Diagnostics on the next launch
+that succeeds. It lists startup crashes from the last 7 days with the error and
+component stack that store crash reports leave out. Copy the report and paste it
+into a GitHub issue. Error messages can quote values from the app, so read it over
+before sharing.
 
 ## Next steps
 
@@ -127,4 +142,4 @@ For provider-specific setup and accounts, see [OpenCode](./providers-opencode.md
 - [Permission modes](./permission-modes.md): choose when agents ask before acting.
 - [Remote access](./remote-access.md): connect from another device.
 - [Running in the background](./background-service.md): keep a Linux or macOS host available.
-- [Updating T3 Code](./updating.md): update the app and connected servers.
+- [Updating Doer](./updating.md): update the app and connected servers.

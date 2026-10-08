@@ -8,10 +8,12 @@ import { describe, it } from "vite-plus/test";
 
 import {
   buildOpenCodeV2PermissionRules,
+  isFutureOpenCodeVersion,
   isOpenCodeAgentNotFoundError,
   isOpenCodeV2Version,
   loadOpenCodeV2Inventory,
   matchKnownAgentName,
+  openCodeFutureVersionDetail,
   OpenCodeRuntimeError,
   type OpenCodeV2Client,
   parseServerPasswordFromOutput,
@@ -64,11 +66,34 @@ describe("parseServerPasswordFromOutput", () => {
 });
 
 describe("isOpenCodeV2Version", () => {
-  it("routes major version 2 and above to the v2 API", () => {
+  it("routes exactly major version 2 to the v2 API", () => {
     NodeAssert.equal(isOpenCodeV2Version("2.0.0"), true);
     NodeAssert.equal(isOpenCodeV2Version("2.0.11"), true);
+    NodeAssert.equal(isOpenCodeV2Version("2.99.0"), true);
     NodeAssert.equal(isOpenCodeV2Version("1.18.31"), false);
     NodeAssert.equal(isOpenCodeV2Version("not-a-version"), false);
+  });
+
+  it("never claims a future major speaks the v2 API", () => {
+    NodeAssert.equal(isOpenCodeV2Version("3.0.0"), false);
+    NodeAssert.equal(isOpenCodeV2Version("10.2.1"), false);
+  });
+});
+
+describe("isFutureOpenCodeVersion", () => {
+  it("flags majors above the supported lines", () => {
+    NodeAssert.equal(isFutureOpenCodeVersion("3.0.0"), true);
+    NodeAssert.equal(isFutureOpenCodeVersion("10.2.1"), true);
+    NodeAssert.equal(isFutureOpenCodeVersion("2.0.24"), false);
+    NodeAssert.equal(isFutureOpenCodeVersion("1.18.35"), false);
+    NodeAssert.equal(isFutureOpenCodeVersion("not-a-version"), false);
+  });
+
+  it("explains the failure with an update-Doer message", () => {
+    NodeAssert.equal(
+      openCodeFutureVersionDetail("3.1.0"),
+      "OpenCode v3.1.0 is newer than this Doer version supports. Update Doer to use it.",
+    );
   });
 });
 

@@ -7,6 +7,7 @@ import { useEnvironment } from "../../state/environments";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { GmailConnectionControl } from "../settings/GmailConnectionControl";
+import { useExperimentalConnections } from "../settings/useExperimentalConnections";
 import {
   Menu,
   MenuCheckboxItem,
@@ -71,6 +72,10 @@ export function ComposerPluginsMenu({
   const savingRef = useRef(false);
   const [open, setOpen] = useComposerMenuState(hidden);
   const floatingLayerProps = useComposerMenuProps();
+  // Explicit enable only: the menu stays hidden until the host master switch
+  // answers on. Unknown, loading, and off all hide; the server denies the
+  // underlying tools regardless of these rows.
+  const { enabled: experimentalConnections } = useExperimentalConnections(environmentId);
   const unavailableReason =
     projectId === null
       ? "Choose a Space to use plugins."
@@ -156,8 +161,9 @@ export function ComposerPluginsMenu({
     </>
   );
 
-  if (embedded) return content;
+  if (embedded) return experimentalConnections === true ? content : null;
 
+  if (experimentalConnections !== true) return null;
   return (
     <Menu open={open} onOpenChange={setOpen}>
       <MenuTrigger

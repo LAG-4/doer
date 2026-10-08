@@ -1676,31 +1676,13 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       // the automation's thread, then the run is recorded. Manual runs never
       // advance the schedule — both sub-commands share the outer command id
       // (like project.delete's fan-out) so a retry stays a single run.
+      // Manual runs never escalate permissions: dedicated and shared threads
+      // alike keep their saved runtime and interaction modes (the scheduler
+      // already preserves them the same way). An explicit full-access choice
+      // at creation keeps working because it is already the thread's mode.
       return yield* decideCommandSequence({
         readModel,
         commands: [
-          ...(automation.dedicatedThread !== false && runThread.runtimeMode !== "full-access"
-            ? [
-                {
-                  type: "thread.runtime-mode.set" as const,
-                  commandId: command.commandId,
-                  threadId: automation.threadId,
-                  runtimeMode: "full-access" as const,
-                  createdAt: occurredAt,
-                },
-              ]
-            : []),
-          ...(automation.dedicatedThread !== false && runThread.interactionMode !== "default"
-            ? [
-                {
-                  type: "thread.interaction-mode.set" as const,
-                  commandId: command.commandId,
-                  threadId: automation.threadId,
-                  interactionMode: "default" as const,
-                  createdAt: occurredAt,
-                },
-              ]
-            : []),
           {
             type: "thread.turn.start",
             commandId: command.commandId,

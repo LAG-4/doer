@@ -126,9 +126,9 @@ minimumReleaseAgeExclude:
   - "@posthog/core@1.53.3"
   - "@posthog/types@1.412.0"
   - posthog-js@1.431.2
-  - "@opencode/client@2.0.11"
-  - "@opencode/protocol@2.0.11"
-  - "@opencode/schema@2.0.11"
+  - "@opencode/client@2.0.11 || 2.0.25"
+  - "@opencode/protocol@2.0.11 || 2.0.25"
+  - "@opencode/schema@2.0.11 || 2.0.25"
   - "@shadcn/lint@0.1.5"
   - cn@0.3.2
   - "@expo/dom-webview@58.0.2"

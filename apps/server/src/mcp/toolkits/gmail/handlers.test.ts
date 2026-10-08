@@ -21,6 +21,7 @@ import { OrchestrationEngineService } from "../../../orchestration/Services/Orch
 import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ServerSettingsService } from "../../../serverSettings.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import * as ExperimentalConnections from "../../../integrations/ExperimentalConnections.ts";
 import { GmailToolkitHandlersLive } from "./handlers.ts";
 import { GmailToolkit } from "./tools.ts";
 
@@ -58,6 +59,8 @@ function scenario(
     startDisabled?: boolean;
     enableBeforeCall?: boolean;
     operation?: "send" | "change" | "read";
+    experimental?: boolean;
+    disableExperimentalAfterReview?: boolean;
   } = {},
 ) {
   return Effect.gen(function* () {
@@ -69,8 +72,21 @@ function scenario(
     const changed: { messageId: string; sender: string }[] = [];
     let reads = 0;
     let enabled = !options.startDisabled;
+    // Mutable master-switch backing: flipping it mid-review simulates the
+    // user toggling experimental connections while approval pends.
+    let experimental = options.experimental ?? true;
     let threadRow = thread;
     const dependencies = Layer.mergeAll(
+      Layer.succeed(
+        ExperimentalConnections.ExperimentalConnections,
+        ExperimentalConnections.ExperimentalConnections.of({
+          get: Effect.sync(() => experimental),
+          setEnabled: (next) =>
+            Effect.sync(() => {
+              experimental = next;
+            }),
+        }),
+      ),
       Layer.succeed(GmailSendApproval.GmailSendApproval, approvals),
       Layer.mock(GmailConnection)({
         status: Effect.succeed({ configured: true, connected: true, email: "sender@example.com" }),
@@ -135,6 +151,7 @@ function scenario(
               input.to.push("hidden@example.com");
               input.body = "Changed after review";
               if (options.disableAfterReview) enabled = false;
+              if (options.disableExperimentalAfterReview) experimental = false;
               if (options.stopAfterReview)
                 threadRow = {
                   ...thread,
@@ -286,6 +303,27 @@ describe("Gmail tool email review", () => {
       const stillOff = yield* scenario("accept", { operation: "read", startDisabled: true });
       expect(stillOff.result._tag).toBe("Failure");
       expect(stillOff.reads).toBe(0);
+    }),
+  );
+  it.effect("denies reads and sends while the experimental master switch is off", () =>
+    Effect.gen(function* () {
+      // Stale per-tool opt-in, a connected account, and an issued capability
+      // still cannot pass while the master switch is off.
+      const read = yield* scenario("accept", { operation: "read", experimental: false });
+      expect(read.result._tag).toBe("Failure");
+      expect(read.reads).toBe(0);
+      if (read.result._tag === "Failure")
+        expect(String(read.result.failure)).toContain("Experimental connections are off");
+      const send = yield* scenario("accept", { experimental: false });
+      expect(send.result._tag).toBe("Failure");
+      expect(send.sent).toHaveLength(0);
+    }),
+  );
+  it.effect("does not send when the master switch turns off while approval pends", () =>
+    Effect.gen(function* () {
+      const test = yield* scenario("accept", { disableExperimentalAfterReview: true });
+      expect(test.result._tag).toBe("Failure");
+      expect(test.sent).toHaveLength(0);
     }),
   );
 });

@@ -44,8 +44,12 @@ async function requestJson(
   init: RequestInit,
 ): Promise<unknown> {
   let response: Response;
+  // Native fetch requires its own receiver: invoking it as
+  // `transport.fetchFn(...)` throws "Illegal invocation" in browsers, so the
+  // request never leaves the page. Call it detached instead.
+  const fetchFn = transport.fetchFn;
   try {
-    response = await transport.fetchFn(url, {
+    response = await fetchFn(url, {
       ...init,
       credentials: "include",
       headers: {

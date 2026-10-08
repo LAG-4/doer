@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  buildDocumentPrompt,
   buildFirstTaskPrompt,
   buildFirstTaskTitle,
+  buildSampleReportPrompt,
   SAMPLE_REPORT_FILENAME,
   SAMPLE_REPORT_LABEL,
   SAMPLE_SALES_REPORT,
@@ -34,12 +36,28 @@ describe("sample sales report", () => {
     expect(SAMPLE_SALES_REPORT.toLowerCase()).toContain("management note");
   });
 
-  it("builds a prompt asking for the promised explanation", () => {
-    const prompt = buildFirstTaskPrompt(SAMPLE_REPORT_FILENAME);
+  it("builds the monthly prompt for the sample report", () => {
+    const prompt = buildFirstTaskPrompt({ fileName: SAMPLE_REPORT_FILENAME, isSample: true });
     expect(prompt).toContain(SAMPLE_REPORT_FILENAME);
     expect(prompt).toContain("improved or declined");
     expect(prompt).toContain("most important figures");
     expect(prompt).toMatch(/three useful follow-up/i);
+    expect(buildSampleReportPrompt(SAMPLE_REPORT_FILENAME)).toBe(prompt);
+  });
+
+  it("builds a generic document prompt for arbitrary user files", () => {
+    const prompt = buildFirstTaskPrompt({ fileName: "lease.pdf", isSample: false });
+    expect(prompt).toContain("lease.pdf");
+    expect(prompt).toContain("plain language");
+    expect(prompt).toMatch(/key dates/i);
+    expect(prompt).toMatch(/next steps/i);
+    expect(prompt).not.toContain("since last month");
+    expect(buildDocumentPrompt("lease.pdf")).toBe(prompt);
+  });
+
+  it("titles generic files without calling them reports", () => {
+    expect(buildFirstTaskTitle("lease.pdf")).toContain("lease");
+    expect(buildFirstTaskTitle("lease.pdf").toLowerCase()).not.toContain("report");
   });
 
   it("builds a short non-empty thread title", () => {

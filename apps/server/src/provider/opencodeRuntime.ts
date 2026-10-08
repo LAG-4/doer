@@ -71,9 +71,10 @@ const OPENCODE_EMPTY_CONFIG_CONTENT = "{}";
 
 export const MINIMUM_OPENCODE_VERSION = "1.14.19";
 /**
- * Minimum OpenCode 2 version Doer speaks. v2.0.0 is the first stable v2
- * release; the v2 server API (`/api/*`, `@opencode/client`) is fixed from
- * there. Older 2.0.0-dev/beta builds are rejected like old v1 builds.
+ * Minimum OpenCode 2 version Doer accepts. The supported 2 line is
+ * capability-negotiated at connect time (`server.info` vs legacy health),
+ * so this floor only rejects pre-release/older 2.0.0-dev builds; it is not
+ * an assurance that every newer 2.x speaks an unchanged API.
  */
 export const MINIMUM_OPENCODE_V2_VERSION = "2.0.0";
 
@@ -91,7 +92,23 @@ export type OpenCodeV2Client = ReturnType<typeof OpenCodeV2ClientFactory.make>;
 /** True for versions speaking the v2 API (`/api/*`, `@opencode/client`). */
 export function isOpenCodeV2Version(version: string): boolean {
   const parsed = parseSemver(version);
-  return parsed !== null && parsed.major >= 2;
+  // Exact major only: a future major (3+) may not speak the v2 API, so it
+  // must fail clear via isFutureOpenCodeVersion instead of routing here.
+  return parsed !== null && parsed.major === 2;
+}
+
+/**
+ * True for versions newer than any line Doer speaks (major above 2).
+ * Callers fail clear on these rather than claiming v1 or v2 support for an
+ * unknown API contract.
+ */
+export function isFutureOpenCodeVersion(version: string): boolean {
+  const parsed = parseSemver(version);
+  return parsed !== null && parsed.major > 2;
+}
+
+export function openCodeFutureVersionDetail(version: string): string {
+  return `OpenCode v${version} is newer than this Doer version supports. Update Doer to use it.`;
 }
 const OPENCODE_HEALTH_TIMEOUT = "5 seconds";
 const OPENCODE_NPM_INSTALL_TIMEOUT_MS = 5 * 60_000;
@@ -170,6 +187,19 @@ export class OpenCodeRuntimeError extends Data.TaggedError(OPENCODE_RUNTIME_ERRO
 function encodeJsonStringForDiagnostics(input: unknown): string | undefined {
   const result = encodeUnknownJsonStringExit(input);
   return Exit.isSuccess(result) ? result.value : undefined;
+}
+
+// Same construction as the web status helper: no literal control
+// characters, so no suppression comment is needed. The `?` covers private
+// prefixes such as cursor visibility (`ESC[?25l`).
+const ANSI_SGR_PATTERN = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[A-Za-z]`, "g");
+
+/**
+ * Strip ANSI color codes from CLI output embedded in error details. The raw
+ * escapes otherwise leak into provider status messages shown in the UI.
+ */
+export function stripAnsiForDiagnostics(input: string): string {
+  return input.replace(ANSI_SGR_PATTERN, "");
 }
 
 export function openCodeRuntimeErrorDetail(cause: unknown): string {
@@ -264,6 +294,12 @@ export const verifyOpenCodeServerVersion = Effect.fn("verifyOpenCodeServerVersio
     return yield* new OpenCodeRuntimeError({
       operation: "global.health",
       detail: `OpenCode server returned an invalid version. Doer requires OpenCode v${MINIMUM_OPENCODE_VERSION} or newer.`,
+    });
+  }
+  if (isFutureOpenCodeVersion(health.version)) {
+    return yield* new OpenCodeRuntimeError({
+      operation: "global.health",
+      detail: openCodeFutureVersionDetail(health.version),
     });
   }
   if (compareSemverVersions(health.version, MINIMUM_OPENCODE_VERSION) < 0) {
@@ -365,6 +401,12 @@ const verifyOpenCodeServerVersionV2 = Effect.fn("verifyOpenCodeServerVersionV2")
     return yield* new OpenCodeRuntimeError({
       operation: "server.info",
       detail: `OpenCode server returned an invalid version. Doer requires OpenCode v${MINIMUM_OPENCODE_V2_VERSION} or newer.`,
+    });
+  }
+  if (isFutureOpenCodeVersion(info.version)) {
+    return yield* new OpenCodeRuntimeError({
+      operation: "server.info",
+      detail: openCodeFutureVersionDetail(info.version),
     });
   }
   if (compareSemverVersions(info.version, MINIMUM_OPENCODE_V2_VERSION) < 0) {
@@ -1374,8 +1416,8 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
                 operation: "startOpenCodeServerProcess",
                 detail: [
                   `OpenCode server exited before startup completed (code: ${String(exitCode)}).`,
-                  stdout.trim() ? `stdout:\n${stdout.trim()}` : null,
-                  stderr.trim() ? `stderr:\n${stderr.trim()}` : null,
+                  stdout.trim() ? `stdout:\n${stripAnsiForDiagnostics(stdout.trim())}` : null,
+                  stderr.trim() ? `stderr:\n${stripAnsiForDiagnostics(stderr.trim())}` : null,
                 ]
                   .filter(Boolean)
                   .join("\n\n"),

@@ -7,7 +7,7 @@ import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { isElectron } from "~/env";
 import { isLocalEnvironmentDisabled } from "~/localEnvironment";
 import { desktopWslStateAtom } from "~/state/desktopWslState";
-import { useEnvironments } from "~/state/environments";
+import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
 import { usePrimarySessionState } from "~/environments/primary";
 import { isWslSettingsRowVisible } from "./ConnectionsSettings.logic";
@@ -17,10 +17,25 @@ import {
   filterAvailableSettingsSearchItems,
   getThreadAutoSettlementSearchAvailability,
 } from "./settingsSearch";
+import { useExperimentalConnections } from "./useExperimentalConnections";
 
 export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch = {}) {
   const simple = useClientSettings((settings) => settings.simpleModeEnabled);
   const { environments } = useEnvironments();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  // Host-scoped like the rows themselves: a selected machine reads its own
+  // computer's switch, otherwise the primary one. Never mixes hosts. The
+  // search scope carries a plain string, so resolve it to a known branded
+  // environment id; a stale selection resolves to null (hide connections)
+  // instead of the primary computer, which could expose the wrong host.
+  const machine = scopeSearch.machine;
+  const experimentalEnvironmentId =
+    machine === undefined
+      ? primaryEnvironmentId
+      : (environments.find((environment) => environment.environmentId === machine)?.environmentId ??
+        null);
+  const { enabled: experimentalConnections } =
+    useExperimentalConnections(experimentalEnvironmentId);
   const primarySessionState = usePrimarySessionState();
   const localEnvironmentDisabled = isLocalEnvironmentDisabled();
   const desktopWsl = useEnvironmentQuery(
@@ -62,6 +77,7 @@ export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch
         }),
         hasThreadAutoSettlement:
           getThreadAutoSettlementSearchAvailability(environments).eligibleEnvironmentIds.length > 0,
+        hasExperimentalConnections: experimentalConnections === true,
       }).filter((item) => !simple || !isAdvancedSettingsItem(item)),
     [
       simple,
@@ -69,6 +85,7 @@ export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch
       desktopWsl.data,
       desktopWsl.error,
       environments,
+      experimentalConnections,
       localEnvironmentDisabled,
       scopeSearch.machine,
     ],

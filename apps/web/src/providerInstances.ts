@@ -303,10 +303,32 @@ export function resolveSelectableProviderInstance(
 }
 
 /**
+ * Built-in free defaults eligible for the missing-default fallback in
+ * `resolveDefaultProviderModelSelection` (Big Pickle on the v2 line). Only
+ * these slugs ever trigger that fallback; every other missing slug — custom
+ * `*-free` models included — is preserved or fail-cleared without switching.
+ *
+ * This is a conditional guard in case the built-in free default ever
+ * disappears from the live catalog. It is not a statement that any of these
+ * models is retired: Big Pickle is still present in the live catalog.
+ */
+const FALLBACK_BUILTIN_FREE_OPENCODE_MODELS: ReadonlySet<string> = new Set([
+  "opencode/big-pickle",
+  "big-pickle",
+]);
+
+/**
  * Resolve the model selection persisted for a project or new thread. A valid
- * stored selection is preserved byte-for-byte. Falling back to another
- * instance also resets the model to that instance's own default, avoiding
- * cross-provider instance/model pairs.
+ * stored selection is preserved byte-for-byte, as is any stored selection
+ * whose model may be custom, paid, or from another provider: those are never
+ * silently switched. Falling back to another instance also resets the model
+ * to that instance's own default, avoiding cross-provider instance/model
+ * pairs.
+ *
+ * Narrow exception: the built-in free default below, when missing
+ * from the live catalog, falls back to the instance's available free model
+ * (or fail-clears to null when none remains) so a catalog upgrade cannot
+ * strand onboarding and new tasks on a dead default.
  */
 export function resolveDefaultProviderModelSelection(
   providers: ReadonlyArray<ServerProvider>,
@@ -330,7 +352,25 @@ export function resolveDefaultProviderModelSelection(
         provider.availability !== "unavailable",
     )?.instanceId;
   if (instanceId === undefined) return null;
-  if (selection?.instanceId === instanceId) return selection;
+  if (selection?.instanceId === instanceId) {
+    // The built-in free default (Big Pickle), when missing from the
+    // live catalog, falls back to the instance's available free model — or
+    // fail-clears to null when none remains, so the wizard cannot submit a
+    // dead default as ready. Anything else is preserved byte-for-byte: a
+    // custom `*-free` slug or a paid/dynamic slug missing from the catalog
+    // is never silently switched (options included), and other providers are
+    // untouched. Options reset with the fallback since variants/agents
+    // belong to the old catalog entry.
+    if (
+      exact?.driver === "opencode" &&
+      FALLBACK_BUILTIN_FREE_OPENCODE_MODELS.has(selection.model) &&
+      !exact.models.some((model) => model.slug === selection.model)
+    ) {
+      const free = getDefaultProviderInstanceModel(providers, instanceId);
+      return free && free !== selection.model ? { instanceId, model: free } : null;
+    }
+    return selection;
+  }
   const model = getDefaultProviderInstanceModel(providers, instanceId);
   return model ? { instanceId, model } : null;
 }

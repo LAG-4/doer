@@ -116,10 +116,10 @@ it("records success and offers next steps when the result lands", async () => {
   await act(async () => {});
   expect(readFirstTaskRecord()).toMatchObject({ status: "succeeded" });
   expect(text()).toContain("Your explanation is ready.");
-  expect(button("Ask about this report")).toBeDefined();
+  expect(button("Ask about this file")).toBeDefined();
   expect(button("Try another task")).toBeDefined();
   expect(button("Go to my tasks")).toBeDefined();
-  await click("Ask about this report");
+  await click("Ask about this file");
   expect(mocks.navigate).toHaveBeenCalledWith({
     to: "/$environmentId/$threadId",
     params: { environmentId: "env-1", threadId: "thread-1" },
@@ -154,4 +154,37 @@ it("explains terminal failures and points back at the task", async () => {
     to: "/$environmentId/$threadId",
     params: { environmentId: "env-1", threadId: "thread-1" },
   });
+});
+
+it("offers retry in the same task when the run was stopped", async () => {
+  pendingRecord();
+  mocks.thread = {
+    ...completedThread(),
+    latestTurn: { turnId: "t1", state: "interrupted", assistantMessageId: null },
+    session: { status: "stopped" },
+    messages: [],
+  };
+  mocks.threadStatus = "live";
+  await act(async () => root.render(<FirstTaskFollowUp />));
+  await act(async () => {});
+  expect(text()).toContain("You stopped this task.");
+  expect(readFirstTaskRecord()).toMatchObject({ status: "pending", followUpDismissed: false });
+  await click("Open the task");
+  expect(mocks.navigate).toHaveBeenCalledWith({
+    to: "/$environmentId/$threadId",
+    params: { environmentId: "env-1", threadId: "thread-1" },
+  });
+});
+
+it("treats a settled turn with no visible result as actionable, not waiting", async () => {
+  pendingRecord();
+  mocks.thread = {
+    ...completedThread(),
+    messages: [{ role: "reasoning", text: EXPLANATION, turnId: "t1" }],
+  };
+  mocks.threadStatus = "live";
+  await act(async () => root.render(<FirstTaskFollowUp />));
+  await act(async () => {});
+  expect(text()).toContain("That didn’t work.");
+  expect(readFirstTaskRecord()).toMatchObject({ status: "pending" });
 });

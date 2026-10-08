@@ -19,10 +19,12 @@ function dismissFollowUp() {
 
 /**
  * Watches the onboarding first task after the wizard hands off to the
- * normal conversation. A finished turn with substantive assistant output
- * records first-task success and offers next steps; a terminal failure
- * points back at the task where the existing retry controls live. Skipped
- * onboarding never shows anything here.
+ * normal conversation. A finished turn with substantive visible assistant
+ * output records first-task success and offers next steps; a terminal
+ * failure or an empty completed result points back at the task where the
+ * existing retry controls live; a stopped turn offers the same task for
+ * retry. Skipped onboarding never shows anything here. Only the latest turn
+ * is classified, so a retry in the same task replaces the previous outcome.
  */
 export function FirstTaskFollowUp() {
   const router = useRouter();
@@ -87,6 +89,7 @@ export function FirstTaskFollowUp() {
   }, [router]);
 
   if (record === null || record.followUpDismissed) return null;
+  const fileLabel = record.fileName === "" ? "your file" : `“${record.fileName}”`;
   if (record.status === "succeeded") {
     return (
       <Dialog open onOpenChange={(_, event) => event.cancel()}>
@@ -102,18 +105,47 @@ export function FirstTaskFollowUp() {
               Your explanation is ready.
             </h1>
             <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
-              Doer explained {record.fileName === "" ? "your file" : `“${record.fileName}”`}. It
-              stays in your My Stuff space whenever you want it.
+              Doer explained {fileLabel}. It stays in your My Stuff space whenever you want it.
             </p>
             <div className="mx-auto mt-5 flex max-w-sm flex-col gap-2">
               <Button size="tour" onClick={goToTask} className="w-full">
-                Ask about this report
+                Ask about this file
               </Button>
               <Button variant="outline" size="sm" onClick={tryAnother}>
                 Try another task
               </Button>
               <Button variant="ghost-muted" size="sm" onClick={goToTasks}>
                 Go to my tasks
+              </Button>
+            </div>
+          </div>
+        </DialogPopup>
+      </Dialog>
+    );
+  }
+  if (record.status === "pending" && outcome === "stopped" && thread !== null) {
+    return (
+      <Dialog open onOpenChange={(_, event) => event.cancel()}>
+        <DialogPopup
+          bottomStickOnMobile={false}
+          showCloseButton={false}
+          aria-label="Your first task was stopped"
+          className="max-w-md overflow-hidden"
+          initialFocus={() => true}
+        >
+          <div className="px-6 pt-6 pb-6 text-center sm:px-8" aria-live="polite">
+            <h1 className="text-xl font-semibold tracking-tight text-foreground">
+              You stopped this task.
+            </h1>
+            <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
+              Your task and file are kept — open it to retry from where you left off.
+            </p>
+            <div className="mx-auto mt-5 flex max-w-sm flex-col gap-2">
+              <Button size="tour" onClick={goToTask} className="w-full">
+                Open the task
+              </Button>
+              <Button variant="ghost-muted" size="sm" onClick={dismissFollowUp}>
+                Dismiss
               </Button>
             </div>
           </div>
@@ -136,8 +168,8 @@ export function FirstTaskFollowUp() {
               That didn&rsquo;t work.
             </h1>
             <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
-              Doer couldn&rsquo;t finish explaining your file. Your task and file are kept — open it
-              to see what happened and try again there.
+              Doer couldn&rsquo;t finish explaining {fileLabel}. Your task and file are kept — open
+              it to see what happened and try again there.
             </p>
             <div className="mx-auto mt-5 flex max-w-sm flex-col gap-2">
               <Button size="tour" onClick={goToTask} className="w-full">

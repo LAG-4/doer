@@ -83,6 +83,8 @@ vi.mock("../../state/use-atom-command", () => ({
 }));
 
 vi.mock("../../hooks/useSettings", () => ({
+  useClientSettings: (selector: (settings: { simpleModeEnabled: boolean }) => unknown) =>
+    selector({ simpleModeEnabled: false }),
   useUpdateClientSettings: () => settingsState.updateClientSettings,
   useEnvironmentSettings: (environmentId: EnvironmentId) => {
     settingsState.readEnvironmentIds.push(environmentId);

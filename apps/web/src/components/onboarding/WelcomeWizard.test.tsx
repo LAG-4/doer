@@ -172,10 +172,12 @@ it("runs the sample task end to end through the real submit path", async () => {
     prompt: string;
     file: File;
     modelSelection: { instanceId: string; model: string };
+    runtimeMode: string;
   };
   expect(input.file.name).toBe("sample-sales-report.md");
   expect(input.prompt).toContain("sample-sales-report.md");
   expect(input.prompt).toContain("improved or declined");
+  expect(input.runtimeMode).toBe("approval-required");
   expect(input.modelSelection).toEqual({ instanceId: "opencode", model: "opencode/big-pickle" });
   expect(mocks.complete).toHaveBeenCalledOnce();
   expect(mocks.navigate).toHaveBeenCalledWith({
@@ -354,7 +356,7 @@ it("offers the way back to a pending task instead of duplicating it", async () =
   mocks.threadStatus = "live";
   const onDone = vi.fn();
   await act(async () => root.render(<WelcomeWizard onDone={onDone} />));
-  expect(text()).toContain("Your report task is still running.");
+  expect(text()).toContain("Your first task is still running.");
   await click("View my task");
   expect(mocks.navigate).toHaveBeenCalledWith({
     to: "/$environmentId/$threadId",
@@ -375,4 +377,30 @@ it("skips with Escape", async () => {
   });
   expect(onDone).toHaveBeenCalledOnce();
   expect(mocks.complete).toHaveBeenCalledOnce();
+});
+
+it("starts supervised with a generic prompt for the user's own document", async () => {
+  const onDone = vi.fn();
+  await act(async () => root.render(<WelcomeWizard onDone={onDone} />));
+  // Simulate picking an arbitrary user file through the hidden input.
+  const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+  const picked = new File(["lease terms"], "lease.pdf", { type: "application/pdf" });
+  await act(async () => {
+    Object.defineProperty(input, "files", { configurable: true, value: [picked] });
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(text()).toContain("lease.pdf");
+  expect(button("Explain this file")).toBeDefined();
+  await click("Explain this file");
+  expect(mocks.submit).toHaveBeenCalledOnce();
+  const submitted = mocks.submit.mock.calls[0]![0] as {
+    prompt: string;
+    title: string;
+    runtimeMode: string;
+  };
+  expect(submitted.prompt).toContain("lease.pdf");
+  expect(submitted.prompt).toContain("Key dates");
+  expect(submitted.prompt).not.toContain("since last month");
+  expect(submitted.title.toLowerCase()).not.toContain("report");
+  expect(submitted.runtimeMode).toBe("approval-required");
 });

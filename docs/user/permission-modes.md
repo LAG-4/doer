@@ -5,8 +5,10 @@ composer; it applies to that thread.
 
 Set the default for new threads in **Settings → General → New threads → Permissions**.
 Projects can override the environment default. New threads use this setting rather than the
-mode of the thread you were viewing. The initial default is **Full access**; existing threads
-and modes you choose in a draft keep their permissions.
+mode of the thread you were viewing. New installations start **Supervised**; existing
+installations keep whatever default they already have, and existing threads and modes you choose
+in a draft keep their permissions. You can change the default back to Full access at any time —
+that choice is yours and Doer preserves it on every run.
 
 | Mode                  | Behavior                                                                              |
 | --------------------- | ------------------------------------------------------------------------------------- |
@@ -17,6 +19,14 @@ and modes you choose in a draft keep their permissions.
 
 Approve or reject requests in the conversation to let the agent continue. Permission modes do
 not prevent the agent from asking questions about the task.
+
+## Scheduled runs keep your choice
+
+A reminder runs with its own task's saved mode — Doer never silently switches it to Full access.
+When you create a reminder you choose between working without waiting (full access, best when
+the run must finish while you are away) and waiting for approval each run (supervised). A
+supervised run pauses for approval and shows as needing attention in Reminders. Scheduled runs
+need this computer on with Doer running; a missed run starts once when Doer is back.
 
 ## Provider differences
 

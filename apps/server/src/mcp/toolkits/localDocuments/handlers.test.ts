@@ -17,6 +17,7 @@ import { ProjectionSnapshotQuery } from "../../../orchestration/Services/Project
 import { ServerSettingsService } from "../../../serverSettings.ts";
 import { WorkspaceFileSystem } from "../../../workspace/WorkspaceFileSystem.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import * as ExperimentalConnections from "../../../integrations/ExperimentalConnections.ts";
 import { LocalDocumentsToolkitHandlersLive } from "./handlers.ts";
 import { LocalDocumentsToolkit } from "./tools.ts";
 
@@ -59,6 +60,7 @@ function scenario(
     disableBeforeCall?: boolean;
     stopBeforeCall?: boolean;
     archiveBeforeCall?: boolean;
+    experimental?: boolean;
   } = {},
 ) {
   return Effect.gen(function* () {
@@ -83,6 +85,7 @@ function scenario(
     }
     const workbook = bytesToBase64(yield* Effect.promise(() => createSpreadsheet([["Hello"]])));
     const dependencies = Layer.mergeAll(
+      ExperimentalConnections.layerTest(options.experimental ?? true),
       Layer.mock(ProjectionSnapshotQuery)({
         getThreadShellById: () => Effect.sync(() => Option.some(threadRow)),
         getProjectShellById: () => Effect.sync(() => Option.some(project)),
@@ -156,6 +159,16 @@ describe("local spreadsheet live switch", () => {
   it.effect("denies a credential without the capability", () =>
     Effect.gen(function* () {
       expect((yield* scenario({ capability: false }))._tag).toBe("Failure");
+    }),
+  );
+
+  it.effect("denies calls while the experimental master switch is off", () =>
+    Effect.gen(function* () {
+      // Stale per-tool opt-in plus an issued capability still cannot pass.
+      const denied = yield* scenario({ experimental: false });
+      expect(denied._tag).toBe("Failure");
+      if (denied._tag === "Failure")
+        expect(String(denied.failure)).toContain("Experimental connections are off");
     }),
   );
 });

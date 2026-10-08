@@ -3,8 +3,8 @@
  *
  * The wizard attaches this file to the new user's first real turn, so it is
  * an intentional product asset: keep it small (a few KB), self-contained,
- * and obviously fictional. The prompt built by `buildFirstTaskPrompt` asks
- * Doer to explain what improved or declined, the most important figures,
+ * and obviously fictional. The monthly prompt built by
+ * `buildSampleReportPrompt` asks Doer to explain what improved or declined, the most important figures,
  * and three useful follow-ups — the content below carries exactly the
  * inputs that answer needs (current vs previous month, target performance,
  * product/region differences, a short management note).
@@ -46,11 +46,12 @@ spend that budget fixing the lamp listings' reviews first.
 `;
 
 /**
- * The first-task prompt attached to the report. Plain language, no jargon:
- * it names the file, then asks for exactly the explanation the onboarding
- * promises (improved/declined, key figures, three follow-ups).
+ * The monthly prompt for Doer's fictional sample sales report. Plain
+ * language, no jargon: it names the file, then asks for exactly the
+ * explanation the onboarding promises (improved/declined, key figures,
+ * three follow-ups).
  */
-export function buildFirstTaskPrompt(fileName: string): string {
+export function buildSampleReportPrompt(fileName: string): string {
   return [
     `I've attached "${fileName}". Please explain it in plain language:`,
     "",
@@ -60,11 +61,43 @@ export function buildFirstTaskPrompt(fileName: string): string {
   ].join("\n");
 }
 
-/** Short thread title for the first task. */
+/**
+ * The generic prompt for an arbitrary user document. It never assumes the
+ * file is a sales report: plain-language summary, key dates, important
+ * points, and next steps grounded in the document itself.
+ */
+export function buildDocumentPrompt(fileName: string): string {
+  return [
+    `I've attached "${fileName}". Please explain it in plain language:`,
+    "",
+    "1. A short summary of what this document says.",
+    "2. Key dates, deadlines, or time-sensitive points.",
+    "3. The most important points I should know.",
+    "4. Suggested next steps based only on what the document actually says. Say what is unclear or missing instead of guessing.",
+  ].join("\n");
+}
+
+export interface FirstTaskPromptInput {
+  readonly fileName: string;
+  /** True for Doer's fictional sample report; false for the user's own file. */
+  readonly isSample: boolean;
+}
+
+/**
+ * Picks the sample monthly prompt for Doer's sample report and the generic
+ * document prompt for everything else.
+ */
+export function buildFirstTaskPrompt(input: FirstTaskPromptInput): string {
+  return input.isSample
+    ? buildSampleReportPrompt(input.fileName)
+    : buildDocumentPrompt(input.fileName);
+}
+
+/** Short thread title for the first task. Never calls every file a report. */
 export function buildFirstTaskTitle(fileName: string): string {
   const base = fileName
     .replace(/\.[^.]+$/, "")
     .replace(/[-_]+/g, " ")
     .trim();
-  return `Explain ${base.length > 0 ? base : "my report"}`.slice(0, 80);
+  return `Explain ${base.length > 0 ? base : "my document"}`.slice(0, 80);
 }

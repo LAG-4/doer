@@ -23,11 +23,13 @@ import {
 } from "../providerSnapshot.ts";
 import {
   createOpenCodeV2Client,
+  isFutureOpenCodeVersion,
   isOpenCodeV2Version,
   loadOpenCodeV2Inventory,
   MINIMUM_OPENCODE_V2_VERSION,
   MINIMUM_OPENCODE_VERSION,
   OpenCodeRuntime,
+  openCodeFutureVersionDetail,
   openCodeRuntimeErrorDetail,
   type OpenCodeApiVersion,
   type OpenCodeInventory,
@@ -540,6 +542,22 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
     }
     // The v2 line (`@opencode/cli`, `opencode v2.x.y`) speaks a different
     // server API and is gated separately; v1 keeps its existing minimum.
+    // Future majors fail clear here so an unknown API is never claimed.
+    if (isFutureOpenCodeVersion(version)) {
+      return buildServerProvider({
+        presentation: OPENCODE_PRESENTATION,
+        enabled: openCodeSettings.enabled,
+        checkedAt,
+        models: providerModelsFromSettings([], customModels, DEFAULT_OPENCODE_MODEL_CAPABILITIES),
+        probe: {
+          installed: true,
+          version,
+          status: "error",
+          auth: { status: "unknown" },
+          message: openCodeFutureVersionDetail(version),
+        },
+      });
+    }
     const minimumForLine = isOpenCodeV2Version(version)
       ? MINIMUM_OPENCODE_V2_VERSION
       : MINIMUM_OPENCODE_VERSION;

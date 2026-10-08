@@ -47,6 +47,7 @@ import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
 import { toastManager } from "./ui/toast";
 import { ProviderModelPicker } from "./chat/ProviderModelPicker";
+import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
 import { ScheduledDatePicker } from "./ScheduledDatePicker";
 
 interface ScheduledTaskEditorState {
@@ -315,6 +316,10 @@ function ScheduledTaskEditorForm(props: {
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [previewFirst, setPreviewFirst] = useState(true);
+  // Explicit opt-in for unattended full access on the reminder's own task:
+  // starts supervised; the user must actively choose full access. The server
+  // preserves this choice on every run and never escalates it.
+  const [unattended, setUnattended] = useState(false);
   const [setupStarted, setSetupStarted] = useState(false);
   const setup = useRef<{
     threadId: ReturnType<typeof newThreadId>;
@@ -455,7 +460,7 @@ function ScheduledTaskEditorForm(props: {
             projectId: selectedProject.id,
             title: trimmedTitle,
             modelSelection: createModelSelection(effectiveInstanceId, effectiveModel),
-            runtimeMode: "full-access",
+            runtimeMode: unattended ? "full-access" : "approval-required",
             interactionMode: "default",
             branch: null,
             worktreePath: null,
@@ -570,7 +575,9 @@ function ScheduledTaskEditorForm(props: {
         <DialogDescription>
           {editingAutomation?.dedicatedThread === false
             ? "Runs in its existing task with that task's permissions. It may wait for your approval."
-            : "Runs in a separate task with permission to work without waiting for you. Results stay in that task."}
+            : editing !== null
+              ? "Runs in a separate task. It uses that task's saved permissions. To change permissions, update the task itself."
+              : "Runs in a separate task. Choose below whether it works without waiting for you or pauses for approval each run."}
         </DialogDescription>
       </DialogHeader>
       <fieldset disabled={saving || setupStarted} className="flex flex-col gap-4 px-4 py-2">
@@ -597,6 +604,52 @@ function ScheduledTaskEditorForm(props: {
             without this conversation.
           </p>
         </div>
+        {editing === null ? (
+          <div className="flex flex-col gap-1.5">
+            <Label id="scheduled-task-permissions-label">Permissions for each run</Label>
+            <div className="rounded-lg border border-input p-1">
+              <RadioGroup
+                aria-labelledby="scheduled-task-permissions-label"
+                value={unattended ? "unattended" : "supervised"}
+                onValueChange={(value) => setUnattended(value === "unattended")}
+              >
+                {(
+                  [
+                    {
+                      value: "supervised",
+                      label: "Wait for my approval each run",
+                      hint: "Supervised: the run pauses for approval and shows as needing attention in Reminders.",
+                    },
+                    {
+                      value: "unattended",
+                      label: "Work without waiting for me",
+                      hint: "Full access on its own task. Only for reminders that must finish while you are away.",
+                    },
+                  ] as const
+                ).map((option) => {
+                  const selected = (unattended ? "unattended" : "supervised") === option.value;
+                  return (
+                    <label
+                      key={option.value}
+                      className={cn(
+                        "flex cursor-pointer gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent",
+                        selected ? "bg-accent font-medium" : "text-muted-foreground",
+                      )}
+                    >
+                      <RadioGroupItem value={option.value} className="mt-1" />
+                      <span>
+                        {option.label}
+                        <span className="block text-xs font-normal text-muted-foreground">
+                          {option.hint}
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </RadioGroup>
+            </div>
+          </div>
+        ) : null}
         <div className="flex flex-col gap-1.5">
           <Label id="scheduled-task-repeats-label">Repeats</Label>
           <div

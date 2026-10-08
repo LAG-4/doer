@@ -84,6 +84,7 @@ import {
 import { useScopedModelDisabledReason } from "./useScopedModelAvailability";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
+import { HelpSupportSection } from "./HelpSupportSection";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import {
@@ -3324,6 +3325,13 @@ export function GeneralSettingsPanel() {
             description="Current version of the application."
           />
         )}
+        <HelpSupportSection
+          connection={
+            hasServerTargets
+              ? `Connected (${connectedEnvironments.length} computer${connectedEnvironments.length === 1 ? "" : "s"})`
+              : "Not connected"
+          }
+        />
       </SettingsSection>
       <details>
         <summary className="cursor-pointer text-sm font-medium">Advanced troubleshooting</summary>

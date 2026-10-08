@@ -45,9 +45,9 @@ export function FoldedSettingsSection({
               data-settings-scroll-target
               className="flex min-h-7 items-start justify-between gap-4 px-3 sm:px-4"
             >
-              <h2>
-                <CollapsibleTrigger className="flex min-h-7 items-center gap-2 rounded-md text-sm font-normal text-foreground/70 outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                  {title}
+              <h2 className="min-w-0 max-w-full flex-1">
+                <CollapsibleTrigger className="flex min-h-7 w-full min-w-0 max-w-full items-center gap-2 rounded-md text-left text-sm font-normal text-foreground/70 outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <span className="min-w-0 break-words whitespace-normal">{title}</span>
                   <ChevronRightIcon
                     aria-hidden
                     className={cn(
@@ -80,7 +80,9 @@ export function FoldedSettingsSection({
                 open && "rotate-90",
               )}
             />
-            <span className="shrink-0 text-sm font-medium">{title}</span>
+            <span className="min-w-0 break-words whitespace-normal text-sm font-medium">
+              {title}
+            </span>
             {summary ? (
               <span className="min-w-0 truncate text-xs text-muted-foreground">{summary}</span>
             ) : null}

@@ -1,6 +1,6 @@
 ---
 import { getImage } from "astro:assets";
-import desktopScreenshot from "../assets/app-desktop.webp";
+import desktopScreenshot from "../assets/doer-research-example.png";
 import Layout from "../layouts/Layout.astro";
 
 const screenshot = await getImage({
@@ -71,13 +71,14 @@ const screenshot = await getImage({
                 src={desktopScreenshot.src}
                 srcset={`${screenshot.srcSet.attribute}, ${desktopScreenshot.src} ${desktopScreenshot.width}w`}
                 sizes="(max-width: 960px) min(864px, calc(100vw - 20px)), min(1180px, calc(100vw - 60px))"
-                alt="Doer with a task open beside its work"
+                alt="Doer showing an example research session: deal-ranking bar charts beside its built-in browser on a shopping deals page"
                 width={desktopScreenshot.width}
                 height={desktopScreenshot.height}
                 loading="eager"
                 decoding="async"
               />
             </picture>
+            <figcaption class="hero-screenshot-caption">Example research session. Offers and prices shown are examples, not current deals.</figcaption>
           </figure>
         </div>
       </div>
@@ -91,19 +92,19 @@ const screenshot = await getImage({
         <div class="eyebrow">What to hand over</div>
         <h2>What can you hand to Doer?</h2>
         <p>
-          If it happens on your computer, Doer can probably take it from here.
-          Describe the outcome. It handles the steps.
+          If it happens on your computer, Doer can often help.
+          Describe the outcome and review the work before it runs.
         </p>
       </div>
 
       <div class="use-grid">
         <div class="tile use-card">
           <div class="use-title">Write it for you</div>
-          <p>Drafts, emails, reports and rewrites. Paste a rough idea, get back finished words.</p>
+          <p>Drafts, emails, reports and rewrites. Paste a rough idea, get back a draft to review before you send or share it.</p>
         </div>
         <div class="tile use-card">
           <div class="use-title">Look it up, properly</div>
-          <p>Research with citations you can check. No confident nonsense, no missing sources.</p>
+          <p>Research with citations you can check. AI answers can still be wrong, so verify important details in the linked sources.</p>
         </div>
         <div class="tile use-card">
           <div class="use-title">Tidy your files</div>
@@ -111,15 +112,15 @@ const screenshot = await getImage({
         </div>
         <div class="tile use-card">
           <div class="use-title">Plan before it acts</div>
-          <p>For bigger jobs Doer proposes a plan first. You approve it, then it gets to work.</p>
+          <p>For bigger jobs Doer can propose a plan first. You approve it before it gets to work.</p>
         </div>
         <div class="tile use-card">
-          <div class="use-title">Apply to jobs on autopilot</div>
-          <p>Tell Doer what roles fit you. It drives LinkedIn in its built-in browser and keeps applying to matching jobs.</p>
+          <div class="use-title">Draft job applications, with you in charge</div>
+          <p>Tell Doer what roles fit you. It drafts tailored applications for your review. You check every detail and submit them yourself.</p>
         </div>
         <div class="tile use-card">
-          <div class="use-title">Handle the boring admin</div>
-          <p>Forms, bookings, comparisons, follow-ups: the repetitive clicking you never want to do again.</p>
+          <div class="use-title">Prep meetings and make usable files</div>
+          <p>Meeting briefs, document explanations, forms and comparisons. Plus spreadsheets and slides you can download and review before sharing.</p>
         </div>
       </div>
     </div>
@@ -133,10 +134,12 @@ const screenshot = await getImage({
         <h2>Start free. Plug in paid when you need it.</h2>
         <p>
           Doer starts you off free with OpenCode's free models, genuinely free,
-          no card, no trial clock. Hit the limits or need heavier use? Bring a
-          subscription you already have (OpenCode, Codex, Claude Code,
-          Antigravity, Cursor, or Grok) and use it right inside Doer.
-          Your subscriptions stay yours.
+          no card, no trial clock. Free models are shared, so they can slow
+          down or run out at busy times. Need heavier use? Optionally connect
+          AI access you already have and use it right inside Doer.
+          Your subscriptions stay yours. Your app files and History stay on
+          your computer. File or mail contents used in a task may be sent to
+          the AI service you choose.
         </p>
       </div>
 
@@ -145,35 +148,35 @@ const screenshot = await getImage({
           <div class="harness-mark"><img src="/harnesses/opencode-dark.svg" alt="" /></div>
           <div class="harness-meta">
             <div class="harness-name">OpenCode</div>
-            <div class="harness-tag">free models · opencode auth</div>
+            <div class="harness-tag">free models · no sign-in</div>
           </div>
         </div>
         <div class="harness">
           <div class="harness-mark"><img src="/harnesses/claude-ai-icon.svg" alt="" /></div>
           <div class="harness-meta">
             <div class="harness-name">Claude Code</div>
-            <div class="harness-tag">claude auth login</div>
+            <div class="harness-tag">your subscription</div>
           </div>
         </div>
         <div class="harness">
           <div class="harness-mark"><img src="/harnesses/openai_dark.svg" alt="" /></div>
           <div class="harness-meta">
             <div class="harness-name">Codex CLI</div>
-            <div class="harness-tag">codex login</div>
+            <div class="harness-tag">your subscription</div>
           </div>
         </div>
         <div class="harness">
           <div class="harness-mark"><img src="/harnesses/cursor_light.svg" alt="" /></div>
           <div class="harness-meta">
             <div class="harness-name">Cursor</div>
-            <div class="harness-tag">cursor-agent</div>
+            <div class="harness-tag">your subscription</div>
           </div>
         </div>
         <div class="harness">
           <div class="harness-mark"><img src="/harnesses/grok-dark.svg" alt="" /></div>
           <div class="harness-meta">
             <div class="harness-name">Grok CLI</div>
-            <div class="harness-tag">grok login</div>
+            <div class="harness-tag">your subscription</div>
           </div>
         </div>
         <div class="harness">
@@ -186,7 +189,7 @@ const screenshot = await getImage({
       </div>
 
       <div class="harness-footer">
-        <div class="harness-footer-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg> No keys resold. No quota caps.</div>
+        <div class="harness-footer-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg> Free models have usage limits.</div>
         <div class="harness-footer-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg> Your subscriptions stay yours.</div>
         <div class="harness-footer-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg> Switch helpers anytime.</div>
       </div>
@@ -199,21 +202,21 @@ const screenshot = await getImage({
       <div
         class="git-visual"
         role="img"
-        aria-label="Illustration of Doer's History: every turn is kept as a restore point you can go back to."
+        aria-label="Illustration of Doer's History: saved file changes you can review and restore."
       >
         <div class="pr-card tile">
           <div class="pr-head">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
             <span class="pr-title">History</span>
-            <span class="pr-status">12 restore points</span>
+            <span class="pr-status">saved file versions</span>
           </div>
           <div class="pr-meta">
-            <span>Doer keeps every turn, so you never lose work.</span>
+            <span>History keeps saved file changes, when available.</span>
           </div>
           <div class="pr-files">
             <div><code>Holiday plan draft</code> <span>2:14 PM · current</span></div>
             <div><code>Holiday plan draft</code> <span>1:58 PM · restore</span></div>
-            <div><code>Inbox triage</code> <span>11:02 AM · restore</span></div>
+            <div><code>Meeting notes</code> <span>11:02 AM · restore</span></div>
           </div>
           <div class="pr-foot">
             <span class="btn btn-ghost" style="font-size:12px;padding:6px 10px">Compare</span>
@@ -239,18 +242,19 @@ const screenshot = await getImage({
 
       <div class="git-copy">
         <div class="section-head" style="margin-bottom:0">
-          <div class="eyebrow">Never lose work</div>
+          <div class="eyebrow">File history</div>
           <h2>Changed your mind? Go back.</h2>
           <p>
-            Doer saves a restore point every turn. Didn't like where something
-            went? Jump back to any earlier version in one click. No expertise
-            required.
+            When available, History keeps saved file changes from your tasks.
+            Didn't like where something went? Review a saved version and
+            restore it. Restoring files can't reverse sent emails or other
+            external actions.
           </p>
           <ul class="checklist" style="margin-top:24px">
-            <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg> Every turn kept as History</li>
-            <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg> One click to undo anything</li>
+            <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg> Saved file changes kept as History</li>
+            <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg> Review versions before restoring</li>
             <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg> Compare versions side by side</li>
-            <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg> Your files, your versions, always</li>
+            <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg> Sent emails and external actions can't be undone</li>
           </ul>
         </div>
       </div>
@@ -657,8 +661,7 @@ const screenshot = await getImage({
 
   .hero-screenshot-frame {
     position: relative;
-    overflow: hidden;
-    aspect-ratio: 2940 / 1712;
+    margin: 0;
     border-radius: 14px;
     background: #0a0a0c;
     box-shadow: 0 28px 64px -28px rgba(0, 0, 0, 0.75);
@@ -667,7 +670,9 @@ const screenshot = await getImage({
   .hero-screenshot-frame picture {
     display: block;
     width: 100%;
-    height: 100%;
+    aspect-ratio: 3172 / 1866;
+    overflow: hidden;
+    border-radius: 14px;
   }
 
   .hero-screenshot-frame img {
@@ -676,6 +681,14 @@ const screenshot = await getImage({
     margin: -2px;
     object-fit: cover;
     object-position: center top;
+  }
+
+  .hero-screenshot-caption {
+    padding: 10px 16px 12px;
+    color: var(--fg-dim);
+    font-size: 12px;
+    text-align: center;
+    letter-spacing: -0.005em;
   }
 
   /* ── Harnesses ─────────────────────────────────────────── */

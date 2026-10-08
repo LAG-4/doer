@@ -4,9 +4,9 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   isOpenCodeFreeModelSlug,
   DEFAULT_PROVIDER_INTERACTION_MODE,
-  DEFAULT_RUNTIME_MODE,
   DEFAULT_SERVER_SETTINGS,
   type EnvironmentId,
+  type RuntimeMode,
   type ScopedThreadRef,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -54,6 +54,13 @@ import { Spinner } from "../ui/spinner";
 import { toastManager } from "../ui/toast";
 
 const PRIMARY_BUTTON_ID = "doer-first-task-primary";
+
+/**
+ * Onboarding always starts supervised: every edit, send, or file change waits
+ * for the new user's approval. Stored per-task modes and deliberate later
+ * choices are untouched; only this first task pins the explicit default.
+ */
+const FIRST_TASK_RUNTIME_MODE: RuntimeMode = "approval-required";
 
 /**
  * First-run experience: a short first task instead of a slide tour. A new
@@ -247,14 +254,15 @@ export function WelcomeWizard({ onDone }: { readonly onDone: () => void }) {
       }
       setSubmitPhase("task");
       const currentFile = file;
+      const currentIsSample = isSample;
       const threadRef = await submitFirstTask({
         environmentId: projectRef.environmentId,
         projectId: projectRef.projectId,
         title: buildFirstTaskTitle(currentFile.name),
-        prompt: buildFirstTaskPrompt(currentFile.name),
+        prompt: buildFirstTaskPrompt({ fileName: currentFile.name, isSample: currentIsSample }),
         file: currentFile,
         modelSelection,
-        runtimeMode: DEFAULT_RUNTIME_MODE,
+        runtimeMode: FIRST_TASK_RUNTIME_MODE,
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
       });
       writeFirstTaskRecord({
@@ -283,6 +291,7 @@ export function WelcomeWizard({ onDone }: { readonly onDone: () => void }) {
     }
   }, [
     file,
+    isSample,
     providerReady,
     modelSelection,
     inboxRef,
@@ -442,7 +451,7 @@ function ChooseScreen({
       </p>
       {showResume ? (
         <div className="mx-auto mt-4 max-w-md rounded-2xl border border-border/70 bg-card/80 p-3 text-left">
-          <p className="text-sm font-medium text-foreground">Your report task is still running.</p>
+          <p className="text-sm font-medium text-foreground">Your first task is still running.</p>
           <Button
             variant="outline"
             size="sm"
@@ -614,7 +623,11 @@ function ReviewScreen({
       ) : null}
       <ul className="mx-auto mt-4 max-w-md space-y-2 text-left text-sm leading-relaxed text-muted-foreground">
         <li>Doer reads your file and explains it in plain language.</li>
-        <li>You get what improved or declined, the key figures, and three follow-ups.</li>
+        <li>
+          {isSample
+            ? "You get what improved or declined, the key figures, and three follow-ups."
+            : "You get a short summary, key dates, the important points, and next steps based on the file."}
+        </li>
         <li>The explanation lands as a task in your My Stuff space, kept for later.</li>
       </ul>
       <div className="mx-auto mt-4 max-w-md rounded-2xl border border-border/70 bg-card/80 p-3 text-left">
@@ -663,8 +676,10 @@ function ReviewScreen({
               <Spinner className="size-4" />
               {submitPhase === "space" ? "Setting up your space…" : "Starting your task…"}
             </>
-          ) : (
+          ) : isSample ? (
             "Explain this report"
+          ) : (
+            "Explain this file"
           )}
         </Button>
         <div className="mt-1 flex min-h-9 items-center justify-center gap-1">
@@ -751,7 +766,7 @@ function SetupStatus({
       <div className="text-sm">
         <p className="text-muted-foreground">
           {providerDisplayName ?? "The AI service"} needs a quick sign-in before it can explain your
-          report.
+          file.
         </p>
         <div className="mt-2 flex flex-wrap gap-2">
           <Button variant="outline" size="sm" disabled={disabled} onClick={onOpenProviderSettings}>

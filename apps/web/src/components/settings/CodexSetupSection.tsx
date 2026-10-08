@@ -1047,7 +1047,7 @@ export function CodexManagedRuntimeFields({
     <>
       <SettingsRow
         title="Binary path"
-        description="Selected by T3 Code."
+        description="Selected by Doer."
         control={
           <div className="w-full sm:w-80">
             <Input

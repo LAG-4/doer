@@ -33,6 +33,7 @@ import { isDesktopLocalConnectionTarget } from "../../connection/desktopLocal";
 import { isElectron } from "../../env";
 import { usePrimarySessionState } from "../../environments/primary";
 import {
+  useClientSettings,
   useEnvironmentSettings,
   useUpdateClientSettings,
   useUpdateEnvironmentSettings,
@@ -106,6 +107,7 @@ import {
   useRelativeTimeTick,
   useSettingsSearchTargetId,
 } from "./settingsLayout";
+import { FoldedSettingsSection } from "./FoldedSettingsSection";
 import {
   buildProviderEnvironmentOptions,
   classifyProviderEnvironmentAccess,
@@ -599,6 +601,10 @@ export function EnvironmentProviderSettings({
   // page always edits exactly the environment it displays.
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
   const updateClientSettings = useUpdateClientSettings();
+  // Simple mode speaks of AI services, not providers; Advanced keeps the
+  // provider terms.
+  const simpleMode = useClientSettings((settings) => settings.simpleModeEnabled);
+  const providersSearchSetting = searchableSetting("providers");
   const serverProviders =
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
   const refreshServerProviders = useAtomCommand(serverEnvironment.refreshProviders, {
@@ -1069,10 +1075,81 @@ export function EnvironmentProviderSettings({
     );
   };
 
+  const healthCheckRow = (
+    <SettingsRow
+      id={searchableSetting("provider-health-check-interval").id}
+      title={
+        <span className="inline-flex items-center gap-1.5">
+          {searchableSetting("provider-health-check-interval").title}
+          <PolicyTooltip>
+            This interval is configured here, then the shared Background activity policy decides
+            whether provider probes may run when the timer fires. Custom intervals appear as
+            Advanced in General settings.
+          </PolicyTooltip>
+        </span>
+      }
+      description="Refresh provider status, versions, and models in the background. Set to 0 to disable."
+      resetAction={
+        providerHealthRefreshIntervalSeconds !== defaultProviderHealthRefreshIntervalSeconds ? (
+          <span inert={readOnly} className={readOnly ? "opacity-50" : undefined}>
+            <SettingResetButton
+              label="provider health check interval"
+              onClick={() =>
+                updateSettings(
+                  backgroundActivityOverrideSettings(
+                    settings.backgroundActivity,
+                    resolvedBackgroundActivity,
+                    { providerHealthRefreshInterval: undefined },
+                  ),
+                )
+              }
+            />
+          </span>
+        ) : null
+      }
+      control={
+        <div
+          inert={readOnly}
+          aria-disabled={readOnly || undefined}
+          className={cn("flex shrink-0 items-center gap-2", readOnly && "opacity-50 select-none")}
+        >
+          <NumberField
+            value={providerHealthRefreshIntervalSeconds}
+            min={0}
+            step={PROVIDER_HEALTH_INTERVAL_STEP_SECONDS}
+            size="sm"
+            className="w-32"
+            onValueChange={(value) =>
+              updateSettings(
+                backgroundActivityOverrideSettings(
+                  settings.backgroundActivity,
+                  resolvedBackgroundActivity,
+                  {
+                    providerHealthRefreshInterval: Duration.seconds(
+                      normalizeIntervalSeconds(value),
+                    ),
+                  },
+                ),
+              )
+            }
+          >
+            <NumberFieldGroup>
+              <NumberFieldDecrement aria-label="Decrease provider health check interval" />
+              <NumberFieldInput aria-label="Provider health check interval in seconds" />
+              <NumberFieldIncrement aria-label="Increase provider health check interval" />
+            </NumberFieldGroup>
+          </NumberField>
+          <span className="text-xs text-muted-foreground">seconds</span>
+        </div>
+      }
+    />
+  );
+
   return (
     <>
       <SettingsSection
-        {...searchableSetting("providers")}
+        {...providersSearchSetting}
+        title={simpleMode ? "AI services" : providersSearchSetting.title}
         variant="plain"
         headerAction={
           <div className="flex min-w-0 items-center gap-2">
@@ -1094,10 +1171,16 @@ export function EnvironmentProviderSettings({
                         onClick={() => void refreshProviders()}
                       >
                         <RefreshIcon refreshing={isRefreshingProviders} />
-                        <span className="sr-only">Refresh provider status</span>
+                        <span className="sr-only">
+                          {simpleMode ? "Check AI services" : "Refresh provider status"}
+                        </span>
                         <span className="hidden min-w-0 truncate sm:inline">
                           {isRefreshingProviders ? (
-                            "Refreshing providers"
+                            simpleMode ? (
+                              "Checking AI services…"
+                            ) : (
+                              "Refreshing providers"
+                            )
                           ) : (
                             <ProviderLastChecked lastCheckedAt={lastCheckedAt} />
                           )}
@@ -1105,7 +1188,9 @@ export function EnvironmentProviderSettings({
                       </Button>
                     }
                   />
-                  <TooltipPopup side="top">Refresh provider status</TooltipPopup>
+                  <TooltipPopup side="top">
+                    {simpleMode ? "Check AI services" : "Refresh provider status"}
+                  </TooltipPopup>
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger
@@ -1114,13 +1199,15 @@ export function EnvironmentProviderSettings({
                         size="icon-xs"
                         variant="ghost-muted"
                         onClick={() => setIsAddInstanceDialogOpen(true)}
-                        aria-label="Add provider"
+                        aria-label={simpleMode ? "Add AI service" : "Add provider"}
                       >
                         <PlusIcon />
                       </Button>
                     }
                   />
-                  <TooltipPopup side="top">Add provider</TooltipPopup>
+                  <TooltipPopup side="top">
+                    {simpleMode ? "Add AI service" : "Add provider"}
+                  </TooltipPopup>
                 </Tooltip>
               </>
             )}
@@ -1166,94 +1253,52 @@ export function EnvironmentProviderSettings({
               <div className="p-6 text-sm text-muted-foreground">
                 {targetInstanceMissing
                   ? "This provider instance is no longer available on this device."
-                  : "No providers configured."}
+                  : simpleMode
+                    ? "No AI services set up yet."
+                    : "No providers configured."}
               </div>
             )}
           </div>
         </SettingsGroup>
       </SettingsSection>
 
-      <UsageProviderSettings
-        key={environmentId}
-        environmentId={environmentId}
-        environmentLabel={environmentLabel}
-        sources={settings.usageLimitSources}
-        cursorKeychainUsageEnabled={settings.cursorKeychainUsageEnabled}
-        readOnly={readOnly}
-      />
-
-      <SettingsSection title="Advanced">
-        <SettingsRow
-          id={searchableSetting("provider-health-check-interval").id}
-          title={
-            <span className="inline-flex items-center gap-1.5">
-              {searchableSetting("provider-health-check-interval").title}
-              <PolicyTooltip>
-                This interval is configured here, then the shared Background activity policy decides
-                whether provider probes may run when the timer fires. Custom intervals appear as
-                Advanced in General settings.
-              </PolicyTooltip>
-            </span>
-          }
-          description="Refresh provider status, versions, and models in the background. Set to 0 to disable."
-          resetAction={
-            providerHealthRefreshIntervalSeconds !== defaultProviderHealthRefreshIntervalSeconds ? (
-              <span inert={readOnly} className={readOnly ? "opacity-50" : undefined}>
-                <SettingResetButton
-                  label="provider health check interval"
-                  onClick={() =>
-                    updateSettings(
-                      backgroundActivityOverrideSettings(
-                        settings.backgroundActivity,
-                        resolvedBackgroundActivity,
-                        { providerHealthRefreshInterval: undefined },
-                      ),
-                    )
-                  }
-                />
-              </span>
-            ) : null
-          }
-          control={
-            <div
-              inert={readOnly}
-              aria-disabled={readOnly || undefined}
-              className={cn(
-                "flex shrink-0 items-center gap-2",
-                readOnly && "opacity-50 select-none",
-              )}
-            >
-              <NumberField
-                value={providerHealthRefreshIntervalSeconds}
-                min={0}
-                step={PROVIDER_HEALTH_INTERVAL_STEP_SECONDS}
-                size="sm"
-                className="w-32"
-                onValueChange={(value) =>
-                  updateSettings(
-                    backgroundActivityOverrideSettings(
-                      settings.backgroundActivity,
-                      resolvedBackgroundActivity,
-                      {
-                        providerHealthRefreshInterval: Duration.seconds(
-                          normalizeIntervalSeconds(value),
-                        ),
-                      },
-                    ),
-                  )
-                }
-              >
-                <NumberFieldGroup>
-                  <NumberFieldDecrement aria-label="Decrease provider health check interval" />
-                  <NumberFieldInput aria-label="Provider health check interval in seconds" />
-                  <NumberFieldIncrement aria-label="Increase provider health check interval" />
-                </NumberFieldGroup>
-              </NumberField>
-              <span className="text-xs text-muted-foreground">seconds</span>
-            </div>
-          }
+      {simpleMode ? (
+        <FoldedSettingsSection
+          id="usage-providers-advanced"
+          title="Advanced usage settings"
+          headerPlacement="outside"
+        >
+          <UsageProviderSettings
+            key={environmentId}
+            environmentId={environmentId}
+            environmentLabel={environmentLabel}
+            sources={settings.usageLimitSources}
+            cursorKeychainUsageEnabled={settings.cursorKeychainUsageEnabled}
+            readOnly={readOnly}
+          />
+        </FoldedSettingsSection>
+      ) : (
+        <UsageProviderSettings
+          key={environmentId}
+          environmentId={environmentId}
+          environmentLabel={environmentLabel}
+          sources={settings.usageLimitSources}
+          cursorKeychainUsageEnabled={settings.cursorKeychainUsageEnabled}
+          readOnly={readOnly}
         />
-      </SettingsSection>
+      )}
+
+      {simpleMode ? (
+        <FoldedSettingsSection
+          id="provider-health-advanced"
+          title="Advanced"
+          headerPlacement="outside"
+        >
+          {healthCheckRow}
+        </FoldedSettingsSection>
+      ) : (
+        <SettingsSection title="Advanced">{healthCheckRow}</SettingsSection>
+      )}
 
       {isAddInstanceDialogOpen ? (
         <AddProviderInstanceDialog

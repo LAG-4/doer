@@ -13,11 +13,27 @@ const io = vi.hoisted(() => ({
   run: vi.fn(),
   upload: vi.fn(),
   toast: vi.fn(),
+  startUpload: vi.fn(),
+  retryUpload: vi.fn(),
+  readUpload: vi.fn(
+    ():
+      | { readonly status: string; readonly environmentId: string; readonly reason: string }
+      | undefined => undefined,
+  ),
+  uploadedAttachments: vi.fn((): ReadonlyArray<Record<string, unknown>> | null => [
+    { type: "image", id: "uploaded", name: "a.png", mimeType: "image/png", sizeBytes: 4 },
+  ]),
   thread: null as unknown,
   shell: { runtimeMode: "full-access", interactionMode: "default" } as Record<string, unknown>,
 }));
 const config = {
-  environment: { capabilities: { attachmentUploads: true, inlineMessageContext: true } },
+  environment: {
+    capabilities: {
+      attachmentUploads: true,
+      inlineMessageContext: true,
+      fileAttachments: { maxUploadBytes: 50 * 1024 * 1024 },
+    },
+  },
 };
 vi.mock("@t3tools/client-runtime/state/runtime", async (load) => ({
   ...(await load<typeof import("@t3tools/client-runtime/state/runtime")>()),
@@ -47,11 +63,11 @@ vi.mock("../state/entities", () => ({
 }));
 vi.mock("./ui/toast", () => ({ toastManager: { add: (...args: unknown[]) => io.toast(...args) } }));
 vi.mock("../lib/attachmentUploadQueue", () => ({
-  startAttachmentUpload: vi.fn(),
-  awaitAttachmentUploads: (...args: unknown[]) => io.upload(...args),
-  getUploadedAttachments: () => [
-    { type: "image", id: "uploaded", name: "a.png", mimeType: "image/png", sizeBytes: 4 },
-  ],
+  startAttachmentUpload: io.startUpload,
+  retryAttachmentUpload: io.retryUpload,
+  readAttachmentUpload: io.readUpload,
+  awaitAttachmentUploads: io.upload,
+  getUploadedAttachments: io.uploadedAttachments,
   releaseDraftAttachments: vi.fn(),
 }));
 
@@ -89,6 +105,14 @@ beforeEach(() => {
   io.run.mockReset().mockResolvedValue({ _tag: "Success", value: undefined });
   io.upload.mockReset().mockResolvedValue(undefined);
   io.toast.mockReset();
+  io.startUpload.mockReset();
+  io.retryUpload.mockReset();
+  io.readUpload.mockReset().mockReturnValue(undefined);
+  io.uploadedAttachments
+    .mockReset()
+    .mockReturnValue([
+      { type: "image", id: "uploaded", name: "a.png", mimeType: "image/png", sizeBytes: 4 },
+    ]);
   io.shell = {
     modelSelection,
     branch: null,
@@ -227,5 +251,71 @@ describe("sendQueuedMessage", () => {
       ["first", undefined],
     ]);
     expect(io.toast).toHaveBeenCalledWith(expect.objectContaining({ description: "offline" }));
+  });
+
+  it("restarts a failed file upload on Send now and reports the stored reason", async () => {
+    const file = {
+      type: "file" as const,
+      id: "file-1",
+      name: "doer-launch-qa-notes.md",
+      mimeType: "text/markdown",
+      sizeBytes: 289,
+      file: new File(["notes"], "doer-launch-qa-notes.md", { type: "text/markdown" }),
+    };
+    const message = enqueue({ files: [file] });
+    io.readUpload.mockReturnValue({
+      status: "failed",
+      environmentId: "env-a",
+      reason: "Upload rejected (500)",
+    });
+    io.uploadedAttachments.mockReturnValue(null);
+
+    await sendQueuedMessage(threadRef, message.id);
+
+    // `start` ignores failed jobs, so the send must route through `retry` —
+    // otherwise it awaits nothing and fails again with no new attempt.
+    expect(io.retryUpload).toHaveBeenCalledWith({
+      environmentId: "env-a",
+      image: file,
+      draftTarget: threadRef,
+    });
+    expect(io.startUpload).not.toHaveBeenCalled();
+    expect(io.toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: expect.stringContaining("Upload rejected (500)"),
+      }),
+    );
+    expect(io.toast).toHaveBeenCalledWith(
+      expect.objectContaining({ description: expect.stringContaining("Send now") }),
+    );
+    expect(queue()?.[0]).toMatchObject({ id: message.id, holdUntilUserAction: true });
+  });
+
+  it("starts a never-attempted file upload and keeps the message for retry", async () => {
+    const file = {
+      type: "file" as const,
+      id: "file-2",
+      name: "doer-launch-qa-notes.md",
+      mimeType: "text/markdown",
+      sizeBytes: 289,
+      file: new File(["notes"], "doer-launch-qa-notes.md", { type: "text/markdown" }),
+    };
+    const message = enqueue({ files: [file] });
+    io.uploadedAttachments.mockReturnValue(null);
+
+    await sendQueuedMessage(threadRef, message.id);
+
+    expect(io.startUpload).toHaveBeenCalledWith({
+      environmentId: "env-a",
+      image: file,
+      draftTarget: threadRef,
+    });
+    expect(io.retryUpload).not.toHaveBeenCalled();
+    expect(io.toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: expect.stringContaining("doer-launch-qa-notes.md"),
+      }),
+    );
+    expect(queue()?.[0]).toMatchObject({ id: message.id, holdUntilUserAction: true });
   });
 });

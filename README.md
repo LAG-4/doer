@@ -16,10 +16,10 @@ files, plans, job applications and more. Hand it the boring work: it runs on you
 machine with a [desktop app](https://github.com/LAG-4/doer/releases) and a web app.
 No terminal. No jargon.
 
-Doer starts free with OpenCode's free models (Big Pickle first, then other free Zen
-models when available — the default for new tasks) plus your subscriptions on Codex,
-Claude Code, Cursor, Grok Build, and Google Antigravity. If they're set up on your
-computer, Doer can use them.
+Doer starts free with OpenCode's free models — automatic setup, no card, no
+terminal. If you already pay for an AI service (Codex, Claude Code, Cursor,
+Grok Build, or Google Antigravity), you can connect it from Settings once the
+app is running.
 
 - Site: [doer.lagaryan.click](https://doer.lagaryan.click)
 - Downloads: [GitHub Releases](https://github.com/LAG-4/doer/releases)
@@ -34,34 +34,32 @@ just a computer and something you'd rather not do yourself.
 
 ## Installation
 
-> [!WARNING]
-> Doer starts free with OpenCode's free models and also supports Codex, Claude, Cursor, Grok Build, and Antigravity. Install and authenticate at least one provider before use:
->
-> - OpenCode (default, free): install [OpenCode](https://opencode.ai) and run `opencode auth login`. New threads use Big Pickle (`opencode/big-pickle`), then other `*-free` Zen models when Big Pickle isn't available.
-> - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
-> - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
-> - Cursor: install [Cursor CLI](https://cursor.com/cli) and run `agent login`
-> - Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
-> - Antigravity: enable it in Settings, then use **Install Antigravity** and **Sign in with Google**. No CLI is required.
+Start with the desktop app. No terminal needed.
 
-### Try it out (install-free)
+### Desktop app (recommended)
 
-The easiest way to test Doer is to run the server in your terminal (requires Node.js 22.16+, 23.11+, or 24.10+):
+Install the latest version of the desktop app from [GitHub Releases](https://github.com/LAG-4/doer/releases).
+
+On first run Doer sets up its free AI automatically — just open the app and
+start your first task. If you already pay for an AI service, connect it later
+from Settings.
+
+> Alpha builds are unsigned: on macOS, right-click the app and choose Open the first
+> time. Windows may show a SmartScreen warning.
+
+### Advanced: run from the command line
+
+Developers can run the server plus local web app without installing anything
+(requires Node.js 22.16+, 23.11+, or 24.10+):
 
 ```bash
 npx @lag4/doer-cli@latest
 ```
 
-This will launch Doer's backend on your machine as well as the local web app to get things done.
-
 Tip: Use `npx @lag4/doer-cli@latest --help` for the full CLI reference.
-
-### Desktop app
-
-Install the latest version of the desktop app from [GitHub Releases](https://github.com/LAG-4/doer/releases).
-
-> Alpha builds are unsigned: on macOS, right-click the app and choose Open the first
-> time. Windows may show a SmartScreen warning.
+Provider CLIs you manage yourself (for example `opencode auth login`) keep
+working — in-app automatic setup just means you only need them for advanced
+setups.
 
 ## Some notes
 
@@ -115,4 +113,5 @@ Read [CONTRIBUTING.md](./CONTRIBUTING.md) before reporting a bug or opening a PR
 
 Have a feature request? Open an [issue](https://github.com/LAG-4/doer/issues).
 
-Need support? Join the [Discord](https://discord.gg/jn4EGJjrvv).
+Need support? Open an [issue](https://github.com/LAG-4/doer/issues) with what you
+were doing, what you expected, and what happened instead.

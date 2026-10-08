@@ -13,7 +13,9 @@ import { removeInlineContextReference } from "../../lib/composerContextReference
 import {
   awaitAttachmentUploads,
   getUploadedAttachments,
+  readAttachmentUpload,
   releaseDraftAttachments,
+  retryAttachmentUpload,
   startAttachmentUpload,
 } from "../../lib/attachmentUploadQueue";
 import { newMessageId } from "../../lib/utils";
@@ -103,7 +105,16 @@ export async function sendQueuedMessage(
     const useUploads = readConfig()?.environment.capabilities.attachmentUploads === true;
     if (useUploads && attachments.length > 0) {
       for (const attachment of attachments) {
-        startAttachmentUpload({ environmentId, image: attachment, draftTarget: threadRef });
+        // A previous send may have left this file `failed`. `start` ignores
+        // failed jobs on purpose (composer effects call it on every render),
+        // so an explicit send must go through `retry` — otherwise the queue
+        // awaits nothing and the same generic error returns with no attempt.
+        const current = readAttachmentUpload(attachment.id);
+        if (current?.status === "failed" && current.environmentId === environmentId) {
+          retryAttachmentUpload({ environmentId, image: attachment, draftTarget: threadRef });
+        } else {
+          startAttachmentUpload({ environmentId, image: attachment, draftTarget: threadRef });
+        }
       }
       await awaitAttachmentUploads(attachments.map((attachment) => attachment.id));
     }
@@ -111,7 +122,14 @@ export async function sendQueuedMessage(
       attachments.map(async (attachment) => {
         if (useUploads) {
           const uploaded = getUploadedAttachments({ environmentId, images: [attachment] })?.[0];
-          if (!uploaded) throw new Error(`Attachment '${attachment.name}' did not upload.`);
+          if (!uploaded) {
+            const current = readAttachmentUpload(attachment.id);
+            const detail =
+              current?.status === "failed" ? ` ${current.reason}` : " It never finished.";
+            throw new Error(
+              `Attachment '${attachment.name}' did not upload.${detail} Use Send now to try again.`,
+            );
+          }
           return uploaded;
         }
         if (attachment.type !== "image") {

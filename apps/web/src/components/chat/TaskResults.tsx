@@ -1,35 +1,22 @@
 import { useMemo, useState } from "react";
 import { FileIcon } from "lucide-react";
-import type { EnvironmentId, OrchestrationCheckpointSummary, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useAssetUrlRefresh } from "~/assets/assetUrls";
 import { useComposerHandleContext } from "~/composerHandleContext";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { buildRepeatTaskPrompt } from "./taskResultsPerTurn";
+import { cn } from "~/lib/utils";
 
-/** Only actual files reported by completed work are offered as outputs. */
-function taskOutputPaths(checkpoints: readonly OrchestrationCheckpointSummary[]): string[] {
-  const files = new Map<string, string>();
-  for (const checkpoint of checkpoints) {
-    if (checkpoint.status !== "ready") continue;
-    for (const file of checkpoint.files) {
-      if (/delete|removed/i.test(file.kind)) files.delete(file.path);
-      else if (
-        /\.(?:docx|xlsx|pptx|pdf|html|csv|txt|md)$/i.test(file.path) &&
-        !file.path.startsWith(".")
-      )
-        files.set(file.path, file.path);
-    }
-  }
-  return [...files.values()].slice(-12);
-}
 export function TaskResults(props: {
   environmentId: EnvironmentId;
   threadId: ThreadId;
-  checkpoints: readonly OrchestrationCheckpointSummary[];
+  paths: readonly string[];
+  layout?: "page" | "inline";
   onOpen: (path: string) => void;
   onSources: () => void;
 }) {
-  const paths = useMemo(() => taskOutputPaths(props.checkpoints), [props.checkpoints]);
+  const paths = props.paths;
   const composer = useComposerHandleContext();
   const [message, setMessage] = useState<string | null>(null);
   const insert = (text: string) => {
@@ -40,11 +27,15 @@ export function TaskResults(props: {
     composer.current.focusAtEnd();
     setMessage("Review the request in the message box, then send it.");
   };
-  if (!props.checkpoints.length) return null;
+  if (paths.length === 0) return null;
+  const inline = props.layout === "inline";
   return (
     <section
       aria-label="Task results"
-      className="@container/task-results mx-auto flex w-full max-w-(--chat-max-width) flex-col gap-3 py-4"
+      className={cn(
+        "@container/task-results flex w-full flex-col gap-3",
+        inline ? "py-1" : "mx-auto max-w-(--chat-max-width) py-4",
+      )}
     >
       {paths.length ? (
         <>
@@ -62,7 +53,7 @@ export function TaskResults(props: {
                 onOpen={props.onOpen}
                 onRevise={() =>
                   insert(
-                    `Please revise ${path}. Show the changes and save a new copy. The changes I want are: `,
+                    `Please revise ${path}. Show the changes and save a new copy without changing the original. The changes I want are: `,
                   )
                 }
               />
@@ -74,16 +65,8 @@ export function TaskResults(props: {
         <Button size="sm" variant="ghost" onClick={props.onSources}>
           Sources & explanation
         </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() =>
-            insert(
-              "I'd like to repeat the work from this Task. Review the sources, the result to produce, timing and permissions with me before saving a reminder. Resolve file references into a self-contained prompt. My preferred timing is: ",
-            )
-          }
-        >
-          Repeat Task
+        <Button size="sm" variant="ghost" onClick={() => insert(buildRepeatTaskPrompt(paths))}>
+          Repeat this work
         </Button>
       </div>
       {message ? (
