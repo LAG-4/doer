@@ -543,6 +543,121 @@ export function makePackageManagedProviderMaintenanceResolver(
   };
 }
 
+export const OPENCODE_V1_NPM_PACKAGE = "opencode-ai";
+export const OPENCODE_V2_NPM_PACKAGE = "@opencode/cli";
+
+/** Which npm line an OpenCode executable proves, if any. */
+export type OpenCodeNpmPackageOwner =
+  | typeof OPENCODE_V1_NPM_PACKAGE
+  | typeof OPENCODE_V2_NPM_PACKAGE
+  | "ambiguous"
+  | "unknown";
+
+/**
+ * Derive the owning npm line from the real executable path. Global installs
+ * (npm, Bun, pnpm, vp) keep the binary under the package's own
+ * `node_modules/<pkg>` directory, so the path names the owner. A path naming
+ * both lines (or neither) proves nothing: callers must stay manual or fall
+ * back without switching lines.
+ */
+export function openCodeNpmPackageOwnerFromRealPath(
+  realCommandPath: string,
+): OpenCodeNpmPackageOwner {
+  const normalized = realCommandPath.replaceAll("\\", "/").toLowerCase();
+  const hasV1 = normalized.includes(`/node_modules/${OPENCODE_V1_NPM_PACKAGE}/`);
+  const hasV2 = normalized.includes(`/node_modules/${OPENCODE_V2_NPM_PACKAGE.toLowerCase()}/`);
+  if (hasV1 && hasV2) {
+    return "ambiguous";
+  }
+  if (hasV2) {
+    return OPENCODE_V2_NPM_PACKAGE;
+  }
+  if (hasV1) {
+    return OPENCODE_V1_NPM_PACKAGE;
+  }
+  return "unknown";
+}
+
+/** True when the path sits in a vp/Bun/pnpm global bin (line still needs proof). */
+export function isGlobalPackageManagerCommandPath(commandPath: string): boolean {
+  return (
+    isVitePlusGlobalCommandPath(commandPath) ||
+    isBunGlobalCommandPath(commandPath) ||
+    isPnpmGlobalCommandPath(commandPath)
+  );
+}
+
+/**
+ * OpenCode maintenance resolver with line-aware ownership. The v1
+ * (`opencode-ai`) and v2 (`@opencode/cli`) lines share the `opencode`
+ * executable name, so a hardcoded package would update the wrong line: a v2
+ * Bun/npm/pnpm/vp global would get the v1 package installed over it. The
+ * update package is selected from the actual executable's proven owner and
+ * v1 behavior is preserved wherever it was already correct.
+ *
+ * Two channels can never prove their line and stay manual-only:
+ * - the native `~/.opencode/bin` updater: `upgrade` may fetch any release
+ *   line, so running it could jump lines without proof;
+ * - Windows shims with silent ownership: an adjacent manifest alone does not
+ *   prove this particular shim points at that package.
+ * Doer-managed, local, ambiguous, and global-but-silent installs likewise
+ * never get a package-manager command.
+ */
+export function makeOpenCodeProviderMaintenanceResolver(input: {
+  readonly provider: ProviderDriverKind;
+  readonly nativeUpdate: {
+    readonly args: ReadonlyArray<string>;
+    readonly isCommandPath: (commandPath: string) => boolean;
+    /** Environment the native updater needs to target this instance's install. */
+    readonly env?: NodeJS.ProcessEnv;
+  } | null;
+}): ProviderMaintenanceCapabilitiesResolver {
+  const updateForPackage = (npmPackageName: string) =>
+    makePackageManagedProviderMaintenanceResolver({
+      provider: input.provider,
+      npmPackageName,
+      nativeUpdate: null,
+    });
+  const legacyUpdate = updateForPackage(OPENCODE_V1_NPM_PACKAGE);
+  const manualOnly = makeManualOnlyProviderMaintenanceCapabilities({
+    provider: input.provider,
+    packageName: OPENCODE_V1_NPM_PACKAGE,
+  });
+  return {
+    resolve: (context) =>
+      Effect.gen(function* () {
+        if (!context) {
+          return manualOnly;
+        }
+        const commandPaths = [context.resolvedCommandPath, context.realCommandPath];
+        const nativeUpdate = input.nativeUpdate;
+        if (
+          nativeUpdate &&
+          commandPaths.some((commandPath) => nativeUpdate.isCommandPath(commandPath))
+        ) {
+          return manualOnly;
+        }
+        const segmentOwner = openCodeNpmPackageOwnerFromRealPath(context.realCommandPath);
+        if (segmentOwner === "ambiguous") {
+          return manualOnly;
+        }
+        if (segmentOwner !== "unknown") {
+          return yield* updateForPackage(segmentOwner).resolve(context);
+        }
+        if (context.platform === "win32") {
+          return manualOnly;
+        }
+        if (commandPaths.some(isGlobalPackageManagerCommandPath)) {
+          // A global-manager bin proves the installer but not the line, and
+          // installing the legacy v1 package over a v2 install would switch
+          // lines blindly. Stay manual until ownership is proven.
+          return manualOnly;
+        }
+        return yield* legacyUpdate.resolve(context);
+      }),
+  };
+}
+
 function makeManualProviderMaintenanceCapabilities(
   provider: ProviderDriverKind,
 ): ProviderMaintenanceCapabilities {

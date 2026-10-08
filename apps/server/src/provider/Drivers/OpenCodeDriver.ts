@@ -61,7 +61,7 @@ import { openCodeManagedDir } from "../opencodeInstall.ts";
 import {
   enrichProviderSnapshotWithVersionAdvisory,
   makeCachedProviderMaintenanceResolution,
-  makePackageManagedProviderMaintenanceResolver,
+  makeOpenCodeProviderMaintenanceResolver,
   normalizeCommandPath,
   resolveProviderMaintenanceCapabilitiesEffect,
 } from "../providerMaintenance.ts";
@@ -82,9 +82,8 @@ function isOpenCodeNativeCommandPath(commandPath: string): boolean {
   );
 }
 
-const UPDATE = makePackageManagedProviderMaintenanceResolver({
+const UPDATE = makeOpenCodeProviderMaintenanceResolver({
   provider: DRIVER_KIND,
-  npmPackageName: "opencode-ai",
   nativeUpdate: {
     args: ["upgrade"],
     isCommandPath: isOpenCodeNativeCommandPath,

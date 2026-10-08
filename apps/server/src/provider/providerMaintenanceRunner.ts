@@ -22,6 +22,7 @@ import { HttpClient } from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import * as ModelManifest from "./ModelManifest.ts";
+import { isFutureOpenCodeVersion, openCodeFutureVersionDetail } from "./opencodeRuntime.ts";
 import { resolveProviderCompatibility } from "./providerCompatibility.ts";
 import { ProviderRegistry } from "./Services/ProviderRegistry.ts";
 import { makeProviderMaintenanceCommandCoordinator } from "./providerMaintenanceCommandCoordinator.ts";
@@ -401,26 +402,67 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
               targetVersion !== undefined
                 ? makeTargetedProviderUpdateAction(fresh, targetVersion)
                 : fresh.update;
+            // OpenCode boundaries, all local and independent of the remote
+            // manifest. The runtime fail-clears unknown majors
+            // (isFutureOpenCodeVersion); the updater must not fetch them, and
+            // a null/unparseable latest must never become a floating @latest
+            // command that bypasses those checks.
+            const isOpenCodeUpdate = provider === "opencode";
+            const stableCandidate =
+              candidateVersion !== null &&
+              candidateVersion !== undefined &&
+              /^\d+\.\d+\.\d+$/.test(candidateVersion)
+                ? candidateVersion
+                : null;
+            const unverifiedOpenCodeVersion = isOpenCodeUpdate && stableCandidate === null;
+            const futureOpenCodeMajor =
+              isOpenCodeUpdate &&
+              stableCandidate !== null &&
+              isFutureOpenCodeVersion(stableCandidate);
+            // A checked 2.x candidate could race with @latest moving to 3.x
+            // before execution, so OpenCode package updates run the exact
+            // verified version. Installers that cannot pin (native/homebrew)
+            // are refused for OpenCode; other providers are untouched.
+            const openCodePinnedCommand =
+              isOpenCodeUpdate && targetVersion === undefined && stableCandidate !== null
+                ? makeTargetedProviderUpdateAction(fresh, stableCandidate)
+                : undefined;
+            const updateCommand =
+              openCodePinnedCommand === undefined ? command : openCodePinnedCommand;
+            const unpinnableOpenCodeUpdate =
+              isOpenCodeUpdate &&
+              targetVersion === undefined &&
+              stableCandidate !== null &&
+              openCodePinnedCommand === null;
             const rejected =
-              targetVersion !== undefined
+              futureOpenCodeMajor ||
+              unverifiedOpenCodeVersion ||
+              unpinnableOpenCodeUpdate ||
+              (targetVersion !== undefined
                 ? !command ||
                   advisory?.recommendedVersion !== targetVersion ||
                   advisory.status !== "supported"
-                : advisory?.status === "broken" || advisory?.status === "unsupported";
-            if (rejected || !command) {
+                : advisory?.status === "broken" || advisory?.status === "unsupported");
+            if (rejected || !updateCommand) {
               return yield* finish(
                 makeUpdateState({
                   status: "failed",
                   startedAt,
                   finishedAt: yield* nowIso,
                   message:
-                    targetVersion !== undefined
-                      ? "This version is no longer recommended or this installer cannot install a specific version. Refresh provider settings."
-                      : "The latest provider version is incompatible with this T3 Code release. Review provider settings.",
+                    futureOpenCodeMajor && stableCandidate
+                      ? openCodeFutureVersionDetail(stableCandidate)
+                      : unverifiedOpenCodeVersion
+                        ? "Doer could not verify the latest OpenCode version. Refresh provider settings and try again."
+                        : unpinnableOpenCodeUpdate
+                          ? "This installer cannot pin the verified OpenCode version, so Doer refused the update. Refresh provider settings."
+                          : targetVersion !== undefined
+                            ? "This version is no longer recommended or this installer cannot install a specific version. Refresh provider settings."
+                            : "The latest provider version is incompatible with this T3 Code release. Review provider settings.",
                 }),
               );
             }
-            const result = yield* runMaintenanceCommand(command);
+            const result = yield* runMaintenanceCommand(updateCommand);
             const finishedAt = yield* nowIso;
             if (result.timedOut || result.exitCode !== 0) {
               return yield* finish(

@@ -725,7 +725,9 @@ describe("providerMaintenanceRunner", () => {
                 provider === OPENCODE_DRIVER
                   ? ["install", "-g", "opencode-ai@latest"]
                   : ["install", "-g", "@openai/codex@latest"],
-              updateLockKey: "npm-global",
+              // Real npm resolutions carry the prefix proof; the shared
+              // prefix is what serializes these two updates.
+              updateLockKey: "npm-global:/shared",
             }),
           ),
       });
@@ -757,7 +759,7 @@ describe("providerMaintenanceRunner", () => {
       yield* Fiber.join(second);
       assert.deepStrictEqual(calls, [
         "install -g @openai/codex@latest",
-        "install -g opencode-ai@latest",
+        "install -g opencode-ai@2.0.0",
       ]);
     }).pipe(
       Effect.provide(
@@ -1015,6 +1017,281 @@ it.effect("refuses incompatible latest versions and unapproved or unpinnable tar
         mockSpawnerLayer((_command, args) => {
           calls.push(args.join(" "));
           return { stdout: "installed" };
+        }),
+      ),
+    ),
+  );
+});
+
+it.effect(
+  "refuses a future OpenCode major for latest even when the manifest calls it supported",
+  () => {
+    const calls: string[] = [];
+    const manifest: ModelManifest.ModelManifestData = {
+      version: 1,
+      currentModels: {},
+      compatibility: [
+        {
+          driver: "opencode",
+          t3CodeRange: ">=0.0.42",
+          recommendedVersion: "3.0.0",
+          ranges: [{ range: ">=3.0.0", status: "supported" }],
+        },
+      ],
+    };
+    return Effect.gen(function* () {
+      const { registry } = yield* makeRegistry(baseOpenCodeProvider);
+      const updater = yield* makeTestRunner(registry, manifest);
+
+      const result = yield* updater.updateProvider(OPENCODE_DRIVER);
+      assert.deepStrictEqual(calls, []);
+      assert.strictEqual(result.providers[0]?.updateState?.status, "failed");
+      assert.match(result.providers[0]?.updateState?.message ?? "", /Update Doer/);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          NonWindowsPlatform,
+          latestVersionHttpClient("3.0.0"),
+          mockSpawnerLayer((command) => {
+            calls.push(command);
+            return { stdout: "updated" };
+          }),
+        ),
+      ),
+    );
+  },
+);
+
+it.effect("refuses a future OpenCode major for targeted pins", () => {
+  const calls: string[] = [];
+  const manifest: ModelManifest.ModelManifestData = {
+    version: 1,
+    currentModels: {},
+    compatibility: [
+      {
+        driver: "opencode",
+        t3CodeRange: ">=0.0.42",
+        recommendedVersion: "3.0.1",
+        ranges: [{ range: ">=3.0.0", status: "supported" }],
+      },
+    ],
+  };
+  return Effect.gen(function* () {
+    const { registry } = yield* makeRegistry(baseOpenCodeProvider);
+    const updater = yield* makeTestRunner(
+      {
+        ...registry,
+        getProviderMaintenanceCapabilitiesForInstance: () =>
+          Effect.succeed(
+            makeProviderMaintenanceCapabilities({
+              provider: OPENCODE_DRIVER,
+              packageName: "@opencode/cli",
+              updateExecutable: "npm",
+              updateArgs: ["install", "-g", "@opencode/cli@latest"],
+              updateLockKey: "npm-global:/fixture",
+            }),
+          ),
+      },
+      manifest,
+    );
+
+    const result = yield* updater.updateProvider({
+      provider: OPENCODE_DRIVER,
+      targetVersion: "3.0.1",
+    });
+    assert.deepStrictEqual(calls, []);
+    assert.strictEqual(result.providers[0]?.updateState?.status, "failed");
+    assert.match(result.providers[0]?.updateState?.message ?? "", /Update Doer/);
+  }).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        NonWindowsPlatform,
+        latestVersionHttpClient("3.0.1"),
+        mockSpawnerLayer((command) => {
+          calls.push(command);
+          return { stdout: "updated" };
+        }),
+      ),
+    ),
+  );
+});
+
+it.effect("still allows a supported OpenCode 2.x latest update", () => {
+  const calls: Array<{ command: string; args: ReadonlyArray<string> }> = [];
+  const manifest: ModelManifest.ModelManifestData = {
+    version: 1,
+    currentModels: {},
+    compatibility: [
+      {
+        driver: "opencode",
+        t3CodeRange: ">=0.0.42",
+        recommendedVersion: "2.9.9",
+        ranges: [{ range: ">=2.0.0", status: "supported" }],
+      },
+    ],
+  };
+  return Effect.gen(function* () {
+    const { registry } = yield* makeRegistry({ ...baseOpenCodeProvider, version: "2.9.9" });
+    const updater = yield* makeTestRunner(
+      {
+        ...registry,
+        getProviderMaintenanceCapabilitiesForInstance: () =>
+          Effect.succeed(
+            makeProviderMaintenanceCapabilities({
+              provider: OPENCODE_DRIVER,
+              packageName: "@opencode/cli",
+              updateExecutable: "npm",
+              updateArgs: ["install", "-g", "@opencode/cli@latest"],
+              updateLockKey: "npm-global:/fixture",
+            }),
+          ),
+      },
+      manifest,
+    );
+
+    const result = yield* updater.updateProvider(OPENCODE_DRIVER);
+    // The exact verified version runs, never a floating @latest that could
+    // race to a future major between check and execution.
+    assert.deepStrictEqual(calls, [
+      { command: "npm", args: ["install", "-g", "@opencode/cli@2.9.9"] },
+    ]);
+    assert.strictEqual(result.providers[0]?.updateState?.status, "succeeded");
+  }).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        NonWindowsPlatform,
+        latestVersionHttpClient("2.9.9"),
+        mockSpawnerLayer((command, args) => {
+          calls.push({ command, args });
+          return { stdout: "updated" };
+        }),
+      ),
+    ),
+  );
+});
+
+it.effect("refuses an OpenCode update when the latest version cannot be verified", () => {
+  const calls: string[] = [];
+  const failingVersionHttpClient = Layer.succeed(
+    HttpClient.HttpClient,
+    HttpClient.make((request) =>
+      Effect.succeed(HttpClientResponse.fromWeb(request, new Response("boom", { status: 500 }))),
+    ),
+  );
+  const emptyManifest: ModelManifest.ModelManifestData = {
+    version: 1,
+    currentModels: {},
+    compatibility: [],
+  };
+  return Effect.gen(function* () {
+    const { registry } = yield* makeRegistry(baseOpenCodeProvider);
+    const nullVersion = yield* makeTestRunner(registry, emptyManifest);
+
+    const failed = yield* nullVersion.updateProvider(OPENCODE_DRIVER);
+    assert.deepStrictEqual(calls, []);
+    assert.strictEqual(failed.providers[0]?.updateState?.status, "failed");
+    assert.match(failed.providers[0]?.updateState?.message ?? "", /could not verify/);
+  }).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        NonWindowsPlatform,
+        failingVersionHttpClient,
+        mockSpawnerLayer((command) => {
+          calls.push(command);
+          return { stdout: "updated" };
+        }),
+      ),
+    ),
+  );
+});
+
+it.effect("refuses an OpenCode update for an unparseable latest version", () => {
+  const calls: string[] = [];
+  const emptyManifest: ModelManifest.ModelManifestData = {
+    version: 1,
+    currentModels: {},
+    compatibility: [],
+  };
+  return Effect.gen(function* () {
+    const { registry } = yield* makeRegistry(baseOpenCodeProvider);
+    const updater = yield* makeTestRunner(registry, emptyManifest);
+
+    const result = yield* updater.updateProvider(OPENCODE_DRIVER);
+    assert.deepStrictEqual(calls, []);
+    assert.strictEqual(result.providers[0]?.updateState?.status, "failed");
+    assert.match(result.providers[0]?.updateState?.message ?? "", /could not verify/);
+  }).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        NonWindowsPlatform,
+        latestVersionHttpClient("not-a-version"),
+        mockSpawnerLayer((command) => {
+          calls.push(command);
+          return { stdout: "updated" };
+        }),
+      ),
+    ),
+  );
+});
+
+it.effect.each([
+  {
+    name: "homebrew",
+    update: { executable: "brew", args: ["upgrade", "opencode"], lockKey: "homebrew" },
+  },
+  {
+    name: "native",
+    update: {
+      executable: "/home/user/.opencode/bin/opencode",
+      args: ["upgrade"],
+      lockKey: "opencode-native",
+    },
+  },
+] as const)("refuses an OpenCode update an installer cannot pin ($name)", ({ update }) => {
+  const calls: string[] = [];
+  const manifest: ModelManifest.ModelManifestData = {
+    version: 1,
+    currentModels: {},
+    compatibility: [
+      {
+        driver: "opencode",
+        t3CodeRange: ">=0.0.42",
+        recommendedVersion: "2.9.9",
+        ranges: [{ range: ">=2.0.0", status: "supported" }],
+      },
+    ],
+  };
+  return Effect.gen(function* () {
+    const { registry } = yield* makeRegistry({ ...baseOpenCodeProvider, version: "2.9.9" });
+    const updater = yield* makeTestRunner(
+      {
+        ...registry,
+        getProviderMaintenanceCapabilitiesForInstance: () =>
+          Effect.succeed(
+            makeProviderMaintenanceCapabilities({
+              provider: OPENCODE_DRIVER,
+              packageName: "@opencode/cli",
+              updateExecutable: update.executable,
+              updateArgs: update.args,
+              updateLockKey: update.lockKey,
+            }),
+          ),
+      },
+      manifest,
+    );
+
+    const result = yield* updater.updateProvider(OPENCODE_DRIVER);
+    assert.deepStrictEqual(calls, []);
+    assert.strictEqual(result.providers[0]?.updateState?.status, "failed");
+    assert.match(result.providers[0]?.updateState?.message ?? "", /cannot pin/);
+  }).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        NonWindowsPlatform,
+        latestVersionHttpClient("2.9.9"),
+        mockSpawnerLayer((command) => {
+          calls.push(command);
+          return { stdout: "updated" };
         }),
       ),
     ),
