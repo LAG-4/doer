@@ -7,9 +7,14 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 // Native header item factories are only read when options are applied, so the fake
 // navigation snapshots the right items at each setOptions, as native-stack does.
 const harness = vi.hoisted(() => ({
+  simpleMode: false,
   setOptionsCalls: 0,
   renderedRightItems: [] as Array<ReadonlyArray<Record<string, unknown>>>,
   navigatedRoutes: [] as string[],
+}));
+
+vi.mock("./use-simple-mode-enabled", () => ({
+  useSimpleModeEnabled: () => harness.simpleMode,
 }));
 
 vi.mock("@react-navigation/native", () => {
@@ -142,9 +147,23 @@ afterEach(() => {
   harness.setOptionsCalls = 0;
   harness.renderedRightItems = [];
   harness.navigatedRoutes = [];
+  harness.simpleMode = false;
 });
 
 describe("ThreadHeader", () => {
+  it("hides Git and terminal controls in Simple Mode and restores them in full mode", () => {
+    const identifiers = () => harness.renderedRightItems.at(-1)?.map((item) => item.identifier);
+    harness.simpleMode = true;
+    render(<Header gitStatus={status([])} />);
+    expect(identifiers()).not.toContain("thread-right-git");
+    expect(identifiers()).not.toContain("thread-right-terminal");
+
+    harness.simpleMode = false;
+    render(<Header gitStatus={status([])} />);
+    expect(identifiers()).toContain("thread-right-git");
+    expect(identifiers()).toContain("thread-right-terminal");
+  });
+
   it("re-applies native header items when Git status changes", () => {
     render(<Header gitStatus={status([])} />);
     expect(renderedGitStatusDescription()).toBe("Clean");
