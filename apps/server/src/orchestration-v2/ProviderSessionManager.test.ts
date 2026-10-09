@@ -1782,7 +1782,16 @@ it.effect(
         assert.equal(resolved?.thread.threadId, threadId);
         assert.deepEqual(
           resolved?.capabilities,
-          new Set(["preview", "orchestration", "worktree", "pull-requests"]),
+          new Set([
+            "preview",
+            "orchestration",
+            "worktree",
+            "pull-requests",
+            "computer",
+            "gmail",
+            "local-spreadsheets",
+            "local-presentations",
+          ]),
         );
 
         yield* manager.close(providerSessionId);
@@ -1839,7 +1848,15 @@ it.effect(
         const resolved = yield* registry.resolve(token!);
         assert.deepEqual(
           resolved?.capabilities,
-          new Set(["orchestration", "worktree", "pull-requests"]),
+          new Set([
+            "orchestration",
+            "worktree",
+            "pull-requests",
+            "computer",
+            "gmail",
+            "local-spreadsheets",
+            "local-presentations",
+          ]),
         );
 
         yield* manager.close(providerSessionId);

@@ -204,6 +204,9 @@ function normalizeReplayFrame(value: unknown): unknown {
         ...params,
         clientInfo: {
           ...(params.clientInfo as Record<string, unknown>),
+          // Captured sessions can come from upstream or branded forks.
+          name: "<ignored>",
+          ...("title" in params.clientInfo ? { title: "<ignored>" } : {}),
           version: "<ignored>",
         },
       };

@@ -118,7 +118,7 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
         yield* Effect.addFinalizer(() => Effect.sync(() => query.mockRestore()));
         for (const [index, cwd] of workspaces.entries()) {
           const scoped = yield* probeClaudeWorkspaceSnapshot(
-            decodeClaudeSettings({ homePath: configDir }),
+            decodeClaudeSettings({ enabled: true, homePath: configDir }),
             machineSnapshot,
             cwd,
             { ...process.env, T3_WORKSPACE_PROBE: "owned-instance" },
@@ -193,7 +193,7 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
           }) as ReturnType<typeof ClaudeSdk.query>,
       );
       yield* Effect.addFinalizer(() => Effect.sync(() => query.mockRestore()));
-      const settings = decodeClaudeSettings({ homePath: cwd });
+      const settings = decodeClaudeSettings({ enabled: true, homePath: cwd });
       const failed = yield* probeClaudeWorkspaceSnapshot(settings, machineSnapshot, cwd);
       assert.deepEqual(failed, {
         ...machineSnapshot,

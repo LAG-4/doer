@@ -20,7 +20,7 @@ layer("051_ProjectionAutomations", (it) => {
       `;
       assert.deepEqual(before, []);
 
-      yield* runMigrations({ toMigrationInclusive: 51 });
+      yield* migrateAutomations;
 
       const tables = yield* sql<{ readonly name: string }>`
         SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'projection_automation%' ORDER BY name

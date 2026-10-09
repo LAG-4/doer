@@ -3150,7 +3150,10 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         action: "commit",
       });
 
-      expect(generatedModelSelection).toEqual(DEFAULT_SERVER_SETTINGS.textGenerationModelSelection);
+      expect(generatedModelSelection).toEqual({
+        ...DEFAULT_SERVER_SETTINGS.textGenerationModelSelection,
+        instanceId: ProviderInstanceId.make("codex"),
+      });
     }),
   );
 
