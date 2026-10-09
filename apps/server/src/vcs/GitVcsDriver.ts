@@ -568,12 +568,13 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
       // inside a usable worktree. Report false so checkpoint and status
       // flows skip silently instead of surfacing a spawn failure after
       // every turn.
-      Effect.catchTag("VcsProcessSpawnError", (error) =>
-        Effect.logDebug("git binary unavailable; treating workspace as not inside a worktree", {
-          cwd,
-          detail: error.message,
-        }).pipe(Effect.as(false)),
-      ),
+      Effect.catchTags({
+        VcsProcessSpawnError: (error) =>
+          Effect.logDebug("git binary unavailable; treating workspace as not inside a worktree", {
+            cwd,
+            detail: error.message,
+          }).pipe(Effect.as(false)),
+      }),
     );
 
   const execute: VcsDriver.VcsDriver["Service"]["execute"] = (input) =>

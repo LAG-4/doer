@@ -19,6 +19,13 @@ const primaryId = EnvironmentId.make("env-primary");
 const laptopId = EnvironmentId.make("env-laptop");
 const boxId = EnvironmentId.make("env-box");
 const restartCapabilities = { threadRestartContinuation: true };
+const enabledDefaultSettings = {
+  ...DEFAULT_SERVER_SETTINGS,
+  providerInstances: {
+    ...DEFAULT_SERVER_SETTINGS.providerInstances,
+    opencode: { driver: ProviderDriverKind.make("opencode"), enabled: true, config: {} },
+  },
+};
 
 describe("supportsSharedSettingsSync", () => {
   it("accepts only connected servers that advertise the shared-settings capability", () => {
@@ -70,19 +77,19 @@ describe("splitSharedServerPatch", () => {
   ])("shares the text generation model and options, including reset (%j)", (selection) => {
     const patch = { textGenerationModelSelection: selection };
     expect(splitSharedServerPatch(patch)).toEqual({ sharedPatch: patch, localPatch: {} });
-    expect(pickSharedServerSettings({ ...DEFAULT_SERVER_SETTINGS, ...patch })).toMatchObject(patch);
+    expect(pickSharedServerSettings({ ...enabledDefaultSettings, ...patch })).toMatchObject(patch);
     const environment = {
       environmentId: boxId,
       label: "Remote Box",
       syncEligible: true,
       settings: {
-        ...DEFAULT_SERVER_SETTINGS,
+        ...enabledDefaultSettings,
         textGenerationModelSelection: { ...selection, model: "different-model" },
       },
     };
     const input = {
       primaryEnvironmentId: primaryId,
-      primarySettings: { ...DEFAULT_SERVER_SETTINGS, ...patch },
+      primarySettings: { ...enabledDefaultSettings, ...patch },
       environments: [environment],
     };
     expect(findSharedSettingsMismatches(input)).toEqual([
@@ -121,7 +128,7 @@ describe("splitSharedServerPatch", () => {
 describe("pickSharedServerSettings", () => {
   it("returns only the shared keys", () => {
     expect(
-      Object.keys(pickSharedServerSettings(DEFAULT_SERVER_SETTINGS, restartCapabilities)).sort(),
+      Object.keys(pickSharedServerSettings(enabledDefaultSettings, restartCapabilities)).sort(),
     ).toEqual([
       "autoResumeLimitedThreads",
       "continueThreadsAfterServerUpdate",
