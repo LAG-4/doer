@@ -320,6 +320,7 @@ class TestNode {
   addEventListener() {}
   removeEventListener() {}
   setAttribute() {}
+  removeAttribute() {}
 }
 
 function installTestDom() {
