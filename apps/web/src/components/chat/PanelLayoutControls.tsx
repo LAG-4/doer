@@ -2,6 +2,7 @@ import { PanelBottomIcon, PanelRightIcon, SquareMenuIcon } from "lucide-react";
 import { Maximize2, Minimize2 } from "lucide";
 import { MorphIcon } from "~/components/MorphIcon";
 import { memo, type ReactElement } from "react";
+import { useClientSettings } from "~/hooks/useSettings";
 
 import type { ThreadPanelPresentation } from "../../rightPanelLayout";
 import { PopoverCreateHandle, PopoverTrigger } from "../ui/popover";
@@ -47,6 +48,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
   onToggleThreadPanel,
   onToggleRightPanel,
 }: PanelLayoutControlsProps) {
+  const simpleModeEnabled = useClientSettings((settings) => settings.simpleModeEnabled);
   const threadPanelToggle = (
     <Toggle
       className="relative shrink-0 [-webkit-app-region:no-drag]"
@@ -83,7 +85,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
             )
           : threadPanelTooltip(threadPanelToggle)
         : null}
-      {showTerminalControl ? (
+      {showTerminalControl && !simpleModeEnabled ? (
         <Tooltip>
           <TooltipTrigger render={<span className="flex shrink-0" />}>
             <Toggle
