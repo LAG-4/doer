@@ -51,7 +51,7 @@ function assertReadableTitle(title: string, kind: string): string {
 }
 
 /** Rejects blank-only documents before they are reported as success. */
-export function validateDocumentInput(input: DocumentOutput): void {
+function validateDocumentInput(input: DocumentOutput): void {
   assertReadableTitle(input.title, "document");
   if (input.sections.length < 1 || input.sections.length > DOCUMENT_MAX_SECTIONS) {
     throw new Error(`Add 1 to ${DOCUMENT_MAX_SECTIONS} sections with real content before saving.`);
@@ -136,7 +136,7 @@ export function validatePresentationInput(input: PresentationOutput): void {
  * text for safety) — this validation only guards readability, never
  * arithmetic.
  */
-export function validateSpreadsheetInput(sheets: readonly SpreadsheetWorkbookInput[]): void {
+function validateSpreadsheetInput(sheets: readonly SpreadsheetWorkbookInput[]): void {
   if (sheets.length < 1 || sheets.length > SPREADSHEET_MAX_SHEETS) {
     throw new Error(`Add 1 to ${SPREADSHEET_MAX_SHEETS} sheets with real content before saving.`);
   }

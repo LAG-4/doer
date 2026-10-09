@@ -543,8 +543,8 @@ export function makePackageManagedProviderMaintenanceResolver(
   };
 }
 
-export const OPENCODE_V1_NPM_PACKAGE = "opencode-ai";
-export const OPENCODE_V2_NPM_PACKAGE = "@opencode/cli";
+const OPENCODE_V1_NPM_PACKAGE = "opencode-ai";
+const OPENCODE_V2_NPM_PACKAGE = "@opencode/cli";
 
 /** Which npm line an OpenCode executable proves, if any. */
 export type OpenCodeNpmPackageOwner =

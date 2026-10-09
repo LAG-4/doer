@@ -6,9 +6,7 @@ const TASK_OUTPUT_DELETE_PATTERN = /delete|removed/i;
 const TASK_RESULTS_PATH_LIMIT = 12;
 
 /** Single checkpoint worth of user-facing outputs. Shared with TaskResults. */
-export function taskOutputPathsForFiles(
-  files: readonly { path: string; kind: string }[],
-): string[] {
+function taskOutputPathsForFiles(files: readonly { path: string; kind: string }[]): string[] {
   const kept = new Map<string, string>();
   for (const file of files) {
     if (TASK_OUTPUT_DELETE_PATTERN.test(file.kind)) kept.delete(file.path);
