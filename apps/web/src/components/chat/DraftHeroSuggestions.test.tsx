@@ -27,7 +27,7 @@ vi.mock("~/components/ui/textarea", () => ({ Textarea: "textarea" }));
 vi.mock("~/components/ui/input", () => ({ Input: "input" }));
 vi.mock("~/hooks/useSettings", () => ({
   useClientSettings: (selector: (settings: { simpleModeEnabled: boolean }) => unknown) =>
-    selector({ simpleModeEnabled: false }),
+    selector({ simpleModeEnabled: true }),
 }));
 vi.mock("@tanstack/react-router", () => ({ Link: "a" }));
 
@@ -72,6 +72,7 @@ function button(label: string) {
     )!;
 }
 function click(label: string) {
+  if (!button(label) && button("More tasks")) act(() => button("More tasks").props.onClick());
   act(() => button(label).props.onClick());
 }
 function answer(id: string, text: string) {

@@ -8,7 +8,6 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   getOnboardingProviderState,
-  isOnboardingAutoInstallDriver,
   resolveOnboardingProviderInstallCommand,
   resolveOnboardingProviderLoginCommand,
   selectOnboardingProvidersByDriver,
@@ -76,26 +75,6 @@ describe("getOnboardingProviderState", () => {
     expect(getOnboardingProviderState({ ...readyCodex, installed: false, status: "error" })).toBe(
       "install",
     );
-  });
-
-  it("offers recovery after automatic OpenCode installation fails", () => {
-    expect(
-      getOnboardingProviderState({
-        ...readyCodex,
-        driver: ProviderDriverKind.make("opencode"),
-        installed: false,
-        status: "error",
-        message: "Automatic install failed: could not download the release archive",
-      }),
-    ).toBe("attention");
-    expect(
-      getOnboardingProviderState({
-        ...readyCodex,
-        driver: ProviderDriverKind.make("opencode"),
-        installed: false,
-        status: "warning",
-      }),
-    ).toBe("checking");
   });
 
   it("waits for a provider snapshot before offering an action", () => {
@@ -217,11 +196,12 @@ describe("resolveOnboardingProviderLoginCommand", () => {
         readyCodex,
         {
           ...DEFAULT_SERVER_SETTINGS,
-          providers: {
-            ...DEFAULT_SERVER_SETTINGS.providers,
-            codex: {
-              ...DEFAULT_SERVER_SETTINGS.providers.codex,
-              binaryPath: "C:\\Program Files\\Codex & Tools\\codex.exe",
+          providerInstances: {
+            [ProviderInstanceId.make("codex")]: {
+              driver: ProviderDriverKind.make("codex"),
+              config: {
+                binaryPath: "C:\\Program Files\\Codex & Tools\\codex.exe",
+              },
             },
           },
         },
@@ -242,11 +222,12 @@ describe("resolveOnboardingProviderLoginCommand", () => {
         provider,
         {
           ...DEFAULT_SERVER_SETTINGS,
-          providers: {
-            ...DEFAULT_SERVER_SETTINGS.providers,
-            claudeAgent: {
-              ...DEFAULT_SERVER_SETTINGS.providers.claudeAgent,
-              binaryPath: "/opt/Claude Tools/$current/claude",
+          providerInstances: {
+            [ProviderInstanceId.make("claude")]: {
+              driver: ProviderDriverKind.make("claudeAgent"),
+              config: {
+                binaryPath: "/opt/Claude Tools/$current/claude",
+              },
             },
           },
         },
@@ -267,11 +248,12 @@ describe("resolveOnboardingProviderLoginCommand", () => {
         readyCodex,
         {
           ...DEFAULT_SERVER_SETTINGS,
-          providers: {
-            ...DEFAULT_SERVER_SETTINGS.providers,
-            codex: {
-              ...DEFAULT_SERVER_SETTINGS.providers.codex,
-              binaryPath,
+          providerInstances: {
+            [ProviderInstanceId.make("codex")]: {
+              driver: ProviderDriverKind.make("codex"),
+              config: {
+                binaryPath,
+              },
             },
           },
         },
@@ -286,11 +268,12 @@ describe("resolveOnboardingProviderLoginCommand", () => {
         readyCodex,
         {
           ...DEFAULT_SERVER_SETTINGS,
-          providers: {
-            ...DEFAULT_SERVER_SETTINGS.providers,
-            codex: {
-              ...DEFAULT_SERVER_SETTINGS.providers.codex,
-              binaryPath: "/opt/codex\\work/codex",
+          providerInstances: {
+            [ProviderInstanceId.make("codex")]: {
+              driver: ProviderDriverKind.make("codex"),
+              config: {
+                binaryPath: "/opt/codex\\work/codex",
+              },
             },
           },
         },
@@ -305,11 +288,12 @@ describe("resolveOnboardingProviderLoginCommand", () => {
         readyCodex,
         {
           ...DEFAULT_SERVER_SETTINGS,
-          providers: {
-            ...DEFAULT_SERVER_SETTINGS.providers,
-            codex: {
-              ...DEFAULT_SERVER_SETTINGS.providers.codex,
-              binaryPath: "C:\\Tools\\codex.exe",
+          providerInstances: {
+            [ProviderInstanceId.make("codex")]: {
+              driver: ProviderDriverKind.make("codex"),
+              config: {
+                binaryPath: "C:\\Tools\\codex.exe",
+              },
             },
           },
         },
@@ -324,11 +308,12 @@ describe("resolveOnboardingProviderLoginCommand", () => {
         readyCodex,
         {
           ...DEFAULT_SERVER_SETTINGS,
-          providers: {
-            ...DEFAULT_SERVER_SETTINGS.providers,
-            codex: {
-              ...DEFAULT_SERVER_SETTINGS.providers.codex,
-              binaryPath: "/opt/Codex Tools/codex",
+          providerInstances: {
+            [ProviderInstanceId.make("codex")]: {
+              driver: ProviderDriverKind.make("codex"),
+              config: {
+                binaryPath: "/opt/Codex Tools/codex",
+              },
             },
           },
         },
@@ -338,27 +323,7 @@ describe("resolveOnboardingProviderLoginCommand", () => {
   });
 });
 
-describe("isOnboardingAutoInstallDriver", () => {
-  it("treats opencode as background-installed so onboarding never shows a manual install step", () => {
-    expect(isOnboardingAutoInstallDriver("opencode")).toBe(true);
-  });
-
-  it("requires a manual install step for opt-in drivers", () => {
-    expect(isOnboardingAutoInstallDriver("codex")).toBe(false);
-    expect(isOnboardingAutoInstallDriver("claudeAgent")).toBe(false);
-  });
-});
-
 describe("resolveOnboardingProviderInstallCommand", () => {
-  it("uses the stock-Windows installer for opencode, never scoop", () => {
-    expect(resolveOnboardingProviderInstallCommand("opencode", "windows")).toBe(
-      "winget install -e --id SST.opencode",
-    );
-    expect(resolveOnboardingProviderInstallCommand("opencode", "darwin")).toBe(
-      "curl -fsSL https://opencode.ai/install | bash",
-    );
-  });
-
   it("uses the PowerShell installer on Windows environments", () => {
     expect(resolveOnboardingProviderInstallCommand("codex", "windows")).toBe(
       "irm https://chatgpt.com/codex/install.ps1 | iex",

@@ -2,7 +2,6 @@ import {
   ClaudeSettings,
   CodexSettings,
   type ExecutionEnvironmentPlatformOs,
-  OpenCodeSettings,
   type ServerProvider,
   type ServerSettings,
 } from "@t3tools/contracts";
@@ -11,7 +10,9 @@ import * as Schema from "effect/Schema";
 
 const decodeClaudeSettings = Schema.decodeUnknownOption(ClaudeSettings);
 const decodeCodexSettings = Schema.decodeUnknownOption(CodexSettings);
-const decodeOpenCodeSettings = Schema.decodeUnknownOption(OpenCodeSettings);
+const decodeOpenCodeSettings = Schema.decodeUnknownOption(
+  Schema.Struct({ binaryPath: Schema.optional(Schema.String) }),
+);
 const SAFE_SHELL_BINARY_PATTERN = /^[A-Za-z0-9_./:\\-]+$/;
 
 function quoteProviderBinary(
@@ -78,19 +79,6 @@ export function selectOnboardingProvidersByDriver(
 }
 
 /**
- * Drivers the server installs by itself into its managed tools directory on
- * first probe — onboarding never shows a manual install terminal for these.
- * The card shows a "Setting up…" state and keeps re-probing until the
- * provider reports installed, so a fresh machine needs no package manager
- * (scoop/choco/npm) and no copy-pasted commands.
- */
-const ONBOARDING_AUTO_INSTALL_DRIVERS: ReadonlySet<string> = new Set(["opencode"]);
-
-export function isOnboardingAutoInstallDriver(driver: string): boolean {
-  return ONBOARDING_AUTO_INSTALL_DRIVERS.has(driver);
-}
-
-/**
  * Official standalone installers. Neither needs Node or npm, and both land in
  * the paths the server's provider maintenance recognizes as native, so the
  * one-click updater in Settings keeps working after install. winget ships
@@ -135,26 +123,20 @@ export function resolveOnboardingProviderLoginCommand(
   const instance = settings.providerInstances[provider.instanceId];
 
   if (provider.driver === "claudeAgent") {
-    const config = decodeClaudeSettings(
-      instance ? (instance.config ?? {}) : settings.providers.claudeAgent,
-    );
+    const config = decodeClaudeSettings(instance?.config ?? {});
     const binaryPath = Option.isSome(config) ? config.value.binaryPath : "claude";
     return `${quoteProviderBinary(binaryPath, "claude", platform)} auth login`;
   }
 
   if (provider.driver === "codex") {
-    const config = decodeCodexSettings(
-      instance ? (instance.config ?? {}) : settings.providers.codex,
-    );
+    const config = decodeCodexSettings(instance?.config ?? {});
     const binaryPath = Option.isSome(config) ? config.value.binaryPath : "codex";
     return `${quoteProviderBinary(binaryPath, "codex", platform)} login`;
   }
 
   if (provider.driver === "opencode") {
-    const config = decodeOpenCodeSettings(
-      instance ? (instance.config ?? {}) : settings.providers.opencode,
-    );
-    const binaryPath = Option.isSome(config) ? config.value.binaryPath : "opencode";
+    const config = decodeOpenCodeSettings(instance ? (instance.config ?? {}) : {});
+    const binaryPath = Option.isSome(config) ? (config.value.binaryPath ?? "opencode") : "opencode";
     return `${quoteProviderBinary(binaryPath, "opencode", platform)} auth login`;
   }
 

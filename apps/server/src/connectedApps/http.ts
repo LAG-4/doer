@@ -2,7 +2,7 @@ import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import { MicrosoftAction } from "@t3tools/shared/microsoftConnection";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { authenticateRawRouteWithScope } from "../http.ts";
 import { isEnabled as isExperimentalEnabled } from "../integrations/ExperimentalConnections.ts";
 import { EXPERIMENTAL_CONNECTIONS_COPY } from "@t3tools/shared/experimentalConnections";

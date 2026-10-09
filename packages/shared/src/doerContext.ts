@@ -1,7 +1,5 @@
 import * as Schema from "effect/Schema";
 
-export const SPACE_CONTEXT_FILE = ".doer-context.json";
-export const PERSONAL_CONTEXT_FILE = "doer-preferences.json";
 const ContextText = Schema.String.check(Schema.isMaxLength(8_000));
 export const DoerContext = Schema.Struct({
   about: ContextText,

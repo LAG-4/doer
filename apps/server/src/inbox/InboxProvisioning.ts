@@ -15,14 +15,12 @@ import { CommandId, ProjectId } from "@t3tools/contracts";
 import { HostProcessHomeDirectory } from "@t3tools/shared/hostProcess";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
-import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
-import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEngine.ts";
-import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as ProjectService from "../project/ProjectService.ts";
 import { INBOX_PROJECT_TITLE, resolveInboxRoot } from "./InboxWorkspace.ts";
 import { ServerConfig } from "../config.ts";
 
@@ -32,8 +30,7 @@ export const resolveInboxWelcomeTargets = Effect.gen(function* () {
   const path = yield* Path.Path;
   const fileSystem = yield* FileSystem.FileSystem;
   const homeDir = yield* HostProcessHomeDirectory;
-  const projectionReadModelQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
-  const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
+  const projects = yield* ProjectService.ProjectService;
 
   const config = yield* Effect.serviceOption(ServerConfig);
   const inboxRoot =
@@ -44,8 +41,7 @@ export const resolveInboxWelcomeTargets = Effect.gen(function* () {
   // not exist". Ensure the default folder before either branch so fresh
   // installs and pre-existing inbox records both self-repair on startup.
   yield* fileSystem.makeDirectory(inboxRoot, { recursive: true });
-  const existingProject =
-    yield* projectionReadModelQuery.getActiveProjectByWorkspaceRoot(inboxRoot);
+  const existingProject = yield* projects.getByWorkspaceRoot(inboxRoot);
   if (Option.isSome(existingProject)) {
     return {
       inboxProjectId: existingProject.value.id,
@@ -54,18 +50,15 @@ export const resolveInboxWelcomeTargets = Effect.gen(function* () {
     } as const;
   }
 
-  const createdAt = DateTime.formatIso(yield* DateTime.now);
-  const inboxProjectId = ProjectId.make(yield* randomUUID);
-  yield* orchestrationEngine.dispatch({
-    type: "project.create",
+  const { project, created } = yield* projects.bootstrap({
     commandId: CommandId.make(yield* randomUUID),
-    projectId: inboxProjectId,
-    title: INBOX_PROJECT_TITLE,
+    projectId: ProjectId.make(yield* randomUUID),
     workspaceRoot: inboxRoot,
+    title: INBOX_PROJECT_TITLE,
     createWorkspaceRootIfMissing: true,
-    createdAt,
   });
-  return { inboxProjectId, inboxProjectCreated: true, inboxWorkspaceRoot: inboxRoot } as const;
+  const inboxProjectId = project.id;
+  return { inboxProjectId, inboxProjectCreated: created, inboxWorkspaceRoot: inboxRoot } as const;
 }).pipe(
   Effect.catchCause((cause) =>
     Cause.hasInterrupts(cause)

@@ -34,9 +34,9 @@ interface FirstRunWorkspaceInput {
     readonly id: string;
     readonly projectId: string;
     readonly environmentId: string;
-    readonly latestTurn: unknown;
+    readonly latestRun: unknown;
     readonly latestUserMessageAt: string | null;
-    readonly session: unknown;
+    readonly runtime: unknown;
   }>;
 }
 
@@ -105,9 +105,9 @@ export function isFreshFirstRunWorkspace(input: FirstRunWorkspaceInput): boolean
       : input.threads.filter(
           (thread) =>
             thread.projectId !== inboxProjectId ||
-            thread.latestTurn !== null ||
+            thread.latestRun !== null ||
             thread.latestUserMessageAt !== null ||
-            thread.session !== null,
+            thread.runtime !== null,
         );
   if (projects.length > 1 || threads.length > 1) {
     return false;
@@ -138,9 +138,9 @@ export function isFreshFirstRunWorkspace(input: FirstRunWorkspaceInput): boolean
     input.bootstrapThreadId === bootstrapThread.id &&
     bootstrapThread.environmentId === input.primaryEnvironmentId &&
     bootstrapThread.projectId === bootstrapProject.id &&
-    bootstrapThread.latestTurn === null &&
+    bootstrapThread.latestRun === null &&
     bootstrapThread.latestUserMessageAt === null &&
-    bootstrapThread.session === null
+    bootstrapThread.runtime === null
   );
 }
 

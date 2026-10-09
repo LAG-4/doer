@@ -12,9 +12,10 @@ vi.mock("~/lib/attachmentUploadQueue", () => ({
   ) => select({ uploadsByImageId: {} }),
   retryAttachmentUpload: vi.fn(),
 }));
+const mode = vi.hoisted(() => ({ simple: true }));
 vi.mock("~/hooks/useSettings", () => ({
   useClientSettings: (selector: (settings: { simpleModeEnabled: boolean }) => unknown) =>
-    selector({ simpleModeEnabled: false }),
+    selector({ simpleModeEnabled: mode.simple }),
 }));
 vi.mock("@tanstack/react-router", () => ({ Link: "a" }));
 
@@ -78,6 +79,7 @@ it("uses an accessible modal, focuses the review, and closes with Escape without
       />,
     ),
   );
+  await act(async () => getButton("More tasks").click());
   const trigger = getButton("Find jobs for me");
   trigger.focus();
   await act(async () => trigger.click());
@@ -99,4 +101,30 @@ it("uses an accessible modal, focuses the review, and closes with Escape without
   expect(document.querySelector('[role="dialog"]:not([data-closed])')).toBeNull();
   expect(onStart).not.toHaveBeenCalled();
   expect(useComposerDraftStore.getState().getComposerDraft(target)?.prompt).toBe("Keep my draft");
+});
+
+it("shows compact guided tasks only while Simple Mode is on", async () => {
+  const target = DraftId.make("guided-mode-toggle");
+  const render = () =>
+    root.render(
+      <DraftHeroSuggestions
+        draftTarget={target}
+        environmentId={EnvironmentId.make("guided-mode")}
+        visible
+        supportsAttachmentUploads
+        disabledReason={null}
+        submissionError={null}
+        onAddFiles={async () => true}
+        onRemoveAttachment={() => {}}
+        onStart={onStart}
+      />,
+    );
+  mode.simple = true;
+  await act(async () => render());
+  expect(container.textContent).toContain("Understand a document");
+  mode.simple = false;
+  await act(async () => render());
+  expect(container.textContent).not.toContain("Understand a document");
+  expect(container.querySelector("button")).toBeNull();
+  mode.simple = true;
 });

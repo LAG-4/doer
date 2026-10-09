@@ -71,7 +71,7 @@ jobs:
       - name: Verify preload bundle output
         run: node apps/desktop/scripts/verify-preload-bundle.mjs
 
-  # Everything except `doer-cli` (apps/server). `--parallel` drops the package
+  # Everything except `@lag4/doer-cli` (apps/server). `--parallel` drops the package
   # dependency ordering that `vp run` applies by default: these `test` tasks
   # declare no `dependsOn` and resolve workspace deps from source, so ordering
   # only bought us idle runners between dependency layers. The concurrency
@@ -106,7 +106,7 @@ jobs:
           sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
 
       - name: Test
-        run: vp run --parallel --concurrency-limit 4 --filter '!doer-cli' --filter '!@t3tools/monorepo' test
+        run: vp run --parallel --concurrency-limit 4 --filter '!@lag4/doer-cli' --filter '!@t3tools/monorepo' test
 
   # apps/server sets `fileParallelism: false`, so its 239 files run strictly
   # one at a time. Sharding spreads them over separate runners instead of
@@ -139,6 +139,12 @@ jobs:
       # No Electron setup here: `doer-cli` (apps/server) has no Electron dependency
       # and none of its tests touch the runtime. Only the non-server `test`
       # job, which covers @t3tools/desktop, needs the download.
+      - uses: ./.github/actions/setup-apt-mirrors
+
+      - name: Install server browser test runtime
+        working-directory: apps/server
+        run: vp exec playwright-core install --with-deps chromium
+
       - name: Test
         run: vp run --filter @lag4/doer-cli test --shard ${{ matrix.shard }}/${{ strategy.job-total }}
 

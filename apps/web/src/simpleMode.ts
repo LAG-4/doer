@@ -13,6 +13,8 @@ export function isAdvancedPanel(kind: string): boolean {
 export function isAdvancedCommand(command: string): boolean {
   return (
     command.startsWith("terminal.") ||
+    command.startsWith("diff.") ||
+    ["composer.workspace", "composer.branch", "composer.previousWorktree"].includes(command) ||
     command.startsWith("git.") ||
     command.startsWith("worktree.") ||
     command.startsWith("pullRequest.")
@@ -47,7 +49,4 @@ export function isAdvancedSettingId(id: string | undefined): boolean {
         id,
       ))
   );
-}
-export function isAdvancedSettingsItem(item: { to: string; id: string }): boolean {
-  return isAdvancedSettingsPath(item.to) || isAdvancedSettingId(item.id);
 }

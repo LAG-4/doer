@@ -1,3 +1,6 @@
+import { OrchestratorMcpFailure } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
+import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import {
   ComputerToolAllowInput,
   ComputerToolAllowResult,
@@ -11,7 +14,7 @@ import {
   ComputerToolStatusInput,
   ComputerToolStatusResult,
 } from "@t3tools/contracts";
-import { Tool, Toolkit } from "effect/unstable/ai";
+import { Tool, Toolkit } from "effect/ai";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import { ServerConfig } from "../../../config.ts";
@@ -19,7 +22,11 @@ import { ServerConfig } from "../../../config.ts";
 import * as ComputerService from "../../../computer/ComputerService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
-const dependencies = [McpInvocationContext.McpInvocationContext, ComputerService.ComputerService];
+const dependencies = [
+  ThreadManagementService.ThreadManagementService,
+  McpInvocationContext.McpInvocationContext,
+  ComputerService.ComputerService,
+];
 
 /**
  * Deliberately a small surface: status, consent, and one image-returning
@@ -33,7 +40,7 @@ const ComputerStatusTool = Tool.make("computer_status", {
     "Check computer use on this machine: platform support, helper install state, OS permission state, and which apps the user already approved. Call this before computer_start when you do not know the setup state.",
   parameters: ComputerToolStatusInput,
   success: ComputerToolStatusResult,
-  failure: ComputerToolError,
+  failure: Schema.Union([ComputerToolError, OrchestratorMcpFailure]),
   dependencies,
 })
   .annotate(Tool.Title, "Computer use status")
@@ -47,7 +54,7 @@ const ComputerStartTool = Tool.make("computer_start", {
     "Start computer use for this thread: ensures the helper, checks Accessibility and Screen Recording permissions, and shows how to drive the desktop with the computer-use CLI. Pass the app you want to operate; when it is not approved yet this fails and tells you to ask the user first.",
   parameters: ComputerToolStartInput,
   success: ComputerToolStartResult,
-  failure: ComputerToolError,
+  failure: Schema.Union([ComputerToolError, OrchestratorMcpFailure]),
   // The handler resolves the launcher shim, which needs the filesystem,
   // path, and server config services beyond the toolkit's base dependencies.
   dependencies: [...dependencies, FileSystem.FileSystem, Path.Path, ServerConfig],
@@ -63,7 +70,7 @@ const ComputerAllowTool = Tool.make("computer_allow", {
     "Record the user's approval to see and operate an app with computer use. Call only after the user agreed in chat; the approval persists like an Always allow entry until computer_forget revokes it.",
   parameters: ComputerToolAllowInput,
   success: ComputerToolAllowResult,
-  failure: ComputerToolError,
+  failure: Schema.Union([ComputerToolError, OrchestratorMcpFailure]),
   dependencies,
 })
   .annotate(Tool.Title, "Approve app for computer use")
@@ -76,7 +83,7 @@ const ComputerForgetTool = Tool.make("computer_forget", {
   description: "Revoke computer use approval for an app, or for every app when omitted.",
   parameters: ComputerToolForgetInput,
   success: ComputerToolForgetResult,
-  failure: ComputerToolError,
+  failure: Schema.Union([ComputerToolError, OrchestratorMcpFailure]),
   dependencies,
 })
   .annotate(Tool.Title, "Revoke computer use approval")
@@ -90,7 +97,7 @@ export const ComputerObserveTool = Tool.make("computer_observe", {
     "Capture an approved app's current screenshot plus accessibility tree. Call once per turn before interacting with the app; drive it with the computer-use CLI afterwards.",
   parameters: ComputerToolObserveInput,
   success: ComputerToolObserveResult,
-  failure: ComputerToolError,
+  failure: Schema.Union([ComputerToolError, OrchestratorMcpFailure]),
   dependencies,
 })
   .annotate(Tool.Title, "Observe app")

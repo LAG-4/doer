@@ -2,11 +2,11 @@ import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 
 export interface FileSaveCoordinatorOptions<A, E> {
   readonly debounceMs: number;
+  readonly canPersist?: () => boolean;
   readonly persist: (contents: string) => Promise<AtomCommandResult<A, E>>;
   readonly onPendingChange: (pending: boolean) => void;
-  readonly onConfirmed: (contents: string) => void;
-  /** Runs when a write round finishes failed with nothing newer queued. */
-  readonly onFailure?: () => void;
+  /** Return false when another editor has newer unsaved contents. */
+  readonly onConfirmed: (contents: string) => boolean | void;
 }
 
 export class FileSaveCoordinator<A = unknown, E = unknown> {
@@ -29,17 +29,8 @@ export class FileSaveCoordinator<A = unknown, E = unknown> {
     this.schedule(this.options.debounceMs);
   }
 
-  /**
-   * Explicit save (spreadsheet Save button): persist now instead of waiting
-   * out the debounce. Coalescing, pending, and confirmed semantics match
-   * debounced changes, so rapid Save clicks collapse into the in-flight write.
-   */
   save(contents: string): void {
-    if (this.disposed) return;
-    this.latestContents = contents;
-    this.latestRevision += 1;
-    this.lastChangeAt = Date.now();
-    this.options.onPendingChange(true);
+    this.change(contents);
     this.clearTimer();
     void this.persistLatest();
   }
@@ -66,21 +57,24 @@ export class FileSaveCoordinator<A = unknown, E = unknown> {
 
   private async persistLatest(): Promise<void> {
     if (this.saving || this.latestRevision === this.confirmedRevision) return;
+    if (this.options.canPersist?.() === false) {
+      return;
+    }
 
     this.saving = true;
     const contents = this.latestContents;
     const revision = this.latestRevision;
     const result = await this.options.persist(contents);
     const succeeded = result._tag === "Success";
+    let confirmed = false;
     if (succeeded) {
       this.confirmedRevision = revision;
-      this.options.onConfirmed(contents);
+      confirmed = this.options.onConfirmed(contents) !== false;
     }
 
     this.saving = false;
     if (revision === this.latestRevision) {
-      if (succeeded) this.options.onPendingChange(false);
-      else this.options.onFailure?.();
+      if (confirmed) this.options.onPendingChange(false);
       return;
     }
 

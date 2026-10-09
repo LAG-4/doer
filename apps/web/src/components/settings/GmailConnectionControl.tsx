@@ -33,7 +33,7 @@ const requestGmail = createEnvironmentCommand(connectionAtomRuntime, {
   label: "connected-apps:gmail",
   execute: (input: GmailAction) =>
     Effect.gen(function* () {
-      const supervisor = yield* EnvironmentSupervisor;
+      const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
       const prepared = Option.getOrNull(yield* SubscriptionRef.get(supervisor.prepared));
       if (!prepared)
         return {

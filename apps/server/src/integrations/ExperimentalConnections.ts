@@ -9,7 +9,7 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { ExperimentalConnectionsStatus } from "@t3tools/shared/experimentalConnections";
-import { writeFileStringAtomically } from "../atomicWrite.ts";
+import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import * as ServerConfig from "../config.ts";
 
 const SETTINGS_FILENAME = "experimental-connections.json";

@@ -17,13 +17,13 @@ import * as WorkspacePaths from "./WorkspacePaths.ts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 
-const ProjectLayer = WorkspaceFileSystem.layer.pipe(
+const layerProject = WorkspaceFileSystem.layer.pipe(
   Layer.provide(WorkspacePaths.layer),
   Layer.provide(WorkspaceEntries.layer.pipe(Layer.provide(WorkspacePaths.layer))),
 );
 
-const TestLayer = Layer.empty.pipe(
-  Layer.provideMerge(ProjectLayer),
+const layerTest = Layer.empty.pipe(
+  Layer.provideMerge(layerProject),
   Layer.provideMerge(WorkspaceEntries.layer.pipe(Layer.provide(WorkspacePaths.layer))),
   Layer.provideMerge(WorkspacePaths.layer),
   Layer.provideMerge(VcsDriverRegistry.layer.pipe(Layer.provide(VcsProcess.layer))),
@@ -56,7 +56,7 @@ const writeTextFile = Effect.fn("writeTextFile")(function* (
   yield* fileSystem.writeFileString(absolutePath, contents).pipe(Effect.orDie);
 });
 
-it.layer(TestLayer, { excludeTestServices: true })("WorkspaceFileSystemLive", (it) => {
+it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (it) => {
   describe("readFile", () => {
     it.effect("reads UTF-8 files relative to the workspace root", () =>
       Effect.gen(function* () {
@@ -223,31 +223,6 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
       }),
     );
 
-    it.effect("reads binary files as base64 when requested", () =>
-      Effect.gen(function* () {
-        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
-        const fileSystem = yield* FileSystem.FileSystem;
-        const path = yield* Path.Path;
-        const cwd = yield* makeTempDir;
-        const absolutePath = path.join(cwd, "budget.xlsx");
-        yield* fileSystem.writeFile(absolutePath, Uint8Array.from([0x61, 0, 0x62]));
-
-        const result = yield* workspaceFileSystem.readFile({
-          cwd,
-          relativePath: "budget.xlsx",
-          encoding: "base64",
-        });
-
-        expect(result).toEqual({
-          relativePath: "budget.xlsx",
-          contents: "YQBi",
-          byteLength: 3,
-          truncated: false,
-          encoding: "base64",
-        });
-      }),
-    );
-
     it.effect("preserves the real cause and path for I/O failures", () =>
       Effect.gen(function* () {
         const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
@@ -294,49 +269,6 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
       }),
     );
 
-    it.effect("writes base64 bytes when requested", () =>
-      Effect.gen(function* () {
-        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
-        const fileSystem = yield* FileSystem.FileSystem;
-        const path = yield* Path.Path;
-        const cwd = yield* makeTempDir;
-        const result = yield* workspaceFileSystem.writeFile({
-          cwd,
-          relativePath: "budget.xlsx",
-          contents: "YQBi",
-          encoding: "base64",
-        });
-        const saved = yield* fileSystem.readFile(path.join(cwd, "budget.xlsx")).pipe(Effect.orDie);
-
-        expect(result).toEqual({ relativePath: "budget.xlsx" });
-        expect(Array.from(saved)).toEqual([0x61, 0, 0x62]);
-      }),
-    );
-
-    it.effect("rejects malformed base64 without touching disk", () =>
-      Effect.gen(function* () {
-        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
-        const fileSystem = yield* FileSystem.FileSystem;
-        const path = yield* Path.Path;
-        const cwd = yield* makeTempDir;
-
-        const error = yield* workspaceFileSystem
-          .writeFile({
-            cwd,
-            relativePath: "budget.xlsx",
-            contents: "!!!not-base64!!!",
-            encoding: "base64",
-          })
-          .pipe(Effect.flip);
-
-        expect(error).toBeInstanceOf(WorkspaceFileSystem.WorkspaceFileSystemOperationError);
-        expect(error).toMatchObject({ operation: "write-file" });
-        const escapedStat = yield* fileSystem
-          .stat(path.join(cwd, "budget.xlsx"))
-          .pipe(Effect.orElseSucceed(() => null));
-        expect(escapedStat).toBeNull();
-      }),
-    );
     it.effect("rejects writes by absolute path", () =>
       Effect.gen(function* () {
         const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;

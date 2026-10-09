@@ -19,6 +19,7 @@ export type SettingsPath =
   | "/settings/snap-shot"
   | "/settings/providers"
   | "/settings/integrations"
+  | "/settings/scheduled-tasks"
   | "/settings/source-control"
   | "/settings/storage"
   | "/settings/connections"
@@ -59,11 +60,8 @@ export interface SettingsSearchItem {
   readonly localBackendManagementOnly?: boolean;
   readonly localEnvironmentOnly?: boolean;
   readonly wslAvailableOnly?: boolean;
-  /**
-   * Its row only renders while the experimental-connections master switch is
-   * on, so search must not point at a missing anchor while it is off.
-   */
-  readonly experimentalConnectionsOnly?: boolean;
+  // Its row only renders while this environment's T3 Connect managed tunnel is on.
+  readonly managedTunnelOnly?: boolean;
   /**
    * Sorts after every other match. Keybinding commands mirror rows on other
    * surfaces, so "model" must still lead with Default model, not Model Picker.
@@ -81,8 +79,7 @@ export interface SettingsSearchAvailability {
   readonly canManageLocalBackend: boolean;
   readonly isWslSettingsRowVisible: boolean;
   readonly hasThreadAutoSettlement: boolean;
-  /** Experimental connection rows only render while the host master switch is on. */
-  readonly hasExperimentalConnections?: boolean;
+  readonly managedTunnelActive?: boolean;
 }
 
 /**
@@ -90,13 +87,14 @@ export interface SettingsSearchAvailability {
  * subtitles both render from this record, so each label exists once.
  */
 export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
-  "/settings/projects": "Spaces",
+  "/settings/projects": "Project",
   "/settings/general": "General",
   "/settings/appearance": "Appearance",
   "/settings/keybindings": "Keybindings",
   "/settings/snap-shot": "SnapShots",
-  "/settings/providers": "AI services",
-  "/settings/integrations": "Connected apps",
+  "/settings/providers": "Providers",
+  "/settings/integrations": "Integrations",
+  "/settings/scheduled-tasks": "Scheduled Tasks",
   "/settings/source-control": "Source Control",
   "/settings/storage": "Storage",
   "/settings/connections": "Connections",
@@ -137,17 +135,24 @@ const KEYBINDING_SEARCH_ITEMS = STATIC_KEYBINDING_COMMANDS.toSorted((left, right
  */
 export const SETTINGS_SEARCH_ITEMS = [
   {
-    id: "personal-preferences",
-    title: "Personal preferences",
-    to: "/settings/general",
-    searchTerms: ["remember memory forget about me writing currency"],
+    id: "agent-computer-access",
+    title: "Computer use",
+    to: "/settings/projects",
+    scope: "project-defaults",
+    searchTerms: ["computer desktop access apps"],
   },
   {
-    id: "microsoft",
-    title: "Microsoft connected apps",
+    id: "simple-mode",
+    title: "Simple Mode",
+    to: "/settings/general",
+    searchTerms: ["simplified easy advanced interface"],
+  },
+  {
+    id: "experimental-connections",
+    title: "Experimental connections",
     to: "/settings/integrations",
-    experimentalConnectionsOnly: true,
-    searchTerms: ["Outlook email Calendar OneDrive SharePoint account connect sign in"],
+    scope: "environment-defaults",
+    searchTerms: ["gmail microsoft spreadsheet presentation tools"],
   },
   {
     id: "storage-worktrees",
@@ -157,6 +162,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [
       "disk storage delete deleted archived threads old inactive merged unchanged worktrees retention days project inherit off custom",
     ],
+  },
+  {
+    id: "storage-worktrees-location",
+    title: "Worktree location",
+    to: "/settings/storage",
+    scope: "environment-defaults",
+    searchTerms: ["worktree location folder directory path drive external disk"],
   },
   {
     id: "storage-artifacts",
@@ -288,10 +300,33 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["long lines code blocks tables diffs file previews"],
   },
   {
+    id: "composer-context",
+    title: "Composer context",
+    to: "/settings/appearance",
+  },
+  {
     id: "project-grouping",
     title: "Project grouping",
     to: "/settings/general",
     searchTerms: ["combine matching repositories environments sidebar"],
+  },
+  {
+    id: "project-order",
+    title: "Project order",
+    to: "/settings/general",
+    searchTerms: ["sort projects sidebar manual created recent"],
+  },
+  {
+    id: "snooze-limited-threads",
+    title: "Snooze limited threads",
+    to: "/settings/general",
+    searchTerms: ["usage quota rate limit reset wake recover continue"],
+  },
+  {
+    id: "auto-resume-limited-threads",
+    title: "Auto-resume limited threads",
+    to: "/settings/general",
+    searchTerms: ["usage quota rate limit reset recover continue"],
   },
   {
     id: "working-shelf",
@@ -301,9 +336,9 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "auto-settle-inactive-threads",
-    title: "Automatically finish inactive Tasks",
+    title: "Auto-settle inactive threads",
     to: "/settings/general",
-    searchTerms: ["auto-settle sidebar inactivity days no activity automatically"],
+    searchTerms: ["sidebar inactivity days no activity automatically"],
     requiresThreadAutoSettlement: true,
     scope: "project-defaults",
   },
@@ -317,22 +352,16 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "days-before-auto-settle",
-    title: "Days before finishing inactive Tasks",
+    title: "Days of inactivity before auto-settle",
     to: "/settings/general",
     targetId: "auto-settle-inactive-threads",
-    searchTerms: ["auto-settle thread timeout activity sidebar"],
+    searchTerms: ["thread timeout activity sidebar"],
     requiresThreadAutoSettlement: true,
     scope: "project-defaults",
   },
   {
-    id: "simple-mode",
-    title: "Simple mode",
-    to: "/settings/general",
-    searchTerms: ["hide git commit branch worktree pull request pr beginner simple source control"],
-  },
-  {
     id: "thread-notifications",
-    title: "Task notifications",
+    title: "Thread notifications",
     to: "/settings/general",
     searchTerms: ["notification sound alert completion input approval desktop"],
   },
@@ -418,7 +447,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "continue-threads-after-server-update",
-    title: "Continue Tasks after restarts",
+    title: "Continue threads after restarts",
     to: "/settings/general",
     scope: "project-defaults",
     searchTerms: [
@@ -436,10 +465,10 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "new-threads",
-    title: "New Tasks",
+    title: "New threads",
     to: "/settings/general",
     scope: "project-defaults",
-    searchTerms: ["thread threads default workspace mode draft local worktree"],
+    searchTerms: ["default workspace mode draft local worktree"],
   },
   {
     id: "worktree-submodules",
@@ -493,6 +522,19 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
     scope: "project-defaults",
     searchTerms: ["generated thread titles source control content default provider"],
+  },
+  {
+    id: "cli-command",
+    title: "t3 command",
+    to: "/settings/general",
+    searchTerms: ["cli terminal shell path install command line"],
+    desktopOnly: true,
+  },
+  {
+    id: "privacy-policy",
+    title: "Privacy policy",
+    to: "/settings/general",
+    searchTerms: ["telemetry analytics usage data tracking legal opt out"],
   },
   {
     id: "diagnostics",
@@ -602,47 +644,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     providerSettingsOnly: true,
   },
   {
-    id: "experimental-connections",
-    title: "Experimental connections",
-    to: "/settings/integrations",
-    searchTerms: ["Google Gmail Microsoft Outlook Excel PowerPoint Office plugin tools try beta"],
-  },
-  {
-    id: "gmail-access",
-    title: "Gmail",
-    to: "/settings/integrations",
-    experimentalConnectionsOnly: true,
-    searchTerms: ["email Google account connect sign in send tools"],
-  },
-  {
-    id: "spreadsheet-access",
-    title: "Spreadsheets",
-    to: "/settings/integrations",
-    experimentalConnectionsOnly: true,
-    searchTerms: ["Excel xlsx local files tools"],
-  },
-  {
-    id: "presentation-access",
-    title: "Presentations",
-    to: "/settings/integrations",
-    experimentalConnectionsOnly: true,
-    searchTerms: ["PowerPoint pptx local files slides tools"],
-  },
-  {
     id: "agent-browser-access",
     title: "Agent browser access",
     to: "/settings/integrations",
     scope: "project-defaults",
     searchTerms: ["allow disable enable open drive preview tools sessions project override"],
-  },
-  {
-    id: "agent-computer-access",
-    title: "Agent computer access",
-    to: "/settings/integrations",
-    scope: "project-defaults",
-    searchTerms: [
-      "allow disable enable computer use desktop operate apps click type sessions project override",
-    ],
   },
   {
     id: "device-hosts",
@@ -738,6 +744,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["auto pull default branch current checkout fast forward upstream"],
   },
   {
+    id: "remove-agent-credits-on-merge",
+    title: "Remove agent credits when merging",
+    to: "/settings/source-control",
+    scope: "project-defaults",
+    searchTerms: ["pull request github squash co-authored-by attribution claude codex generated"],
+  },
+  {
     id: "pull-request-merge-method",
     title: "Default merge method",
     to: "/settings/source-control",
@@ -759,6 +772,24 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/source-control",
     searchTerms: [
       "automatic remote branch refresh background credentials security keys seconds off",
+    ],
+    environmentOnly: true,
+    scope: "environment-defaults",
+  },
+  {
+    id: "worktree-branch-naming",
+    title: "Worktree branch naming",
+    to: "/settings/source-control",
+    searchTerms: ["static semantic prefix custom prompt instructions feat fix refactor chore"],
+    environmentOnly: true,
+    scope: "project-defaults",
+  },
+  {
+    id: "github-accounts",
+    title: "GitHub accounts and token",
+    to: "/settings/source-control",
+    searchTerms: [
+      "github gh account login user host enterprise ghes switch multiple accounts disable sign in token personal access token pat api key credential",
     ],
     environmentOnly: true,
     scope: "environment-defaults",
@@ -809,7 +840,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/connections",
     targetId: "connections-environment",
     searchTerms: ["machine glyph sidebar mac mini studio laptop desktop server cloud vm"],
-    localBackendManagementOnly: true,
   },
   {
     id: "local-environment",
@@ -857,6 +887,16 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["managed tunnel cloud other devices remote"],
     desktopOnly: true,
     cloudOnly: true,
+  },
+  {
+    id: "hold-webhooks-while-offline",
+    localEnvironmentOnly: true,
+    title: "Hold webhooks while offline",
+    to: "/settings/connections",
+    targetId: "connections-environment",
+    searchTerms: ["webhook automations offline queue mailbox t3 connect"],
+    cloudOnly: true,
+    managedTunnelOnly: true,
   },
   {
     id: "publish-agent-activity",
@@ -920,6 +960,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/source-control": "environment-defaults",
   "/settings/storage": "project-defaults",
   "/settings/connections": "connections",
+  "/settings/scheduled-tasks": null,
   "/settings/archived": "project-defaults",
 };
 
@@ -1040,7 +1081,7 @@ export function filterAvailableSettingsSearchItems(
       (!item.localEnvironmentOnly || !availability.localEnvironmentDisabled) &&
       (!item.wslAvailableOnly || availability.isWslSettingsRowVisible) &&
       (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement) &&
-      (!item.experimentalConnectionsOnly || availability.hasExperimentalConnections),
+      (!item.managedTunnelOnly || availability.managedTunnelActive === true),
   );
 }
 

@@ -5,13 +5,13 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
 import * as Path from "effect/Path";
-import * as PlatformError from "effect/PlatformError";
-import { HttpClient, HttpClientResponse } from "effect/unstable/http";
-import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
+import { HttpClient, HttpClientResponse } from "effect/http";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as ProcessRunner from "../processRunner.ts";
 import {
   ensurePinnedRuntimeInstalled,
+  pinnedRuntimeCommand,
   pinnedRuntimePaths,
   PinnedRuntimeInstallError,
   type PinnedRuntimeProgress,
@@ -38,16 +38,17 @@ const releaseHttpClient = (checksums: string, requests: string[] = []) =>
     const body = request.url.endsWith("/SHA256SUMS") ? checksums : archiveBytes;
     return Effect.succeed(HttpClientResponse.fromWeb(request, new Response(body)));
   });
-const extractingRunner = (fs: FileSystem.FileSystem, path: Path.Path, _commands: string[] = []) =>
+const extractingRunner = (fs: FileSystem.FileSystem, path: Path.Path, commands: string[] = []) =>
   ProcessRunner.ProcessRunner.of({
     run: (input) =>
       Effect.gen(function* () {
-        const prefixIndex = input.args.indexOf("--prefix");
-        const stagingDir = input.args[prefixIndex + 1];
-        if (stagingDir === undefined) return yield* Effect.die("missing npm --prefix");
-        const entry = path.join(stagingDir, "node_modules", "@lag4/doer-cli", "dist", "bin.mjs");
-        yield* fs.makeDirectory(path.dirname(entry), { recursive: true }).pipe(Effect.orDie);
-        yield* fs.writeFileString(entry, "export {};\n").pipe(Effect.orDie);
+        commands.push(input.command);
+        const targetIndex = input.args.indexOf("-C");
+        const stagingDir = input.args[targetIndex + 1];
+        if (input.command !== "tar" || stagingDir === undefined) {
+          return yield* Effect.die(`unexpected command ${input.command}`);
+        }
+        yield* fs.writeFileString(path.join(stagingDir, "t3"), "#!/bin/sh\n").pipe(Effect.orDie);
         return {
           stdout: "",
           stderr: "",
@@ -62,16 +63,13 @@ const extractingRunner = (fs: FileSystem.FileSystem, path: Path.Path, _commands:
   });
 
 it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
-  // The fork ships the pinned runtime through the npm package, not the
-  // release archive: installs run `npm install --prefix <staging>` for
-  // `@lag4/doer-cli@<version>`, with a pnpm fallback for pnpm-managed Node.
-  it.effect("installs through pnpm when its Node runtime has no npm executable", () =>
+  it.effect("installs the verified release archive as the runtime executable", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-pnpm-" });
-      const commands: Array<ProcessRunner.ProcessRunInput> = [];
-      const install = extractingRunner(fs, path);
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-archive-" });
+      const requests: string[] = [];
+      const commands: string[] = [];
       const paths = yield* ensurePinnedRuntimeInstalled({
         baseDir,
         version,
@@ -79,49 +77,30 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
         path,
         platform: "linux",
         arch: "x64",
-        httpClient: releaseHttpClient(yield* validChecksums),
-        runner: ProcessRunner.ProcessRunner.of({
-          run: (input) => {
-            commands.push(input);
-            return input.command === "npm"
-              ? Effect.fail(
-                  new ProcessRunner.ProcessSpawnError({
-                    command: "npm",
-                    argumentCount: input.args.length,
-                    cause: PlatformError.systemError({
-                      _tag: "NotFound",
-                      module: "ChildProcess",
-                      method: "spawn",
-                    }),
-                  }),
-                )
-              : install.run(input);
-          },
-        }),
+        httpClient: releaseHttpClient(yield* validChecksums, requests),
+        releaseBaseUrl: "https://releases.example/download",
+        runner: extractingRunner(fs, path, commands),
         validate: (staging) =>
           fs.exists(staging.entryPath).pipe(
             Effect.flatMap((exists) => (exists ? Effect.void : Effect.die("missing runtime"))),
             Effect.orDie,
           ),
       });
-      assert.deepEqual(
-        commands.map((command) => command.command),
-        ["npm", "pnpm"],
-      );
-      assert.deepEqual(commands[1]!.args, ["--package=npm@11", "dlx", "npm", ...commands[0]!.args]);
+      assert.equal(paths.entryPath, path.join(paths.versionDir, "t3"));
+      assert.deepEqual(pinnedRuntimeCommand(paths), { command: paths.entryPath, args: [] });
+      assert.deepEqual(requests, [
+        `https://releases.example/download/v${version}/SHA256SUMS`,
+        `https://releases.example/download/v${version}/${archiveName}`,
+      ]);
+      assert.deepEqual(commands, ["tar"]);
       assert.equal(yield* fs.readFileString(paths.sentinelPath), `${version}\n`);
+      assert.isFalse(yield* fs.exists(path.join(paths.versionDir, "t3-runtime-archive")));
     }),
   );
 
-  // Fork: the release-archive install path is dead code — Doer ships the
-  // pinned runtime through the npm package (`npm install --prefix <staging>
-  // @lag4/doer-cli@<version>`), so archive download progress, checksum
-  // refusal, and interrupted-download cleanup never run. Skipped until the
-  // archive path is either removed or progress is ported to the npm installer.
-  it.skip.each([true, false])(
+  it.effect.each([true, false])(
     "reports bytes before completion, then verifies and extracts (known size: %s)",
-    // any: skipped (archive path is fork dead code); keeps the runnable body for a future unskip.
-    (knownSize): any =>
+    (knownSize) =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
@@ -186,62 +165,60 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
       }),
   );
 
-  it.effect.skip(
-    "cleans up an interrupted download without reporting verification or extraction",
-    () =>
-      Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
-        const path = yield* Path.Path;
-        const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-progress-failed-" });
-        const checksums = yield* validChecksums;
-        const progress: PinnedRuntimeProgress[] = [];
-        let cancelled = false;
-        const client = HttpClient.make((request) =>
-          Effect.succeed(
-            HttpClientResponse.fromWeb(
-              request,
-              request.url.endsWith("/SHA256SUMS")
-                ? new Response(checksums)
-                : new Response(
-                    new ReadableStream({
-                      start(controller) {
-                        controller.enqueue(archiveBytes.slice(0, 4));
-                      },
-                      cancel() {
-                        cancelled = true;
-                      },
-                    }),
-                  ),
-            ),
+  it.effect("cleans up an interrupted download without reporting verification or extraction", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-progress-failed-" });
+      const checksums = yield* validChecksums;
+      const progress: PinnedRuntimeProgress[] = [];
+      let cancelled = false;
+      const client = HttpClient.make((request) =>
+        Effect.succeed(
+          HttpClientResponse.fromWeb(
+            request,
+            request.url.endsWith("/SHA256SUMS")
+              ? new Response(checksums)
+              : new Response(
+                  new ReadableStream({
+                    start(controller) {
+                      controller.enqueue(archiveBytes.slice(0, 4));
+                    },
+                    cancel() {
+                      cancelled = true;
+                    },
+                  }),
+                ),
           ),
-        );
-        const firstChunk = yield* Deferred.make<void>();
-        const install = yield* ensurePinnedRuntimeInstalled({
-          baseDir,
-          version,
-          fs,
-          path,
-          platform: "linux",
-          arch: "x64",
-          httpClient: client,
-          runner: extractingRunner(fs, path),
-          validate: () => Effect.die("must not validate an interrupted archive"),
-          onProgress: (event) => {
-            progress.push(event);
-            if (event.stage === "download" && event.received === 4)
-              Deferred.doneUnsafe(firstChunk, Effect.void);
-          },
-        }).pipe(Effect.forkScoped);
-        yield* Deferred.await(firstChunk);
-        yield* Fiber.interrupt(install);
-        assert.deepEqual(progress.at(-1), { stage: "download", received: 4, total: undefined });
-        assert.isTrue(progress.every((event) => event.stage === "download"));
-        assert.isTrue(cancelled);
-        assert.deepEqual(yield* fs.readDirectory(path.join(baseDir, "runtime", "versions")), []);
-      }),
+        ),
+      );
+      const firstChunk = yield* Deferred.make<void>();
+      const install = yield* ensurePinnedRuntimeInstalled({
+        baseDir,
+        version,
+        fs,
+        path,
+        platform: "linux",
+        arch: "x64",
+        httpClient: client,
+        runner: extractingRunner(fs, path),
+        validate: () => Effect.die("must not validate an interrupted archive"),
+        onProgress: (event) => {
+          progress.push(event);
+          if (event.stage === "download" && event.received === 4)
+            Deferred.doneUnsafe(firstChunk, Effect.void);
+        },
+      }).pipe(Effect.forkScoped);
+      yield* Deferred.await(firstChunk);
+      yield* Fiber.interrupt(install);
+      assert.deepEqual(progress.at(-1), { stage: "download", received: 4, total: undefined });
+      assert.isTrue(progress.every((event) => event.stage === "download"));
+      assert.isTrue(cancelled);
+      assert.deepEqual(yield* fs.readDirectory(path.join(baseDir, "runtime", "versions")), []);
+    }),
   );
 
-  it.effect.skip("refuses an archive whose checksum does not match the release", () =>
+  it.effect("refuses an archive whose checksum does not match the release", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
@@ -262,42 +239,6 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
       assert.equal(error.step, "verifying the t3 release archive checksum");
       assert.deepEqual(commands, []);
       assert.deepEqual(yield* fs.readDirectory(path.join(baseDir, "runtime", "versions")), []);
-    }),
-  );
-
-  it.effect("does not try a different installer for npm permission failures", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-permission-" });
-      const commands: string[] = [];
-      yield* ensurePinnedRuntimeInstalled({
-        baseDir,
-        version,
-        fs,
-        path,
-        platform: "linux",
-        arch: "x64",
-        httpClient: releaseHttpClient(yield* validChecksums),
-        runner: ProcessRunner.ProcessRunner.of({
-          run: (input) => {
-            commands.push(input.command);
-            return Effect.fail(
-              new ProcessRunner.ProcessSpawnError({
-                command: input.command,
-                argumentCount: input.args.length,
-                cause: PlatformError.systemError({
-                  _tag: "PermissionDenied",
-                  module: "ChildProcess",
-                  method: "spawn",
-                }),
-              }),
-            );
-          },
-        }),
-        validate: () => Effect.die("must not validate a failed install"),
-      }).pipe(Effect.flip);
-      assert.deepEqual(commands, ["npm"]);
     }),
   );
 

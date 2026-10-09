@@ -6,7 +6,7 @@ import {
   type PreviewSessionSnapshot,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
@@ -17,7 +17,7 @@ import {
 import { selectThreadRightPanelState, useRightPanelStore } from "~/rightPanelStore";
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
 
-import { addBrowserSurface, DEFAULT_MANUAL_BROWSER_URL } from "./addBrowserSurface";
+import { addBrowserSurface } from "./addBrowserSurface";
 
 const threadRef = {
   environmentId: "local" as ScopedThreadRef["environmentId"],
@@ -36,7 +36,7 @@ const snapshot = (tabId: string): PreviewSessionSnapshot => ({
 beforeEach(() => {
   __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
   resetPreviewStateForTests();
-  useRightPanelStore.setState({ byThreadKey: {} });
+  useRightPanelStore.setState({ byThreadKey: {}, threadPanelVisibilityByThreadKey: {} });
 });
 
 describe("addBrowserSurface", () => {
@@ -53,25 +53,9 @@ describe("addBrowserSurface", () => {
 
     expect(openPreview).toHaveBeenCalledWith({
       threadId: "thread-1",
-      url: DEFAULT_MANUAL_BROWSER_URL,
       viewport: FILL_PREVIEW_VIEWPORT,
       profileId: "profile-work",
     });
-  });
-
-  it("opens google.com by default for manually created tabs", async () => {
-    const openPreview = vi.fn(async (_input: PreviewOpenInput) =>
-      AsyncResult.success(snapshot("tab-1")),
-    );
-
-    await addBrowserSurface({
-      threadRef,
-      openPreview: ({ input }) => openPreview(input),
-    });
-
-    expect(openPreview).toHaveBeenCalledWith(
-      expect.objectContaining({ url: "https://www.google.com" }),
-    );
   });
 
   it("creates another preview session when a browser tab is already active", async () => {
@@ -85,7 +69,6 @@ describe("addBrowserSurface", () => {
 
     expect(openPreview).toHaveBeenCalledWith({
       threadId: "thread-1",
-      url: DEFAULT_MANUAL_BROWSER_URL,
       viewport: FILL_PREVIEW_VIEWPORT,
       profileId: DEFAULT_BROWSER_PROFILE_ID,
     });

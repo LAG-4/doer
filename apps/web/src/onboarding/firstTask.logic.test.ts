@@ -9,7 +9,14 @@ import {
   getFirstTaskTurnOutcome,
   type FirstTaskTurnSnapshot,
 } from "./firstTask.logic";
-import type { OrchestrationSessionStatus } from "@t3tools/contracts";
+type OrchestrationSessionStatus =
+  | "idle"
+  | "ready"
+  | "running"
+  | "starting"
+  | "stopped"
+  | "interrupted"
+  | "error";
 
 function snapshot(overrides: Partial<FirstTaskTurnSnapshot> = {}): FirstTaskTurnSnapshot {
   return {

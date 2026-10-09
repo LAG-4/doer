@@ -1,32 +1,23 @@
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NetService from "@t3tools/shared/Net";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
-import { HttpClient, HttpClientResponse } from "effect/unstable/http";
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { HttpClient, HttpClientResponse } from "effect/http";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
-import { SshPasswordPrompt } from "./auth.ts";
+import * as SshAuth from "./auth.ts";
 import { SshCommandError } from "./errors.ts";
-import {
-  buildRemoteLaunchScript,
-  buildRemotePairingScript,
-  buildRemoteStopScript,
-  buildRemoteT3RunnerScript,
-  describeReadinessCause,
-  issueRemotePairingToken,
-  launchOrReuseRemoteServer,
-  REMOTE_PICK_PORT_SCRIPT,
-  SshEnvironmentManager,
-  waitForHttpReady,
-} from "./tunnel.ts";
+import * as SshTunnel from "./tunnel.ts";
 
 const TEST_NODE_ENGINE_RANGE = "^22.16 || ^23.11 || >=24.10";
 
@@ -107,19 +98,62 @@ const NODE_SCRIPT = {
 } as const;
 
 describe("ssh tunnel scripts", () => {
-  it("builds the remote doer runner with npx and npm fallbacks", () => {
-    const script = buildRemoteT3RunnerScript({ nodeEngineRange: TEST_NODE_ENGINE_RANGE });
-
-    assert.include(script, "T3_NODE_SCRIPT_PATH=''");
-    assert.include(script, 'exec doer "$@"');
-    assert.include(script, 'exec "$T3_CLI_PATH" "$@"');
-    assert.include(script, "could not install '@lag4/doer-cli@latest'");
-    assert.include(script, "require_installed_t3_cli npx --yes --package '@lag4/doer-cli@latest'");
+  it("resolves and runs the fork npm package without leaving an npm wrapper", () => {
+    const script = SshTunnel.buildRemoteT3RunnerScript({ packageSpec: "@lag4/doer-cli@1.2.3" });
+    assert.include(script, "require_installed_t3_cli npx --yes --package '@lag4/doer-cli@1.2.3'");
     assert.include(
       script,
-      "require_installed_t3_cli npm exec --yes --package '@lag4/doer-cli@latest'",
+      "require_installed_t3_cli npm exec --yes --package '@lag4/doer-cli@1.2.3'",
     );
-    assert.include(script, "npm produced no doer executable");
+    assert.include(script, 'exec "$T3_CLI_PATH" "$@"');
+    assert.include(script, 'exec doer "$@"');
+    assert.notInclude(script, "pingdotgg/t3code");
+    assert.notInclude(script, "SHA256SUMS");
+  });
+
+  it("rejects archive versions that are not a single exact version segment", () => {
+    for (const archiveVersion of [
+      "../other",
+      "1.2.3/evil",
+      "1.2.3\\evil",
+      "1.2.3-preview.1 x",
+      "1.2.3-preview.1\nrm -rf /",
+      "v1.2.3",
+    ]) {
+      assert.throws(
+        () => SshTunnel.buildRemoteT3RunnerScript({ archiveVersion }),
+        SshTunnel.SshInvalidArchiveVersionError,
+        undefined,
+        archiveVersion,
+      );
+    }
+  });
+
+  it("defaults to the fork npm package when no runner is configured", () => {
+    for (const input of [undefined, {}, { archiveVersion: "  " }, { nodeScriptPath: null }]) {
+      assert.include(SshTunnel.buildRemoteT3RunnerScript(input), "'@lag4/doer-cli@latest'");
+    }
+    assert.include(SshTunnel.buildRemoteLaunchScript(), "'@lag4/doer-cli@latest'");
+  });
+
+  it("does not hard-code a remote node engine range", () => {
+    const script = SshTunnel.buildRemoteT3RunnerScript(NODE_SCRIPT);
+
+    assert.include(script, "T3_NODE_ENGINE_RANGE=''");
+    assert.notInclude(script, TEST_NODE_ENGINE_RANGE);
+  });
+
+  it("builds the remote t3 runner with a node script override", () => {
+    const script = SshTunnel.buildRemoteT3RunnerScript({
+      ...NODE_SCRIPT,
+      nodeEngineRange: TEST_NODE_ENGINE_RANGE,
+    });
+
+    assert.include(
+      script,
+      "T3_NODE_SCRIPT_PATH='/Users/julius/Development/Work/codething-mvp/apps/server/dist/bin.mjs'",
+    );
+    assert.include(script, 'exec node "$T3_NODE_SCRIPT_PATH" "$@"');
     assert.include(script, 'prepend_path_if_dir "$HOME/.local/bin"');
     assert.include(script, `T3_NODE_ENGINE_RANGE='${TEST_NODE_ENGINE_RANGE}'`);
     assert.include(script, "remote_node_satisfies_engine()");
@@ -137,48 +171,16 @@ describe("ssh tunnel scripts", () => {
     assert.include(script, "nvm use --silent default");
     assert.include(script, 'for T3_NODE_BIN in "$NVM_DIR"/versions/node/*/bin');
     assert.notInclude(script, "ensure $NVM_DIR/nvm.sh is available");
-  });
-
-  it("does not hard-code a remote node engine range", () => {
-    const script = buildRemoteT3RunnerScript();
-
-    assert.include(script, "T3_NODE_ENGINE_RANGE=''");
-    assert.notInclude(script, TEST_NODE_ENGINE_RANGE);
-  });
-
-  it("shell-quotes package specs in the remote doer runner", () => {
-    const script = buildRemoteT3RunnerScript({
-      packageSpec: "@lag4/doer-cli@nightly; touch /tmp/doer-owned",
-    });
-
-    assert.include(
-      script,
-      "require_installed_t3_cli npx --yes --package '@lag4/doer-cli@nightly; touch /tmp/doer-owned'",
+    assert.isBelow(
+      script.indexOf('exec node "$T3_NODE_SCRIPT_PATH" "$@"'),
+      script.indexOf("require_installed_t3_cli npx"),
     );
-    assert.notInclude(script, "exec npx --yes @lag4/doer-cli@nightly; touch /tmp/doer-owned");
   });
 
-  it("builds the remote doer runner with a node script override", () => {
-    const script = buildRemoteT3RunnerScript({
-      nodeScriptPath: "/Users/julius/Development/Work/codething-mvp/apps/server/dist/bin.mjs",
-    });
-
-    assert.include(
-      script,
-      "T3_NODE_SCRIPT_PATH='/Users/julius/Development/Work/codething-mvp/apps/server/dist/bin.mjs'",
-    );
-    assert.include(script, 'exec node "$T3_NODE_SCRIPT_PATH" "$@"');
-  });
-
-  it("uses the remote doer runner for launch and pairing scripts", () => {
-    const target = {
-      alias: "devbox",
-      hostname: "devbox.example.com",
-      username: "julius",
-      port: 2222,
-    } as const;
-    const launch = buildRemoteLaunchScript(ARCHIVE);
-    const devLaunch = buildRemoteLaunchScript({
+  it("uses the remote t3 runner for launch and pairing scripts", () => {
+    const stateKey = "711bc738002d72fd";
+    const launch = SshTunnel.buildRemoteLaunchScript(ARCHIVE);
+    const devLaunch = SshTunnel.buildRemoteLaunchScript({
       ...NODE_SCRIPT,
       nodeEngineRange: TEST_NODE_ENGINE_RANGE,
     });
@@ -189,7 +191,7 @@ describe("ssh tunnel scripts", () => {
     );
     assert.include(launch, "RUNNER_CHANGED=1");
     assert.include(launch, "ensure_remote_node_path()");
-    assert.include(launch, "elif ! ensure_remote_node_path; then");
+    assert.include(launch, "if ! ensure_remote_node_path; then");
     assert.include(devLaunch, `T3_NODE_ENGINE_RANGE='${TEST_NODE_ENGINE_RANGE}'`);
     assert.include(devLaunch, "does not satisfy required range ");
     assert.include(launch, 'kill "$REMOTE_PID" 2>/dev/null || true');
@@ -203,44 +205,30 @@ describe("ssh tunnel scripts", () => {
     assert.include(launch, "It wrote nothing to %s");
     assert.include(launch, "'@lag4/doer-cli@latest'");
     assert.include(
-      buildRemoteLaunchScript({ nodeEngineRange: TEST_NODE_ENGINE_RANGE }),
-      `T3_NODE_ENGINE_RANGE='${TEST_NODE_ENGINE_RANGE}'`,
-    );
-    assert.include(
-      buildRemoteLaunchScript({ nodeEngineRange: TEST_NODE_ENGINE_RANGE }),
-      "does not satisfy required range ",
-    );
-    assert.include(buildRemoteLaunchScript(), 'kill "$REMOTE_PID" 2>/dev/null || true');
-    assert.include(buildRemoteLaunchScript(), "wait_ready");
-    assert.include(buildRemoteLaunchScript(), '"$RUNNER_FILE" serve --host 127.0.0.1');
-    assert.include(buildRemoteLaunchScript(), '--base-dir "$DEFAULT_SERVER_HOME"');
-    assert.include(buildRemoteLaunchScript(), 'DEFAULT_SERVER_HOME="$HOME/.doer"');
-    assert.include(buildRemoteLaunchScript(), 'STATE_DIR="$HOME/.doer/ssh-launch/$STATE_KEY"');
-    assert.notInclude(buildRemoteLaunchScript(), "server-home");
-    assert.include(buildRemoteLaunchScript(), "Remote Doer server did not become ready");
-    assert.include(buildRemoteLaunchScript(), 'wait_ready "60000"');
-    assert.include(buildRemoteLaunchScript(), 'if [ -s "$LOG_FILE" ]; then');
-    assert.include(buildRemoteLaunchScript(), "It wrote nothing to %s");
-    assert.include(
-      buildRemoteLaunchScript({ packageSpec: "@lag4/doer-cli@nightly" }),
-      "@lag4/doer-cli@nightly",
-    );
-    assert.include(
-      buildRemotePairingScript(target),
+      SshTunnel.buildRemotePairingScript(stateKey, ARCHIVE),
       '"$RUNNER_FILE" auth pairing create --base-dir "$PAIRING_BASE_DIR" --json',
     );
-    assert.include(buildRemotePairingScript(target), 'PAIRING_BASE_DIR="$DEFAULT_SERVER_HOME"');
-    assert.notInclude(buildRemotePairingScript(target), "server-home");
     assert.include(
-      buildRemotePairingScript(target, { packageSpec: "@lag4/doer-cli@nightly" }),
-      "@lag4/doer-cli@nightly",
+      SshTunnel.buildRemotePairingScript(stateKey, ARCHIVE),
+      'PAIRING_BASE_DIR="$DEFAULT_SERVER_HOME"',
+    );
+    assert.notInclude(SshTunnel.buildRemotePairingScript(stateKey, ARCHIVE), "server-home");
+    assert.include(
+      SshTunnel.buildRemotePairingScript(stateKey, ARCHIVE),
+      "'@lag4/doer-cli@latest'",
     );
     assert.include(
-      buildRemoteStopScript(target),
+      SshTunnel.buildRemoteStopScript(stateKey),
       'if [ "$REMOTE_MANAGED" != "external" ] && [ -n "$REMOTE_PID" ]',
     );
-    assert.include(buildRemoteStopScript(target), 'kill "$REMOTE_PID" 2>/dev/null || true');
-    assert.include(buildRemoteStopScript(target), 'rm -f "$PID_FILE" "$PORT_FILE" "$MANAGED_FILE"');
+    assert.include(
+      SshTunnel.buildRemoteStopScript(stateKey),
+      'kill "$REMOTE_PID" 2>/dev/null || true',
+    );
+    assert.include(
+      SshTunnel.buildRemoteStopScript(stateKey),
+      'rm -f "$PID_FILE" "$PORT_FILE" "$MANAGED_FILE"',
+    );
     assert.include(
       launch,
       'DEFAULT_RUNTIME_FILE="$DEFAULT_SERVER_HOME/userdata/server-runtime.json"',
@@ -277,14 +265,14 @@ describe("ssh tunnel scripts", () => {
         return makeSuccessfulProcess('loaded nvm default\n{"remotePort":3774}\n');
       }),
     );
-    const spawnerLayer = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner);
-    const processLayer = Layer.merge(NodeServices.layer, spawnerLayer);
+    const layerSpawner = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner);
+    const layerProcess = Layer.merge(NodeServices.layer, layerSpawner);
 
     return Effect.gen(function* () {
-      const result = yield* launchOrReuseRemoteServer(target, undefined, ARCHIVE);
+      const result = yield* SshTunnel.launchOrReuseRemoteServer(target, undefined, ARCHIVE);
       assert.equal(result.remotePort, 3774);
       assert.deepEqual(spawnedCommands[0]?.slice(-5, -1), ["sh", "-l", "-s", "--"]);
-    }).pipe(Effect.provide(processLayer));
+    }).pipe(Effect.provide(layerProcess));
   });
 
   it.effect("allows cold remote launches to exceed the default SSH command timeout", () => {
@@ -297,19 +285,19 @@ describe("ssh tunnel scripts", () => {
     const spawner = ChildProcessSpawner.make(() =>
       Effect.succeed(makeDelayedSuccessfulProcess('{"remotePort":3774}\n', 75_000)),
     );
-    const spawnerLayer = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner);
-    const processLayer = Layer.mergeAll(NodeServices.layer, spawnerLayer, TestClock.layer());
+    const layerSpawner = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner);
+    const layerProcess = Layer.mergeAll(NodeServices.layer, layerSpawner, TestClock.layer());
 
     return Effect.gen(function* () {
       const fiber = yield* Effect.forkChild(
-        launchOrReuseRemoteServer(target, undefined, NODE_SCRIPT),
+        SshTunnel.launchOrReuseRemoteServer(target, undefined, NODE_SCRIPT),
       );
       yield* Effect.yieldNow;
       yield* TestClock.adjust(Duration.seconds(75));
 
       const result = yield* Fiber.join(fiber);
       assert.equal(result.remotePort, 3774);
-    }).pipe(Effect.provide(processLayer));
+    }).pipe(Effect.provide(layerProcess));
   });
 
   it.effect("gives cold archive launches a larger budget than node-script launches", () => {
@@ -322,28 +310,30 @@ describe("ssh tunnel scripts", () => {
     const spawner = ChildProcessSpawner.make(() =>
       Effect.succeed(makeDelayedSuccessfulProcess('{"remotePort":3774}\n', 800_000)),
     );
-    const spawnerLayer = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner);
-    const processLayer = Layer.mergeAll(NodeServices.layer, spawnerLayer, TestClock.layer());
+    const layerSpawner = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner);
+    const layerProcess = Layer.mergeAll(NodeServices.layer, layerSpawner, TestClock.layer());
 
     return Effect.gen(function* () {
-      const fiber = yield* Effect.forkChild(launchOrReuseRemoteServer(target, undefined, ARCHIVE));
+      const fiber = yield* Effect.forkChild(
+        SshTunnel.launchOrReuseRemoteServer(target, undefined, ARCHIVE),
+      );
       yield* Effect.yieldNow;
       yield* TestClock.adjust(Duration.seconds(800));
 
       const result = yield* Fiber.join(fiber);
       assert.equal(result.remotePort, 3774);
-    }).pipe(Effect.provide(processLayer));
+    }).pipe(Effect.provide(layerProcess));
   });
 
   it("allows the remote port picker to run without a state file path", () => {
-    assert.include(REMOTE_PICK_PORT_SCRIPT, 'const filePath = process.argv[2] ?? "";');
+    assert.include(SshTunnel.REMOTE_PICK_PORT_SCRIPT, 'const filePath = process.argv[2] ?? "";');
   });
 
   it.effect("bounds each HTTP readiness probe so retries cannot hang on one request", () =>
     Effect.gen(function* () {
       const fiber = yield* Effect.forkChild(
         Effect.result(
-          waitForHttpReady({
+          SshTunnel.waitForHttpReady({
             baseUrl: "http://127.0.0.1:41773/",
             timeoutMs: 1_000,
             intervalMs: 100,
@@ -369,7 +359,7 @@ describe("ssh tunnel scripts", () => {
 
   it("preserves primitive readiness reason values in diagnostic output", () => {
     assert.deepEqual(
-      describeReadinessCause({
+      SshTunnel.describeReadinessCause({
         _tag: "HttpClientError",
         message: "Backend readiness probe failed.",
         reason: "authentication failed",
@@ -403,12 +393,12 @@ describe("ssh tunnel scripts", () => {
 `),
       ),
     );
-    const spawnerLayer = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner);
-    const processLayer = Layer.merge(NodeServices.layer, spawnerLayer);
+    const layerSpawner = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner);
+    const layerProcess = Layer.merge(NodeServices.layer, layerSpawner);
     return Effect.gen(function* () {
-      const result = yield* issueRemotePairingToken(target, undefined, ARCHIVE);
+      const result = yield* SshTunnel.issueRemotePairingToken(target, undefined, ARCHIVE);
       assert.equal(result.credential, "LCL4R2TPHDKQ");
-    }).pipe(Effect.provide(processLayer));
+    }).pipe(Effect.provide(layerProcess));
   });
 
   it.effect("accepts pretty-printed pairing JSON after remote shell startup noise", () => {
@@ -431,12 +421,12 @@ describe("ssh tunnel scripts", () => {
 `),
       ),
     );
-    const spawnerLayer = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner);
-    const processLayer = Layer.merge(NodeServices.layer, spawnerLayer);
+    const layerSpawner = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner);
+    const layerProcess = Layer.merge(NodeServices.layer, layerSpawner);
     return Effect.gen(function* () {
-      const result = yield* issueRemotePairingToken(target, undefined, ARCHIVE);
+      const result = yield* SshTunnel.issueRemotePairingToken(target, undefined, ARCHIVE);
       assert.equal(result.credential, "LCL4R2TPHDKQ");
-    }).pipe(Effect.provide(processLayer));
+    }).pipe(Effect.provide(layerProcess));
   });
 
   it.effect.each(["successful stop", "failed stop"] as const)(
@@ -464,7 +454,7 @@ describe("ssh tunnel scripts", () => {
                 ...makeSuccessfulProcess(""),
                 exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(1)),
                 stderr: Stream.make(
-                  new TextEncoder().encode("Remote Doer server did not stop within 2 seconds.\n"),
+                  new TextEncoder().encode("Remote T3 server did not stop within 2 seconds.\n"),
                 ),
               };
             }
@@ -478,8 +468,8 @@ describe("ssh tunnel scripts", () => {
         Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
         Layer.succeed(HttpClient.HttpClient, testHttpClient),
         Layer.succeed(NetService.NetService, testNetService),
-        SshPasswordPrompt.disabledLayer,
-        SshEnvironmentManager.layer({ resolveCliRunner: Effect.succeed(ARCHIVE) }),
+        SshAuth.SshPasswordPrompt.disabledLayer,
+        SshTunnel.SshEnvironmentManager.layer({ resolveCliRunner: Effect.succeed(ARCHIVE) }),
       );
       const target = {
         alias: "devbox",
@@ -489,7 +479,7 @@ describe("ssh tunnel scripts", () => {
       } as const;
 
       return Effect.gen(function* () {
-        const manager = yield* SshEnvironmentManager;
+        const manager = yield* SshTunnel.SshEnvironmentManager;
 
         const first = yield* manager.ensureEnvironment(target);
         assert.equal(first.httpBaseUrl, "http://127.0.0.1:41773/");
@@ -506,7 +496,7 @@ describe("ssh tunnel scripts", () => {
             assert.instanceOf(disconnected.failure, SshCommandError);
             assert.equal(
               disconnected.failure.message,
-              "Remote Doer server did not stop within 2 seconds.",
+              "Remote T3 server did not stop within 2 seconds.",
             );
           }
         } else {
@@ -603,11 +593,11 @@ describe("ssh tunnel scripts", () => {
           Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
           Layer.succeed(HttpClient.HttpClient, testHttpClient),
           Layer.succeed(NetService.NetService, testNetService),
-          SshPasswordPrompt.disabledLayer,
-          SshEnvironmentManager.layer({ resolveCliRunner: Effect.succeed(ARCHIVE) }),
+          SshAuth.SshPasswordPrompt.disabledLayer,
+          SshTunnel.SshEnvironmentManager.layer({ resolveCliRunner: Effect.succeed(ARCHIVE) }),
         );
         yield* Effect.gen(function* () {
-          const manager = yield* SshEnvironmentManager;
+          const manager = yield* SshTunnel.SshEnvironmentManager;
           yield* manager.ensureEnvironment(target);
           const disconnect = yield* Effect.forkChild(manager.disconnectEnvironment(target));
           yield* Deferred.await(shutdownStarted);
@@ -639,5 +629,67 @@ describe("ssh tunnel scripts", () => {
           Effect.scoped,
         );
       }),
+  );
+});
+
+// Run generated shell against local package-manager fixtures, never the network.
+describe.skipIf(HostProcessPlatform.defaultValue() === "win32")("npm runner script", () => {
+  it.live.each(["npx", "npm"] as const)(
+    "resolves a pinned package with %s and reports install failures",
+    (manager) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const root = yield* fs.makeTempDirectoryScoped({ prefix: "doer-npm-runner-" });
+        const home = `${root}/home`;
+        const bin = `${home}/bin`;
+        const cli = `${root}/installed-doer`;
+        const runner = `${root}/run-doer.sh`;
+        const receipt = `${root}/package-args`;
+        yield* fs.makeDirectory(bin, { recursive: true });
+        yield* fs.writeFileString(cli, '#!/bin/sh\nprintf "doer %s\\n" "$@"\n', { mode: 0o755 });
+        yield* fs.writeFileString(
+          runner,
+          SshTunnel.buildRemoteT3RunnerScript({ packageSpec: "@lag4/doer-cli@1.2.3" }),
+        );
+        const run = Effect.gen(function* () {
+          const child = yield* spawner.spawn(
+            ChildProcess.make("/bin/sh", [runner, "--version"], {
+              env: { PATH: bin, HOME: home },
+              extendEnv: false,
+            }),
+          );
+          const [stdout, stderr, exitCode] = yield* Effect.all(
+            [
+              child.stdout.pipe(Stream.decodeText(), Stream.mkString),
+              child.stderr.pipe(Stream.decodeText(), Stream.mkString),
+              child.exitCode.pipe(Effect.map(Number)),
+            ],
+            { concurrency: "unbounded" },
+          );
+          return { stdout, stderr, exitCode };
+        });
+        yield* fs.writeFileString(
+          `${bin}/${manager}`,
+          `#!/bin/sh\nprintf '%s\\n' "$@" > '${receipt}'\nprintf '%s\\n' '${cli}'\n`,
+          { mode: 0o755 },
+        );
+        const installed = yield* run;
+        assert.equal(installed.exitCode, 0, installed.stderr);
+        assert.equal(installed.stdout.trim(), "doer --version");
+        assert.include(yield* fs.readFileString(receipt), "@lag4/doer-cli@1.2.3");
+
+        // npm may exit successfully after a native build failure without producing a CLI.
+        yield* fs.writeFileString(`${bin}/${manager}`, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+        const missing = yield* run;
+        assert.equal(missing.exitCode, 1);
+        assert.include(missing.stderr, "npm produced no doer executable");
+        assert.include(missing.stderr, "Install a C toolchain");
+
+        yield* fs.writeFileString(`${bin}/${manager}`, "#!/bin/sh\nexit 2\n", { mode: 0o755 });
+        const failed = yield* run;
+        assert.equal(failed.exitCode, 1);
+        assert.include(failed.stderr, "could not install @lag4/doer-cli@1.2.3");
+      }).pipe(Effect.provide(NodeServices.layer)),
   );
 });

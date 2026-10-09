@@ -1,24 +1,15 @@
 import { filePreviewDelimiter } from "@t3tools/shared/delimitedPreview";
-import type { EnvironmentId } from "@t3tools/contracts";
+import { ChatAttachmentId, type EnvironmentId } from "@t3tools/contracts";
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import { readFilePreviewResponse } from "@t3tools/client-runtime/file-preview";
 import { filePreviewKind, FILE_TEXT_PREVIEW_MAX_BYTES } from "@t3tools/shared/filePreview";
-import {
-  CheckIcon,
-  ChevronRightIcon,
-  Code2,
-  CopyIcon,
-  DownloadIcon,
-  Eye,
-  Table2,
-  Trash2Icon,
-  WrapTextIcon,
-  XIcon,
-} from "lucide-react";
+import { ChevronRightIcon, DownloadIcon, Trash2Icon, WrapTextIcon, XIcon } from "lucide-react";
+import { Check, Code2, Copy, Eye, Table2 } from "lucide";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAssetUrlRefresh } from "~/assets/assetUrls";
 import ChatMarkdown from "~/components/ChatMarkdown";
+import { MorphIcon } from "~/components/MorphIcon";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { toastManager } from "~/components/ui/toast";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
@@ -37,6 +28,11 @@ import {
 } from "./fileSurfaceChrome";
 
 const SourcePreview = lazy(() => import("./ReadOnlySourcePreview"));
+const SpreadsheetAttachmentSurface = lazy(() =>
+  import("./SpreadsheetAttachmentSurface").then((module) => ({
+    default: module.SpreadsheetAttachmentSurface,
+  })),
+);
 
 /** Signed asset URLs live for an hour; treat anything older than this as worth re-minting. */
 const STALE_URL_MS = 5 * 60_000;
@@ -64,14 +60,18 @@ function renderedToggleLabel(mode: "markdown" | "html" | "table", rendered: bool
 export function AttachmentFilePreview(props: {
   name: string;
   mimeType: string;
+  /** Zero when unknown. */
   sizeBytes: number;
   file?: Blob | null;
   asset?: { environmentId: EnvironmentId; attachmentId: string };
+  /** An agent's HTML render, shown in the app theme. */
+  htmlRender?: boolean;
   /** First crumb: where the file comes from. */
   origin?: string;
   onRemove?: () => void;
   onClose?: () => void;
 }) {
+  const simpleModeEnabled = useClientSettings((settings) => settings.simpleModeEnabled);
   const kind = filePreviewKind(props);
   const delimiter = filePreviewDelimiter(props);
   const renderedMode =
@@ -240,6 +240,19 @@ export function AttachmentFilePreview(props: {
     />
   ) : !url || (needsText && !content) ? (
     <FileSurfaceLoading />
+  ) : simpleModeEnabled && props.asset && /\.xlsx$/i.test(props.name) ? (
+    <Suspense fallback={<FileSurfaceLoading />}>
+      <SpreadsheetAttachmentSurface
+        environmentId={props.asset.environmentId}
+        attachment={{
+          type: "file",
+          id: ChatAttachmentId.make(props.asset.attachmentId),
+          name: props.name,
+          mimeType: props.mimeType,
+          sizeBytes: props.sizeBytes,
+        }}
+      />
+    </Suspense>
   ) : needsText && content ? (
     delimiter && rendered ? (
       <DelimitedTablePreview name={props.name} text={content.text} delimiter={delimiter} />
@@ -251,7 +264,12 @@ export function AttachmentFilePreview(props: {
       <ReadOnlySourcePreview name={props.name} text={content.text} />
     )
   ) : kind === "pdf" || kind === "html" ? (
-    <BrowserDocumentFrame src={url} title={props.name} pdf={kind === "pdf"} />
+    <BrowserDocumentFrame
+      src={url}
+      title={props.name}
+      pdf={kind === "pdf"}
+      htmlRender={props.htmlRender === true}
+    />
   ) : kind === "audio" ? (
     <AudioPreview src={url} name={props.name} onError={() => setError("Unable to load audio.")} />
   ) : kind === "video" ? (
@@ -266,6 +284,7 @@ export function AttachmentFilePreview(props: {
       />
     </div>
   ) : kind === "image" ? (
+    // oxlint-disable-next-line t3code/require-centered-scroll-gutter -- The image is capped at max-h-full max-w-full, so this never scrolls.
     <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-4">
       <img
         src={url}
@@ -295,9 +314,11 @@ export function AttachmentFilePreview(props: {
           <span aria-current="page" className="min-w-0 truncate px-0.5 font-medium text-foreground">
             {props.name}
           </span>
-          <span className="ml-2 shrink-0 text-muted-foreground">
-            {formatAttachmentSize(props.sizeBytes)}
-          </span>
+          {props.sizeBytes > 0 ? (
+            <span className="ml-2 shrink-0 text-muted-foreground">
+              {formatAttachmentSize(props.sizeBytes)}
+            </span>
+          ) : null}
         </div>
         {renderedMode ? (
           <FileSurfaceAction
@@ -305,13 +326,10 @@ export function AttachmentFilePreview(props: {
             pressed={rendered}
             onPress={() => setRendered((value) => !value)}
           >
-            {rendered ? (
-              <Code2 className="size-3.5" />
-            ) : renderedMode === "table" ? (
-              <Table2 className="size-3.5" />
-            ) : (
-              <Eye className="size-3.5" />
-            )}
+            <MorphIcon
+              className="size-3.5"
+              icon={rendered ? Code2 : renderedMode === "table" ? Table2 : Eye}
+            />
           </FileSurfaceAction>
         ) : null}
         {showsRawText ? (
@@ -328,7 +346,7 @@ export function AttachmentFilePreview(props: {
             label={isCopied ? "Copied" : content.truncated ? "Copy preview" : "Copy contents"}
             onPress={() => copyToClipboard(content.text, undefined)}
           >
-            {isCopied ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
+            <MorphIcon className="size-3.5" icon={isCopied ? Check : Copy} />
           </FileSurfaceAction>
         ) : null}
         {url ? (
@@ -353,7 +371,8 @@ export function AttachmentFilePreview(props: {
       </div>
       {content?.truncated ? (
         <FileSurfaceNotice>
-          Preview limited to the first 1 MB of a {props.sizeBytes.toLocaleString()} byte file. Save
+          Preview limited to the first 1 MB
+          {props.sizeBytes > 0 ? ` of a ${props.sizeBytes.toLocaleString()} byte file` : ""}. Save
           the file to read it in full.
         </FileSurfaceNotice>
       ) : null}

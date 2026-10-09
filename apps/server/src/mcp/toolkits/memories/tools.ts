@@ -1,20 +1,23 @@
+import { OrchestratorMcpFailure } from "@t3tools/contracts";
+import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import {
   DOER_MEMORY_MAX_CONTENT_CHARS,
   DoerMemory,
   DoerMemoryScope,
 } from "@t3tools/shared/doerMemory";
 import * as Schema from "effect/Schema";
-import * as Tool from "effect/unstable/ai/Tool";
-import * as Toolkit from "effect/unstable/ai/Toolkit";
+import * as Tool from "effect/ai/Tool";
+import * as Toolkit from "effect/ai/Toolkit";
 
 import * as DoerMemoryStore from "../../../persistence/Services/DoerMemoryStore.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
-import * as ProjectionSnapshotQuery from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as ProjectionSnapshotQuery from "../../../memory/DoerTaskContext.ts";
 
 const dependencies = [
+  ThreadManagementService.ThreadManagementService,
   McpInvocationContext.McpInvocationContext,
   DoerMemoryStore.DoerMemoryStore,
-  ProjectionSnapshotQuery.ProjectionSnapshotQuery,
+  ProjectionSnapshotQuery.DoerTaskContext,
 ];
 
 export class MemoryNotFoundError extends Schema.TaggedError<MemoryNotFoundError>()(
@@ -148,7 +151,7 @@ const RememberMemoryTool = Tool.make("remember_memory", {
     "Save something the user explicitly asked Doer to remember, after they said it or confirmed your suggestion. Saves to This Space by default; pass scope 'about-you' only for facts about the person that belong everywhere. Never save guesses, document content, or secrets (passwords, keys, tokens, codes). The result confirms what was actually saved — report that, never invent a save.",
   parameters: RememberMemoryInput,
   success: RememberedMemory,
-  failure: MemoryToolError,
+  failure: Schema.Union([MemoryToolError, OrchestratorMcpFailure]),
   dependencies,
 })
   .annotate(Tool.Title, "Remember")
@@ -162,7 +165,7 @@ const ListMemoriesTool = Tool.make("list_memories", {
     "List what this Task can see: About you plus This Space. Never another Space's memories. Call it before updating or forgetting, and when the user asks what Doer remembers.",
   parameters: ListMemoriesInput,
   success: Schema.Struct({ memories: Schema.Array(DoerMemory) }),
-  failure: MemoryToolError,
+  failure: Schema.Union([MemoryToolError, OrchestratorMcpFailure]),
   dependencies,
 })
   .annotate(Tool.Title, "List memories")
@@ -179,7 +182,7 @@ const SearchMemoriesTool = Tool.make("search_memories", {
     query: Schema.String,
     memories: Schema.Array(DoerMemory),
   }),
-  failure: MemoryToolError,
+  failure: Schema.Union([MemoryToolError, OrchestratorMcpFailure]),
   dependencies,
 })
   .annotate(Tool.Title, "Search memories")
@@ -193,7 +196,7 @@ const UpdateMemoryTool = Tool.make("update_memory", {
     "Correct a saved memory by id when the user says it changed or is wrong. Only memories this Task can see (About you plus This Space) can be updated. The result confirms the corrected version — earlier conversation may still contain the old wording.",
   parameters: UpdateMemoryInput,
   success: RememberedMemory,
-  failure: MemoryToolError,
+  failure: Schema.Union([MemoryToolError, OrchestratorMcpFailure]),
   dependencies,
 })
   .annotate(Tool.Title, "Correct memory")
@@ -211,7 +214,7 @@ const ForgetMemoryTool = Tool.make("forget_memory", {
     scope: DoerMemoryScope,
     message: Schema.String,
   }),
-  failure: MemoryToolError,
+  failure: Schema.Union([MemoryToolError, OrchestratorMcpFailure]),
   dependencies,
 })
   .annotate(Tool.Title, "Forget memory")

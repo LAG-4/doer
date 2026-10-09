@@ -19,6 +19,13 @@ const primaryId = EnvironmentId.make("env-primary");
 const laptopId = EnvironmentId.make("env-laptop");
 const boxId = EnvironmentId.make("env-box");
 const restartCapabilities = { threadRestartContinuation: true };
+const enabledDefaultSettings = {
+  ...DEFAULT_SERVER_SETTINGS,
+  providerInstances: {
+    ...DEFAULT_SERVER_SETTINGS.providerInstances,
+    opencode: { driver: ProviderDriverKind.make("opencode"), enabled: true, config: {} },
+  },
+};
 
 describe("supportsSharedSettingsSync", () => {
   it("accepts only connected servers that advertise the shared-settings capability", () => {
@@ -69,32 +76,20 @@ describe("splitSharedServerPatch", () => {
     DEFAULT_SERVER_SETTINGS.textGenerationModelSelection,
   ])("shares the text generation model and options, including reset (%j)", (selection) => {
     const patch = { textGenerationModelSelection: selection };
-    // Only OpenCode is enabled by default; simulate environments where the
-    // selection's provider was opted in so the shared selection applies.
-    const settings = {
-      ...DEFAULT_SERVER_SETTINGS,
-      providerInstances: {
-        [selection.instanceId]: {
-          driver: ProviderDriverKind.make(selection.instanceId),
-          enabled: true,
-          config: {},
-        },
-      },
-    };
     expect(splitSharedServerPatch(patch)).toEqual({ sharedPatch: patch, localPatch: {} });
-    expect(pickSharedServerSettings({ ...settings, ...patch })).toMatchObject(patch);
+    expect(pickSharedServerSettings({ ...enabledDefaultSettings, ...patch })).toMatchObject(patch);
     const environment = {
       environmentId: boxId,
       label: "Remote Box",
       syncEligible: true,
       settings: {
-        ...settings,
+        ...enabledDefaultSettings,
         textGenerationModelSelection: { ...selection, model: "different-model" },
       },
     };
     const input = {
       primaryEnvironmentId: primaryId,
-      primarySettings: { ...settings, ...patch },
+      primarySettings: { ...enabledDefaultSettings, ...patch },
       environments: [environment],
     };
     expect(findSharedSettingsMismatches(input)).toEqual([
@@ -133,12 +128,14 @@ describe("splitSharedServerPatch", () => {
 describe("pickSharedServerSettings", () => {
   it("returns only the shared keys", () => {
     expect(
-      Object.keys(pickSharedServerSettings(DEFAULT_SERVER_SETTINGS, restartCapabilities)).sort(),
+      Object.keys(pickSharedServerSettings(enabledDefaultSettings, restartCapabilities)).sort(),
     ).toEqual([
+      "autoResumeLimitedThreads",
       "continueThreadsAfterServerUpdate",
       "newWorktreesStartFromOrigin",
       "sidebarAutoSettleAfterDays",
       "sidebarAutoSettleOnMerge",
+      "snoozeLimitedThreads",
       "sourceControlWritingStyle",
       "textGenerationModelSelection",
     ]);
@@ -156,13 +153,6 @@ describe("filterSharedServerPatch", () => {
           claudeAgent: {
             driver: ProviderDriverKind.make("claudeAgent"),
             enabled: true,
-            config: {},
-          },
-          // The shared default selection targets OpenCode; keep it disabled
-          // here so the "disabled default provider" reset behavior applies.
-          opencode: {
-            driver: ProviderDriverKind.make("opencode"),
-            enabled: false,
             config: {},
           },
         },

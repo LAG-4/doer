@@ -1,12 +1,10 @@
+import { liveThreadShell } from "../../McpToolAccess.testkit.ts";
 import {
-  ApprovalRequestId,
   DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
-  type OrchestrationCommand,
-  type OrchestrationThreadShell,
   type ProviderApprovalDecision,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
@@ -16,9 +14,10 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import { GmailConnection } from "../../../integrations/GmailConnection.ts";
-import * as GmailSendApproval from "../../../integrations/GmailSendApproval.ts";
-import { OrchestrationEngineService } from "../../../orchestration/Services/OrchestrationEngine.ts";
-import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { McpSchema } from "effect/ai";
+import * as DateTime from "effect/DateTime";
+import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
+import { DoerTaskContext as ProjectionSnapshotQuery } from "../../../memory/DoerTaskContext.ts";
 import { ServerSettingsService } from "../../../serverSettings.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as ExperimentalConnections from "../../../integrations/ExperimentalConnections.ts";
@@ -26,7 +25,7 @@ import { GmailToolkitHandlersLive } from "./handlers.ts";
 import { GmailToolkit } from "./tools.ts";
 
 const threadId = ThreadId.make("mail-task");
-const thread: OrchestrationThreadShell = {
+const thread = {
   id: threadId,
   projectId: ProjectId.make("space"),
   title: "Email",
@@ -39,7 +38,8 @@ const thread: OrchestrationThreadShell = {
   latestTurn: null,
   createdAt: "2026-10-04T00:00:00.000Z",
   updatedAt: "2026-10-04T00:00:00.000Z",
-  archivedAt: null,
+  archivedAt: null as DateTime.Utc | null,
+  deletedAt: null as DateTime.Utc | null,
   settledOverride: null,
   settledAt: null,
   session: null,
@@ -64,9 +64,8 @@ function scenario(
   } = {},
 ) {
   return Effect.gen(function* () {
-    const approvals = yield* GmailSendApproval.GmailSendApproval;
     const input = { to: ["recipient@example.com"], subject: "HI", body: "Exact message" };
-    const commands: OrchestrationCommand[] = [];
+    const commands: string[] = [];
     const sent: { message: typeof input; sender: string | undefined }[] = [];
     const change = { messageId: "abc123", action: "archive" as const };
     const changed: { messageId: string; sender: string }[] = [];
@@ -87,7 +86,15 @@ function scenario(
             }),
         }),
       ),
-      Layer.succeed(GmailSendApproval.GmailSendApproval, approvals),
+      Layer.mock(ThreadManagementService.ThreadManagementService)({
+        getThreadShell: (id) =>
+          Effect.sync(() => ({
+            ...liveThreadShell(id),
+            providerInstanceId: ProviderInstanceId.make("opencode-custom"),
+            activeRunId: threadRow.deletedAt === null ? liveThreadShell(id).activeRunId : null,
+            archivedAt: threadRow.archivedAt,
+          })),
+      }),
       Layer.mock(GmailConnection)({
         status: Effect.succeed({ configured: true, connected: true, email: "sender@example.com" }),
         send: (message, sender) =>
@@ -128,54 +135,51 @@ function scenario(
           enableGmailAccess: enabled,
         })),
       }),
-      Layer.mock(OrchestrationEngineService)({
-        dispatch: (command) =>
-          Effect.gen(function* () {
-            commands.push(command);
-            if (
-              command.type === "thread.activity.append" &&
-              command.activity.kind === "approval.requested"
-            ) {
-              const payload = command.activity.payload as Record<string, unknown>;
-              if (options.operation === "change") {
-                expect(String(payload.requestId)).toContain("gmail-change:");
-                expect(payload.detail).toBe(
-                  "Account: sender@example.com\nMessage ID: abc123\nFrom: merchant@example.com\nSubject: Invoice\nAction: archive\n\nYour bill",
-                );
-                change.messageId = "hidden-message";
-              } else
-                expect(payload.detail).toBe(
-                  "From: sender@example.com\nTo: recipient@example.com\nSubject: HI\n\nExact message",
-                );
-              // A changed caller input must not change what was reviewed.
-              input.to.push("hidden@example.com");
-              input.body = "Changed after review";
-              if (options.disableAfterReview) enabled = false;
-              if (options.disableExperimentalAfterReview) experimental = false;
-              if (options.stopAfterReview)
-                threadRow = {
-                  ...thread,
-                  session: {
-                    threadId,
-                    status: "stopped",
-                    providerName: "opencode",
-                    runtimeMode: "full-access",
-                    activeTurnId: null,
-                    lastError: null,
-                    updatedAt: "2026-10-04T00:00:00.000Z",
-                  },
-                };
-              if (options.archiveAfterReview)
-                threadRow = { ...threadRow, archivedAt: "2026-10-05T00:00:00.000Z" };
-              yield* approvals.respond(
-                threadId,
-                ApprovalRequestId.make(String(payload.requestId)),
-                decision,
-              );
-            }
-            return { sequence: commands.length };
+      Layer.succeed(
+        McpSchema.McpServerClient,
+        McpSchema.McpServerClient.of({
+          clientId: 1,
+          protocolVersion: "2025-06-18",
+          clientCapabilities: { elicitation: {} },
+          clientInfo: { name: "test", version: "1" },
+          initializePayload: {
+            protocolVersion: "2025-06-18",
+            capabilities: { elicitation: {} },
+            clientInfo: { name: "test", version: "1" },
+          },
+          getClient: Effect.succeed({
+            listRoots: () => Effect.die("unused"),
+            createMessage: () => Effect.die("unused"),
+            elicit: (request) =>
+              Effect.sync(() => {
+                commands.push(request.message);
+                if (options.operation === "change") {
+                  expect(request.message).toContain("Message ID: abc123");
+                  change.messageId = "hidden-message";
+                } else {
+                  expect(request.message).toContain(
+                    "From: sender@example.com\nTo: recipient@example.com\nSubject: HI\n\nExact message",
+                  );
+                }
+                input.to.push("hidden@example.com");
+                input.body = "Changed after review";
+                if (options.disableAfterReview) enabled = false;
+                if (options.disableExperimentalAfterReview) experimental = false;
+                if (options.stopAfterReview)
+                  threadRow = {
+                    ...thread,
+                    deletedAt: DateTime.makeUnsafe("2026-10-05T00:00:00.000Z"),
+                  };
+                if (options.archiveAfterReview)
+                  threadRow = {
+                    ...threadRow,
+                    archivedAt: DateTime.makeUnsafe("2026-10-05T00:00:00.000Z"),
+                  };
+                return { action: "accept" as const, content: { approved: decision === "accept" } };
+              }),
           }),
-      }),
+        }),
+      ),
       NodeServices.layer,
     );
     const toolkit = yield* GmailToolkit.pipe(
@@ -197,9 +201,13 @@ function scenario(
       Effect.result,
       Effect.provideService(McpInvocationContext.McpInvocationContext, {
         environmentId: EnvironmentId.make("host"),
-        threadId,
-        providerSessionId: "session",
-        providerInstanceId: ProviderInstanceId.make("opencode-custom"),
+        requestNamespace: "test",
+        client: undefined,
+        thread: {
+          threadId,
+          providerSessionId: "session",
+          providerInstanceId: ProviderInstanceId.make("opencode-custom"),
+        },
         capabilities: new Set<McpInvocationContext.McpCapability>(
           options.capability === false ? [] : ["gmail"],
         ),
@@ -208,7 +216,7 @@ function scenario(
       Effect.provide(dependencies),
     );
     return { result, commands, sent, changed, reads };
-  }).pipe(Effect.provide(GmailSendApproval.layer.pipe(Layer.provide(NodeServices.layer))));
+  });
 }
 
 describe("Gmail tool email review", () => {
@@ -259,8 +267,7 @@ describe("Gmail tool email review", () => {
             sender: "sender@example.com",
           },
         ]);
-        expect(test.commands).toHaveLength(2);
-        expect(test.commands[1]).toMatchObject({ activity: { kind: "approval.resolved" } });
+        expect(test.commands).toHaveLength(1);
       }),
   );
   it.effect("does not send when the user declines or grants session permission", () =>
@@ -269,7 +276,7 @@ describe("Gmail tool email review", () => {
         const test = yield* scenario(decision);
         expect(test.result._tag).toBe("Failure");
         expect(test.sent).toHaveLength(0);
-        expect(test.commands).toHaveLength(2);
+        expect(test.commands).toHaveLength(1);
       }
     }),
   );

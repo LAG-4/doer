@@ -1,7 +1,8 @@
+import * as McpToolAccess from "../../McpToolAccess.ts";
 // @effect-diagnostics nodeBuiltinImport:off globalDateInEffect:off preferSchemaOverJson:off
 import * as NodeCrypto from "node:crypto";
 import * as Option from "effect/Option";
-import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { DoerTaskContext as ProjectionSnapshotQuery } from "../../../memory/DoerTaskContext.ts";
 import { WorkspaceFileSystem } from "../../../workspace/WorkspaceFileSystem.ts";
 // @effect-diagnostics globalDateInEffect:off preferSchemaOverJson:off
 import * as Effect from "effect/Effect";
@@ -9,7 +10,7 @@ import { MicrosoftConnection } from "../../../connectedApps/MicrosoftConnection.
 import * as ExperimentalConnections from "../../../integrations/ExperimentalConnections.ts";
 import { EXPERIMENTAL_CONNECTIONS_COPY } from "@t3tools/shared/experimentalConnections";
 import { MicrosoftAccountError } from "../../../connectedApps/MicrosoftAccount.ts";
-import { McpInvocationContext } from "../../McpInvocationContext.ts";
+import { requireDoerThreadScope } from "../../McpInvocationContext.ts";
 import { ConnectedAppReadError, ConnectedAppsToolkit } from "./tools.ts";
 
 export function connectedSourcePath(input: {
@@ -67,7 +68,7 @@ const make = Effect.gen(function* () {
   return ConnectedAppsToolkit.of({
     read_connected_sources: (input) =>
       Effect.gen(function* () {
-        yield* McpInvocationContext;
+        yield* requireDoerThreadScope;
         // Master switch first: a saved Microsoft token never bypasses it.
         if (!(yield* experimentalConnections.get))
           return yield* new ConnectedAppReadError({
@@ -98,7 +99,7 @@ const make = Effect.gen(function* () {
       }),
     download_connected_file: (input) =>
       Effect.gen(function* () {
-        const scope = yield* McpInvocationContext;
+        const scope = yield* requireDoerThreadScope;
         if (!(yield* experimentalConnections.get))
           return yield* new ConnectedAppReadError({
             detail: EXPERIMENTAL_CONNECTIONS_COPY.toolDenied,
@@ -151,3 +152,13 @@ const make = Effect.gen(function* () {
   });
 });
 export const ConnectedAppsToolkitHandlersLive = ConnectedAppsToolkit.toLayer(make);
+
+export const layer = McpToolAccess.toLayer(
+  ConnectedAppsToolkit,
+  make.pipe(
+    Effect.map((handlers) => ({
+      read_connected_sources: McpToolAccess.actsAsCaller(handlers.read_connected_sources),
+      download_connected_file: McpToolAccess.actsAsCaller(handlers.download_connected_file),
+    })),
+  ),
+);
