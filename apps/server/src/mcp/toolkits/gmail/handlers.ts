@@ -1,9 +1,8 @@
+import { loadCaller, assertLiveCaller } from "../../threadAccess.ts";
+import * as McpToolAccess from "../../McpToolAccess.ts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import { CommandId, EventId } from "@t3tools/contracts";
-import * as Crypto from "effect/Crypto";
-import * as DateTime from "effect/DateTime";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import {
@@ -12,25 +11,24 @@ import {
 } from "../../../integrations/GmailConnection.ts";
 import * as ExperimentalConnections from "../../../integrations/ExperimentalConnections.ts";
 import { EXPERIMENTAL_CONNECTIONS_COPY } from "@t3tools/shared/experimentalConnections";
-import { GmailSendApproval } from "../../../integrations/GmailSendApproval.ts";
+// Elicitation only; registration stays in McpHttpServer behind McpToolAccess.
+// oxlint-disable-next-line t3code/no-raw-mcp-registration
+import { McpServer } from "effect/ai";
+import * as Schema from "effect/Schema";
 import { encodeGmailMessage } from "../../../integrations/gmailClient.ts";
-import { OrchestrationEngineService } from "../../../orchestration/Services/OrchestrationEngine.ts";
 import { ServerSettingsService } from "../../../serverSettings.ts";
-import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { DoerTaskContext as ProjectionSnapshotQuery } from "../../../memory/DoerTaskContext.ts";
 import { GmailToolError, GmailToolkit } from "./tools.ts";
 import { validateMailChange, type MailChange } from "../../../integrations/gmailMailbox.ts";
 
-const make = Effect.gen(function* () {
+export const make = Effect.gen(function* () {
   const gmail = yield* GmailConnection;
   const experimentalConnections = yield* ExperimentalConnections.ExperimentalConnections;
   const serverSettings = yield* ServerSettingsService;
   const snapshots = yield* ProjectionSnapshotQuery;
-  const approvals = yield* GmailSendApproval;
-  const engine = yield* OrchestrationEngineService;
-  const crypto = yield* Crypto.Crypto;
 
   const access = Effect.gen(function* () {
-    const scope = yield* McpInvocationContext.requireMcpCapability("gmail").pipe(
+    const scope = yield* McpInvocationContext.requireDoerCapability("gmail").pipe(
       Effect.mapError(
         () => new GmailToolError({ message: "Gmail is off. Enable it in Settings → Tools." }),
       ),
@@ -45,7 +43,7 @@ const make = Effect.gen(function* () {
       if (
         Option.isNone(thread) ||
         thread.value.archivedAt !== null ||
-        ["stopped", "interrupted", "error"].includes(thread.value.session?.status ?? "")
+        thread.value.deletedAt !== null
       )
         return false;
       return resolveProjectSettings(settings, thread.value.projectId).settings.enableGmailAccess;
@@ -76,76 +74,38 @@ const make = Effect.gen(function* () {
   ) =>
     Effect.gen(function* () {
       const { scope, isAllowed } = context;
-      const pending = yield* approvals.create(scope.threadId, operation);
-      const append = (resolved: boolean) =>
-        Effect.gen(function* () {
-          const createdAt = yield* DateTime.now.pipe(Effect.map(DateTime.formatIso));
-          const uuid = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
-          yield* engine
-            .dispatch({
-              type: "thread.activity.append",
-              commandId: CommandId.make(`gmail:${uuid}`),
-              threadId: scope.threadId,
-              createdAt,
-              activity: {
-                id: EventId.make(uuid),
-                createdAt,
-                turnId: null,
-                tone: "approval",
-                kind: resolved ? "approval.resolved" : "approval.requested",
-                summary: resolved
-                  ? "Gmail review closed"
-                  : operation === "send"
-                    ? "Review email before sending"
-                    : "Review Gmail change",
-                payload: {
-                  requestId: pending.requestId,
-                  requestKind: "mcp-elicitation",
-                  requestType: "mcp_elicitation_approval",
-                  appName: "Gmail",
-                  ...(resolved
-                    ? {}
-                    : {
-                        detail,
-                        options: [
-                          {
-                            decision: "decline",
-                            label: operation === "send" ? "Don't send" : "Don't change",
-                          },
-                          {
-                            decision: "accept",
-                            label: operation === "send" ? "Send this email" : "Apply this change",
-                          },
-                        ],
-                      }),
-                },
-              },
-            })
-            .pipe(
-              Effect.mapError(
-                () =>
-                  new GmailToolError({
-                    message: "Could not record Gmail review. No action was performed.",
-                  }),
-              ),
-            );
+      const confirmation = yield* McpServer.elicit({
+        message: `${operation === "send" ? "Send this email?" : "Apply this Gmail change?"}\n\n${detail}`,
+        schema: Schema.Struct({ approved: Schema.Boolean }),
+      }).pipe(
+        Effect.mapError(
+          () =>
+            new GmailToolError({
+              message: "No Gmail action was performed because the user did not approve it.",
+            }),
+        ),
+      );
+      yield* loadCaller().pipe(
+        Effect.flatMap(assertLiveCaller),
+        Effect.mapError(
+          () =>
+            new GmailToolError({
+              message: "This task stopped while awaiting approval. No Gmail action was performed.",
+            }),
+        ),
+      );
+      if (!confirmation.approved)
+        return yield* new GmailToolError({
+          message: "No Gmail action was performed because the user did not approve it.",
         });
-      return yield* Effect.gen(function* () {
-        yield* append(false);
-        if (!(yield* pending.awaitDecision)) {
-          return yield* new GmailToolError({
-            message: "No Gmail action was performed because the user did not approve it.",
-          });
-        }
-        if (!(yield* isAllowed))
-          return yield* new GmailToolError({
-            message:
-              "Gmail access, experimental connections, or this task changed while awaiting approval. No action was performed.",
-          });
-        return yield* run.pipe(
-          Effect.mapError((error) => new GmailToolError({ message: error.message })),
-        );
-      }).pipe(Effect.ensuring(pending.close), Effect.ensuring(append(true).pipe(Effect.ignore)));
+      if (!(yield* isAllowed))
+        return yield* new GmailToolError({
+          message:
+            "Gmail access, experimental connections, or this task changed while awaiting approval. No action was performed.",
+        });
+      return yield* run.pipe(
+        Effect.mapError((error) => new GmailToolError({ message: error.message })),
+      );
     });
 
   const mailError = (error: GmailConnectionError) => new GmailToolError({ message: error.message });
@@ -237,3 +197,16 @@ const make = Effect.gen(function* () {
 });
 
 export const GmailToolkitHandlersLive = GmailToolkit.toLayer(make);
+
+export const layer = McpToolAccess.toLayer(
+  GmailToolkit,
+  make.pipe(
+    Effect.map((handlers) => ({
+      gmail_send_email: McpToolAccess.actsAsCaller(handlers.gmail_send_email),
+      gmail_search_messages: McpToolAccess.actsAsCaller(handlers.gmail_search_messages),
+      gmail_read_message: McpToolAccess.actsAsCaller(handlers.gmail_read_message),
+      gmail_list_labels: McpToolAccess.actsAsCaller(handlers.gmail_list_labels),
+      gmail_modify_message: McpToolAccess.actsAsCaller(handlers.gmail_modify_message),
+    })),
+  ),
+);

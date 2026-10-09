@@ -1,10 +1,12 @@
 import { assert, describe, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import { afterAll, beforeEach, vi } from "vite-plus/test";
+import * as TestClock from "effect/testing/TestClock";
+import { beforeEach, vi } from "vite-plus/test";
 
 const { handleMock, netFetchMock, unhandleMock } = vi.hoisted(() => ({
   handleMock: vi.fn(),
@@ -19,16 +21,14 @@ vi.mock("electron", () => ({
 
 import * as ElectronProtocol from "./ElectronProtocol.ts";
 
-const protocolLayer = ElectronProtocol.layer.pipe(Layer.provide(NodeServices.layer));
+const layerProtocol = ElectronProtocol.layer.pipe(Layer.provide(NodeServices.layer));
 
 describe("ElectronProtocol", () => {
   beforeEach(() => {
     handleMock.mockReset();
     netFetchMock.mockReset();
     unhandleMock.mockReset();
-    vi.stubGlobal("fetch", netFetchMock);
   });
-  afterAll(() => vi.unstubAllGlobals());
 
   it.effect("serves the bundled client from disk without a backend", () =>
     Effect.gen(function* () {
@@ -47,7 +47,7 @@ describe("ElectronProtocol", () => {
         clerkFrontendApiHostname: undefined,
       });
       const request = (pathname: string, init?: RequestInit) =>
-        Effect.promise(() => handler!(new Request(`doer://app${pathname}`, init)));
+        Effect.promise(() => handler!(new Request(`t3code://app${pathname}`, init)));
 
       // SPA routes fall back to index.html, including ones containing dots.
       const page = yield* request("/settings/connections");
@@ -67,46 +67,7 @@ describe("ElectronProtocol", () => {
       assert.equal((yield* request("/%invalid")).status, 400);
       assert.equal((yield* request("/", { method: "POST" })).status, 405);
       assert.equal(netFetchMock.mock.calls.length, 0);
-    }).pipe(Effect.provide(Layer.merge(protocolLayer, NodeServices.layer)), Effect.scoped),
-  );
-
-  it.effect("limits development proxy requests until their response bodies finish", () =>
-    Effect.gen(function* () {
-      let handler: ((request: Request) => Promise<Response>) | undefined;
-      handleMock.mockImplementation((_scheme, nextHandler) => {
-        handler = nextHandler;
-      });
-      const bodies: ReadableStreamDefaultController<Uint8Array>[] = [];
-      const firstBatch = Promise.withResolvers<void>();
-      const nextBatch = Promise.withResolvers<void>();
-      netFetchMock.mockImplementation(() => {
-        const body = new ReadableStream<Uint8Array>({
-          start(controller) {
-            bodies.push(controller);
-          },
-        });
-        if (bodies.length === 16) firstBatch.resolve();
-        if (bodies.length === 17) nextBatch.resolve();
-        return Promise.resolve(new Response(body));
-      });
-      const protocol = yield* ElectronProtocol.ElectronProtocol;
-      yield* protocol.registerDesktopProtocol({
-        scheme: "doer-dev",
-        targetOrigin: new URL("http://localhost:3773/"),
-        clerkFrontendApiHostname: undefined,
-      });
-      yield* Effect.promise(async () => {
-        const responses = Array.from({ length: 17 }, (_, index) =>
-          handler!(new Request(`doer-dev://app/module-${index}.js`)),
-        );
-        await firstBatch.promise;
-        assert.equal(netFetchMock.mock.calls.length, 16);
-        bodies[0]!.close();
-        await nextBatch.promise;
-        for (const body of bodies.slice(1)) body.close();
-        assert.equal((await Promise.all(responses)).length, 17);
-      });
-    }).pipe(Effect.provide(protocolLayer), Effect.scoped),
+    }).pipe(Effect.provide(Layer.merge(layerProtocol, NodeServices.layer)), Effect.scoped),
   );
 
   it.effect("proxies the stable renderer origin to the current app server", () =>
@@ -115,11 +76,7 @@ describe("ElectronProtocol", () => {
       handleMock.mockImplementation((_scheme, nextHandler) => {
         handler = nextHandler;
       });
-      netFetchMock.mockResolvedValue(
-        new Response("ok", {
-          headers: { "content-encoding": "gzip", "content-length": "123" },
-        }),
-      );
+      netFetchMock.mockResolvedValue(new Response("ok"));
 
       yield* Effect.scoped(
         Effect.gen(function* () {
@@ -133,18 +90,16 @@ describe("ElectronProtocol", () => {
 
           const response = yield* Effect.promise(() =>
             handler!(
-              new Request("doer-dev://app/api/health?verbose=1", {
+              new Request("t3code-dev://app/api/health?verbose=1", {
                 headers: {
                   accept: "application/json",
-                  origin: "doer-dev://app",
-                  referer: "doer-dev://app/",
+                  origin: "t3code-dev://app",
+                  referer: "t3code-dev://app/",
                   "sec-fetch-site": "same-origin",
                 },
               }),
             ),
           );
-          assert.isNull(response.headers.get("content-encoding"));
-          assert.isNull(response.headers.get("content-length"));
           assert.equal(yield* Effect.promise(() => response.text()), "ok");
           assert.include(
             response.headers.get("content-security-policy") ?? "",
@@ -176,7 +131,7 @@ describe("ElectronProtocol", () => {
       assert.isNull(forwardedHeaders.get("referer"));
       assert.isNull(forwardedHeaders.get("sec-fetch-site"));
       assert.deepEqual(unhandleMock.mock.calls, [["t3code-dev"]]);
-    }).pipe(Effect.provide(protocolLayer)),
+    }).pipe(Effect.provide(layerProtocol)),
   );
 
   it.effect("rejects custom protocol requests for another host", () =>
@@ -194,13 +149,13 @@ describe("ElectronProtocol", () => {
             targetOrigin: new URL("http://127.0.0.1:3773/"),
             clerkFrontendApiHostname: undefined,
           });
-          return yield* Effect.promise(() => handler!(new Request("doer://other/")));
+          return yield* Effect.promise(() => handler!(new Request("t3code://other/")));
         }),
       );
 
       assert.equal(response.status, 404);
       assert.equal(netFetchMock.mock.calls.length, 0);
-    }).pipe(Effect.provide(protocolLayer)),
+    }).pipe(Effect.provide(layerProtocol)),
   );
 
   it.effect("retries transient renderer target failures", () =>
@@ -221,13 +176,61 @@ describe("ElectronProtocol", () => {
             targetOrigin: new URL("http://127.0.0.1:5733/"),
             clerkFrontendApiHostname: undefined,
           });
-          return yield* Effect.promise(() => handler!(new Request("doer-dev://app/")));
+          const fiber = yield* Effect.forkChild(
+            Effect.promise(() => handler!(new Request("t3code-dev://app/"))),
+          );
+          yield* TestClock.adjust("50 millis");
+          return yield* Fiber.join(fiber);
         }),
       );
 
       assert.equal(yield* Effect.promise(() => response.text()), "ready");
       assert.equal(netFetchMock.mock.calls.length, 2);
-    }).pipe(Effect.provide(protocolLayer)),
+    }).pipe(Effect.provide(layerProtocol)),
+  );
+
+  it.effect("rejects with the last renderer target failure after 50ms and 150ms retries", () =>
+    Effect.gen(function* () {
+      let handler: ((request: Request) => Promise<Response>) | undefined;
+      handleMock.mockImplementation((_scheme, nextHandler) => {
+        handler = nextHandler;
+      });
+      const lastFailure = new Error("connect ECONNREFUSED 127.0.0.1:5733 (3)");
+      netFetchMock
+        .mockRejectedValueOnce(new Error("connect ECONNREFUSED 127.0.0.1:5733 (1)"))
+        .mockRejectedValueOnce(new Error("connect ECONNREFUSED 127.0.0.1:5733 (2)"))
+        .mockRejectedValueOnce(lastFailure);
+
+      const rejection = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const protocol = yield* ElectronProtocol.ElectronProtocol;
+          yield* protocol.registerDesktopProtocol({
+            scheme: "t3code-dev",
+            targetOrigin: new URL("http://127.0.0.1:5733/"),
+            clerkFrontendApiHostname: undefined,
+          });
+          const fiber = yield* Effect.forkChild(
+            Effect.promise(() =>
+              handler!(new Request("t3code-dev://app/")).then(
+                () => null,
+                (error: unknown) => error,
+              ),
+            ),
+          );
+          yield* TestClock.adjust("49 millis");
+          assert.equal(netFetchMock.mock.calls.length, 1);
+          yield* TestClock.adjust("1 millis");
+          assert.equal(netFetchMock.mock.calls.length, 2);
+          yield* TestClock.adjust("149 millis");
+          assert.equal(netFetchMock.mock.calls.length, 2);
+          yield* TestClock.adjust("1 millis");
+          return yield* Fiber.join(fiber);
+        }),
+      );
+
+      assert.strictEqual(rejection, lastFailure);
+      assert.equal(netFetchMock.mock.calls.length, 3);
+    }).pipe(Effect.provide(layerProtocol)),
   );
 
   it.effect("preserves protocol registration failures", () =>
@@ -250,7 +253,7 @@ describe("ElectronProtocol", () => {
       assert.equal(error.scheme, "t3code-dev");
       assert.strictEqual(error.cause, cause);
       assert.equal(error.message, 'Failed to register Electron protocol scheme "t3code-dev".');
-    }).pipe(Effect.provide(protocolLayer)),
+    }).pipe(Effect.provide(layerProtocol)),
   );
 
   it.effect("preserves protocol unregistration failures", () =>
@@ -279,7 +282,7 @@ describe("ElectronProtocol", () => {
         assert.strictEqual(error.cause, cause);
         assert.equal(error.message, 'Failed to unregister Electron protocol scheme "t3code".');
       }
-    }).pipe(Effect.provide(protocolLayer)),
+    }).pipe(Effect.provide(layerProtocol)),
   );
 
   it("keeps executable sources host-restricted while allowing runtime network resources", () => {

@@ -8,6 +8,7 @@ import { ensureComputerShim } from "../../../computer/ComputerShim.ts";
 import * as ComputerService from "../../../computer/ComputerService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import { pngDimensions } from "../device/handlers.ts";
+import * as McpToolAccess from "../../McpToolAccess.ts";
 import { ComputerObserveToolkit, ComputerStandardToolkit, ComputerToolkit } from "./tools.ts";
 
 /**
@@ -40,7 +41,7 @@ export function computerUseQuickStart(command: string, needsPermission: boolean)
   ].join("\n");
 }
 
-const requireComputerAccess = McpInvocationContext.requireMcpCapability("computer").pipe(
+const requireComputerAccess = McpInvocationContext.requireDoerCapability("computer").pipe(
   Effect.mapError(
     () =>
       new ComputerToolUnavailableError({
@@ -173,4 +174,17 @@ export const ComputerStandardToolkitHandlersLive =
 
 export const ComputerObserveToolkitHandlersLive = ComputerObserveToolkit.toLayer({
   computer_observe,
+});
+
+const guarded = {
+  computer_status: McpToolAccess.actsAsCaller(handlers.computer_status),
+  computer_start: McpToolAccess.actsAsCaller(handlers.computer_start),
+  computer_allow: McpToolAccess.actsAsCaller(handlers.computer_allow),
+  computer_forget: McpToolAccess.actsAsCaller(handlers.computer_forget),
+  computer_observe: McpToolAccess.actsAsCaller(handlers.computer_observe),
+};
+const { computer_observe: observe, ...standard } = guarded;
+export const layerStandard = McpToolAccess.toLayer(ComputerStandardToolkit, standard);
+export const layerObserve = McpToolAccess.toLayer(ComputerObserveToolkit, {
+  computer_observe: observe,
 });

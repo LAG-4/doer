@@ -1,3 +1,4 @@
+import { makeThreadFixture } from "../test-fixtures";
 import { describe, expect, it } from "vite-plus/test";
 import type {
   EnvironmentProject,
@@ -29,33 +30,11 @@ function makeProject(
 function makeThread(
   overrides: Omit<Partial<EnvironmentThreadShell>, "projectId"> & { readonly projectId: string },
 ): EnvironmentThreadShell {
-  return {
+  return makeThreadFixture({
     environmentId,
-    id: ThreadId.make("thread-1"),
-    title: "Thread",
-    modelSelection: {
-      instanceId: ProviderInstanceId.make("codex"),
-      model: "gpt-5.4" as EnvironmentThreadShell["modelSelection"]["model"],
-    },
-    runtimeMode: "full-access",
-    interactionMode: "default",
-    branch: null,
-    worktreePath: null,
-    pullRequests: [],
-    latestTurn: null,
-    createdAt: "2026-03-09T10:00:00.000Z",
-    updatedAt: "2026-03-09T10:02:00.000Z",
-    archivedAt: null,
-    settledOverride: null,
-    settledAt: null,
-    session: null,
-    latestUserMessageAt: null,
-    hasPendingApprovals: false,
-    hasPendingUserInput: false,
-    hasActionableProposedPlan: false,
     ...overrides,
     projectId: ProjectId.make(overrides.projectId),
-  };
+  });
 }
 
 describe("resolveLandingProject", () => {

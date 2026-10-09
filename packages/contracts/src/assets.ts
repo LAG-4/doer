@@ -1,12 +1,12 @@
 import * as Schema from "effect/Schema";
 
-import { EventId, NonNegativeInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { NonNegativeInt, ThreadId, TrimmedNonEmptyString, TurnItemId } from "./baseSchemas.ts";
 import {
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPES,
-  ProjectFaviconPath,
-} from "./orchestration.ts";
+} from "./chatAttachment.ts";
+import { ProjectFaviconPath } from "./project.ts";
 import { ToolActivityNativeAppReference } from "./providerRuntime.ts";
 
 const ASSET_PATH_MAX_LENGTH = 1024;
@@ -42,10 +42,10 @@ export const AssetResource = Schema.Union([
     disposition: Schema.optionalKey(Schema.Literals(["inline", "attachment"])),
   }),
   // An image a tool returned inline, such as a device screenshot, by its order
-  // in the stored activity output. The timeline never carries these bytes.
+  // in the stored output. The timeline never carries these bytes.
   Schema.TaggedStruct("tool-output-image", {
     threadId: ThreadId,
-    activityId: EventId,
+    itemId: TurnItemId,
     index: NonNegativeInt,
   }),
   Schema.TaggedStruct("project-favicon", {

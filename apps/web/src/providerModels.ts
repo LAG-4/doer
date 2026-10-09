@@ -15,7 +15,7 @@ import { createModelCapabilities, resolveSelectableModel } from "@t3tools/shared
 const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [],
 });
-const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("opencode");
+const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
 const OPENCODE_DRIVER_KIND = ProviderDriverKind.make("opencode");
 
 export function formatProviderDriverKindLabel(provider: ProviderDriverKind): string {
@@ -53,12 +53,7 @@ export function resolveSelectableProvider(
   if (requestedEntry?.enabled) {
     return requestedEntry.driver;
   }
-  return (
-    providers.find((candidate) => candidate.enabled && candidate.driver === OPENCODE_DRIVER_KIND)
-      ?.driver ??
-    providers.find((candidate) => candidate.enabled)?.driver ??
-    DEFAULT_DRIVER_KIND
-  );
+  return providers.find((candidate) => candidate.enabled)?.driver ?? DEFAULT_DRIVER_KIND;
 }
 
 export function getProviderModelCapabilities(
@@ -104,9 +99,10 @@ function withoutPlanAgentOption(caps: ModelCapabilities): ModelCapabilities {
 export function getDefaultServerModel(
   providers: ReadonlyArray<ServerProvider>,
   provider: ProviderDriverKind,
+  simpleMode = false,
 ): string {
   const models = getProviderModels(providers, provider);
-  if (provider === OPENCODE_DRIVER_KIND) {
+  if (simpleMode && provider === OPENCODE_DRIVER_KIND) {
     // Prefer the free-tier default (Big Pickle, else any `*-free` Zen model)
     // even when the snapshot carries no `isDefault` (stale cache, custom
     // server). Never silently move a free user to a paid model.

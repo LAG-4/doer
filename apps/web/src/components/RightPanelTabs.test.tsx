@@ -1,10 +1,10 @@
 import { EnvironmentId, type ThreadPullRequestLink } from "@t3tools/contracts";
 import type { DesktopPreviewFavicon, PreviewSessionSnapshot } from "@t3tools/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
+import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
-  filterSimpleModeSurfaceActions,
   RightPanelTabs,
   resolvePullRequestTabLink,
   shouldOpenDefaultBrowserProfileFromMenuClick,
@@ -18,32 +18,6 @@ describe("browser profile submenu", () => {
     expect(shouldOpenDefaultBrowserProfileFromMenuClick("touch")).toBe(false);
     expect(shouldOpenDefaultBrowserProfileFromMenuClick("mouse")).toBe(true);
     expect(shouldOpenDefaultBrowserProfileFromMenuClick(undefined)).toBe(true);
-  });
-});
-
-describe("simple mode surface filter", () => {
-  const actions = [
-    { shortcut: "B", label: "Browser" },
-    { shortcut: "T", label: "Terminal" },
-    { shortcut: "F", label: "Files" },
-    { shortcut: "D", label: "Diff" },
-    { shortcut: "P", label: "Pull request" },
-    { shortcut: "L", label: "Linked pull requests" },
-    { shortcut: "A", label: "Agents" },
-    { shortcut: "M", label: "Device" },
-  ] as const;
-
-  it("hides Terminal, Diff, and both pull request entries when enabled", () => {
-    expect(filterSimpleModeSurfaceActions(actions, true).map((action) => action.shortcut)).toEqual([
-      "B",
-      "F",
-      "A",
-      "M",
-    ]);
-  });
-
-  it("keeps every entry when disabled", () => {
-    expect(filterSimpleModeSurfaceActions(actions, false)).toEqual(actions);
   });
 });
 
@@ -125,6 +99,15 @@ function renderTabs(
   return renderToStaticMarkup(
     <RightPanelTabs
       mode="inline"
+      keybindings={DEFAULT_RESOLVED_KEYBINDINGS}
+      getShortcutContext={() => ({
+        terminalFocus: false,
+        terminalOpen: false,
+        previewFocus: false,
+        previewOpen: false,
+        isWeb: true,
+        isDesktop: false,
+      })}
       surfaces={second ? [previewSurface, secondSurface] : [previewSurface]}
       environmentId={null}
       activeSurfaceId={previewSurface.id}
@@ -149,16 +132,13 @@ function renderTabs(
       onAddPullRequests={() => undefined}
       onAddDiff={() => undefined}
       onAddFiles={() => undefined}
-      onAddAgents={() => undefined}
       onAddDevice={() => undefined}
-      liveAgentCount={0}
       browserAvailable
       terminalAvailable={false}
       diffAvailable={false}
       filesAvailable={false}
       pullRequestAvailable={false}
       pullRequestsAvailable={false}
-      agentsAvailable={false}
       deviceAvailable={false}
     >
       <div>content</div>

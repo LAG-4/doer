@@ -1,17 +1,18 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import type { Project, Thread } from "../types";
+import { makeThreadFixture } from "../test-fixtures";
 import {
   buildBrowseGroups,
   buildCommandPaletteProjectMetadata,
+  buildCommandPaletteRows,
   buildProjectActionItems,
   buildThreadActionItems,
   buildLinkedThreadActionItems,
-  canUseNativeFolderPicker,
   enumerateCommandPaletteItems,
   filterPinnedBrowseEntries,
   filterCommandPaletteGroups,
-  getCommandPaletteInputPlaceholder,
+  findHighlightedCommandPaletteItem,
   reduceCommandPaletteUiState,
   type CommandPaletteActionItem,
   type CommandPaletteGroup,
@@ -75,7 +76,7 @@ describe("buildCommandPaletteProjectMetadata", () => {
       projects: [
         {
           environmentId: localEnvironmentId,
-          title: "Doer",
+          title: "T3 Code",
           workspaceRoot: "/Users/theo/Projects/t3code",
         },
         {
@@ -88,7 +89,7 @@ describe("buildCommandPaletteProjectMetadata", () => {
     });
 
     expect(metadata.searchTerms).toEqual([
-      "Doer",
+      "T3 Code",
       "/Users/theo/Projects/t3code",
       "Local",
       "t3code",
@@ -105,7 +106,7 @@ describe("buildCommandPaletteProjectMetadata", () => {
         {
           kind: "action",
           value: "project:t3code",
-          title: "Doer",
+          title: "T3 Code",
           searchTerms: metadata.searchTerms,
           icon: null,
           run: async () => undefined,
@@ -121,12 +122,12 @@ describe("buildCommandPaletteProjectMetadata", () => {
       projects: [
         {
           environmentId: remoteEnvironmentId,
-          title: "Doer",
+          title: "T3 Code",
           workspaceRoot: "/srv/t3code",
         },
         {
           environmentId: remoteEnvironmentId,
-          title: "Doer worktree",
+          title: "T3 Code worktree",
           workspaceRoot: "/srv/t3code-feature",
         },
       ],
@@ -142,12 +143,12 @@ describe("buildCommandPaletteProjectMetadata", () => {
       projects: [
         {
           environmentId: remoteEnvironmentId,
-          title: "Doer",
+          title: "T3 Code",
           workspaceRoot: "/srv/t3code",
         },
         {
           environmentId: secondRemoteEnvironmentId,
-          title: "Doer mirror",
+          title: "T3 Code mirror",
           workspaceRoot: "/srv/mirror/t3code",
         },
       ],
@@ -165,7 +166,7 @@ describe("buildCommandPaletteProjectMetadata", () => {
       projects: [
         {
           environmentId: remoteEnvironmentId,
-          title: "Doer",
+          title: "T3 Code",
           workspaceRoot: "/srv/t3code",
         },
       ],
@@ -319,7 +320,7 @@ function makeProject(overrides: Partial<Project> = {}): Project {
 }
 
 function makeThread(overrides: Partial<Thread> = {}): Thread {
-  return {
+  return makeThreadFixture({
     id: ThreadId.make("thread-1"),
     environmentId: LOCAL_ENVIRONMENT_ID,
     projectId: PROJECT_ID,
@@ -327,7 +328,7 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
     runtimeMode: "full-access",
     interactionMode: "default",
-    session: null,
+    runtime: null,
     messages: [],
     proposedPlans: [],
     createdAt: "2026-03-01T00:00:00.000Z",
@@ -336,14 +337,11 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     settledAt: null,
     deletedAt: null,
     updatedAt: "2026-03-01T00:00:00.000Z",
-    latestTurn: null,
+    latestRun: null,
     branch: null,
     worktreePath: null,
-    checkpoints: [],
-    pullRequests: [],
-    activities: [],
     ...overrides,
-  };
+  });
 }
 
 describe("buildProjectActionItems", () => {
@@ -493,7 +491,7 @@ describe("buildThreadActionItems", () => {
   it("preserves thread project-name matches when there is no stronger title match", () => {
     const group: CommandPaletteGroup = {
       value: "threads-search",
-      label: "Tasks",
+      label: "Threads",
       items: [
         {
           kind: "action",
@@ -614,7 +612,7 @@ describe("buildThreadActionItems", () => {
   it("keeps message excerpts searchable without replacing thread metadata", () => {
     const [item] = buildThreadActionItems({
       threads: [makeThread({ branch: "feat/search" })],
-      projectTitleById: new Map([[PROJECT_ID, "Doer"]]),
+      projectTitleById: new Map([[PROJECT_ID, "T3 Code"]]),
       sortOrder: "updated_at",
       icon: null,
       getContentMatch: () => ({
@@ -631,7 +629,7 @@ describe("buildThreadActionItems", () => {
       snippet: "The relay reconnect is now bounded.",
       query: "reconnect",
     });
-    expect(item?.description).toBe("Doer · #feat/search");
+    expect(item?.description).toBe("T3 Code · #feat/search");
   });
 
   it("surfaces threads when the query is their ID, without outranking title matches", () => {
@@ -671,7 +669,7 @@ describe("buildThreadActionItems", () => {
   it("prefers renderDescription when provided", () => {
     const [item] = buildThreadActionItems({
       threads: [makeThread({ branch: "feat/search", worktreePath: "/tmp/wt" })],
-      projectTitleById: new Map([[PROJECT_ID, "Doer"]]),
+      projectTitleById: new Map([[PROJECT_ID, "T3 Code"]]),
       sortOrder: "updated_at",
       icon: null,
       renderDescription: (thread, { projectTitle }) =>
@@ -679,7 +677,7 @@ describe("buildThreadActionItems", () => {
       runThread: async (_thread) => undefined,
     });
 
-    expect(item?.description).toBe("Doer:feat/search:wt");
+    expect(item?.description).toBe("T3 Code:feat/search:wt");
   });
 
   it("filters archived threads out of thread search items", () => {
@@ -705,90 +703,6 @@ describe("buildThreadActionItems", () => {
     });
 
     expect(items.map((item) => item.value)).toEqual(["thread:thread-active"]);
-  });
-});
-
-describe("canUseNativeFolderPicker", () => {
-  const primaryEnvironmentId = EnvironmentId.make("environment-primary");
-  const secondaryEnvironmentId = EnvironmentId.make("environment-secondary");
-
-  it("needs the desktop shell that owns the picker", () => {
-    expect(
-      canUseNativeFolderPicker({
-        hasDesktopBridge: false,
-        environmentId: primaryEnvironmentId,
-        primaryEnvironmentId,
-        environmentIsDesktopLocal: true,
-        desktopInstanceId: null,
-      }),
-    ).toBe(false);
-  });
-
-  it("rejects a missing environment", () => {
-    expect(
-      canUseNativeFolderPicker({
-        hasDesktopBridge: true,
-        environmentId: null,
-        primaryEnvironmentId,
-        environmentIsDesktopLocal: false,
-        desktopInstanceId: null,
-      }),
-    ).toBe(false);
-  });
-
-  it("always targets the primary environment", () => {
-    expect(
-      canUseNativeFolderPicker({
-        hasDesktopBridge: true,
-        environmentId: primaryEnvironmentId,
-        primaryEnvironmentId,
-        environmentIsDesktopLocal: false,
-        desktopInstanceId: null,
-      }),
-    ).toBe(true);
-  });
-
-  it("routes a desktop-local secondary only with its pool instance id", () => {
-    const base = {
-      hasDesktopBridge: true,
-      environmentId: secondaryEnvironmentId,
-      primaryEnvironmentId,
-      environmentIsDesktopLocal: true,
-    } as const;
-    expect(canUseNativeFolderPicker({ ...base, desktopInstanceId: "wsl:ubuntu" })).toBe(true);
-    expect(canUseNativeFolderPicker({ ...base, desktopInstanceId: null })).toBe(false);
-  });
-
-  it("never targets remote environments", () => {
-    expect(
-      canUseNativeFolderPicker({
-        hasDesktopBridge: true,
-        environmentId: secondaryEnvironmentId,
-        primaryEnvironmentId,
-        environmentIsDesktopLocal: false,
-        desktopInstanceId: "wsl:ubuntu",
-      }),
-    ).toBe(false);
-  });
-});
-
-describe("add-project browse copy", () => {
-  it("labels the manual folder list without jargon", () => {
-    const groups = buildBrowseGroups({
-      browseEntries: [{ name: "Documents", fullPath: "/Users/test/Documents" }],
-      browseQuery: "~/",
-      canBrowseUp: false,
-      upIcon: null,
-      directoryIcon: null,
-      browseUp: vi.fn(),
-      browseTo: vi.fn(),
-    });
-    expect(groups[0]?.label).toBe("Folders");
-  });
-
-  it("prompts for a folder instead of a path", () => {
-    expect(getCommandPaletteInputPlaceholder("root-browse")).toBe("Choose a project folder…");
-    expect(getCommandPaletteInputPlaceholder("submenu-browse")).toBe("Choose a folder…");
   });
 });
 
@@ -935,5 +849,48 @@ describe("filterCommandPaletteGroups", () => {
       "setting:default-model",
       "setting:keybinding-modelPicker.toggle",
     ]);
+  });
+});
+
+describe("virtualized command palette rows", () => {
+  const action = (value: string, disabled = false): CommandPaletteActionItem => ({
+    kind: "action",
+    value,
+    searchTerms: [],
+    title: value,
+    icon: null,
+    ...(disabled ? { disabled } : {}),
+    run: async () => {},
+  });
+  const groups: CommandPaletteGroup[] = [
+    { value: "actions", label: "Actions", items: [action("new-thread"), action("offline", true)] },
+    { value: "threads", label: "Threads", items: [action("thread-a"), action("thread-b")] },
+  ];
+
+  it("keeps group order and headings while indexing only enabled items", () => {
+    const { rows, itemValues, rowIndexByItemIndex } = buildCommandPaletteRows(groups);
+
+    expect(rows.map((row) => (row.kind === "label" ? `# ${row.label}` : row.key))).toEqual([
+      "# Actions",
+      "actions:new-thread",
+      "actions:offline",
+      "# Threads",
+      "threads:thread-a",
+      "threads:thread-b",
+    ]);
+    expect(itemValues).toEqual(["new-thread", "thread-a", "thread-b"]);
+    expect(rowIndexByItemIndex).toEqual([1, 4, 5]);
+    expect(rows.flatMap((row) => (row.kind === "item" ? [row.itemIndex] : []))).toEqual([
+      0,
+      null,
+      1,
+      2,
+    ]);
+  });
+
+  it("resolves Enter to the highlighted item without needing its row mounted", () => {
+    expect(findHighlightedCommandPaletteItem(groups, "thread-b")?.value).toBe("thread-b");
+    expect(findHighlightedCommandPaletteItem(groups, "offline")).toBeNull();
+    expect(findHighlightedCommandPaletteItem(groups, null)).toBeNull();
   });
 });

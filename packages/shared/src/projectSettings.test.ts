@@ -2,13 +2,13 @@ import {
   DEFAULT_SERVER_SETTINGS,
   PROJECT_SCOPED_SERVER_SETTING_KEYS,
   ProjectId,
+  ProviderDriverKind,
   ProviderInstanceId,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import { createModelSelection } from "./model.ts";
 import {
   clearProjectSettingsOverrides,
-  CONNECTED_TOOL_SETTING_KEYS,
   hasProjectSettingsOverrides,
   resolveProjectFileBackedSetting,
   resolveProjectSettings,
@@ -21,21 +21,6 @@ const projectId = ProjectId.make("project-a");
 const otherProjectId = ProjectId.make("project-b");
 
 describe("resolveProjectSettings", () => {
-  it.each(CONNECTED_TOOL_SETTING_KEYS)(
-    "uses the shared computer switch for %s despite old Space overrides",
-    (key) => {
-      for (const enabled of [false, true]) {
-        const settings = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-          [key]: enabled,
-          projectSettingsOverrides: { [projectId]: { [key]: !enabled, defaultAutoPull: true } },
-        });
-        const resolved = resolveProjectSettings(settings, projectId);
-        expect(resolved.settings[key]).toBe(enabled);
-        expect(resolved.sources[key]).toBe("environment");
-        expect(resolved.settings.defaultAutoPull).toBe(true);
-      }
-    },
-  );
   it("inherits every scopable key when the project has no overrides", () => {
     const resolved = resolveProjectSettings(DEFAULT_SERVER_SETTINGS, projectId);
     expect(resolved.settings).toBe(DEFAULT_SERVER_SETTINGS);
@@ -94,7 +79,12 @@ describe("resolveProjectSettings", () => {
   it("keeps the environment text generation model when the override's provider is disabled", () => {
     const disabledSelection = createModelSelection(ProviderInstanceId.make("claudeAgent"), "opus");
     const settings = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-      providers: { claudeAgent: { enabled: false } },
+      providerInstances: {
+        [ProviderInstanceId.make("claudeAgent")]: {
+          driver: ProviderDriverKind.make("claudeAgent"),
+          enabled: false,
+        },
+      },
       projectSettingsOverrides: {
         [projectId]: { textGenerationModelSelection: disabledSelection },
       },
@@ -112,17 +102,8 @@ describe("resolveProjectSettings", () => {
       defaultModelSelection: aggregateModel,
       defaultThreadEnvMode: "local" as const,
     };
-    // Codex is off by default on this fork; opt in so the aggregate model
-    // exercises the fold instead of the disabled-provider fallback.
-    const codexEnabledSettings = {
-      ...DEFAULT_SERVER_SETTINGS,
-      providers: {
-        ...DEFAULT_SERVER_SETTINGS.providers,
-        codex: { ...DEFAULT_SERVER_SETTINGS.providers.codex, enabled: true },
-      },
-    };
     const unfolded = resolveProjectSettings(
-      { ...codexEnabledSettings, projectSettingsFolded: false },
+      { ...DEFAULT_SERVER_SETTINGS, projectSettingsFolded: false },
       projectId,
       project,
     );
@@ -132,7 +113,7 @@ describe("resolveProjectSettings", () => {
     // A stored override still beats the aggregate before the fold.
     const overridden = resolveProjectSettings(
       {
-        ...codexEnabledSettings,
+        ...DEFAULT_SERVER_SETTINGS,
         projectSettingsFolded: false,
         projectSettingsOverrides: { [projectId]: { defaultThreadEnvMode: "worktree" } },
       },
@@ -142,7 +123,7 @@ describe("resolveProjectSettings", () => {
     expect(overridden.settings.defaultThreadEnvMode).toBe("worktree");
     // After the fold a reset in the record wins over the stale aggregate.
     const folded = resolveProjectSettings(
-      { ...codexEnabledSettings, projectSettingsFolded: true },
+      { ...DEFAULT_SERVER_SETTINGS, projectSettingsFolded: true },
       projectId,
       project,
     );
@@ -153,7 +134,12 @@ describe("resolveProjectSettings", () => {
   it("keeps the environment default model when the override's provider is disabled", () => {
     const disabledSelection = createModelSelection(ProviderInstanceId.make("claudeAgent"), "opus");
     const settings = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-      providers: { claudeAgent: { enabled: false } },
+      providerInstances: {
+        [ProviderInstanceId.make("claudeAgent")]: {
+          driver: ProviderDriverKind.make("claudeAgent"),
+          enabled: false,
+        },
+      },
       projectSettingsOverrides: { [projectId]: { defaultModelSelection: disabledSelection } },
     });
     const resolved = resolveProjectSettings(settings, projectId);
@@ -390,4 +376,28 @@ describe("resolveWorktreeCleanup", () => {
         .worktreeAfterDays,
     ).toBe(8);
   });
+});
+
+it("inherits branch naming defaults and applies project overrides independently", () => {
+  const settings = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+    branchNamingMode: "static",
+    branchNamePrefix: "team/",
+    branchNameInstructions: "Use issue IDs.",
+    projectSettingsOverrides: { [projectId]: { branchNamingMode: "custom" } },
+  });
+  expect(resolveProjectSettings(settings, projectId).settings).toMatchObject({
+    branchNamingMode: "custom",
+    branchNamePrefix: "team/",
+    branchNameInstructions: "Use issue IDs.",
+  });
+  expect(resolveProjectSettings(settings, otherProjectId).settings).toMatchObject({
+    branchNamingMode: "static",
+    branchNamePrefix: "team/",
+  });
+  const cleared = applyServerSettingsPatch(settings, {
+    projectSettingsOverrides: {
+      [projectId]: clearProjectSettingsOverrides(settings, projectId, ["branchNamingMode"]),
+    },
+  });
+  expect(resolveProjectSettings(cleared, projectId).settings.branchNamingMode).toBe("static");
 });

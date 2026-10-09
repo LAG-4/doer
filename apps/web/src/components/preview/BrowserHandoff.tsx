@@ -4,7 +4,8 @@ import { useComposerHandleContext } from "~/composerHandleContext";
 import { useThreadShell } from "~/state/entities";
 import { threadEnvironment } from "~/state/threads";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { buildThreadTurnInterruptInput } from "../ChatView.logic";
+import { randomUUID } from "~/lib/utils";
+import { CommandId } from "@t3tools/contracts";
 import { Button } from "../ui/button";
 
 /** Users sign in on the site itself, then continue the same Task with its existing work. */
@@ -14,7 +15,7 @@ export function BrowserHandoff({ threadRef }: { threadRef: ScopedThreadRef }) {
   const interrupt = useAtomCommand(threadEnvironment.interruptTurn, { reportFailure: false });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const running = thread?.session?.status === "running" || thread?.latestTurn?.state === "running";
+  const running = thread?.runtime?.activeRunId != null || thread?.latestRun?.status === "running";
   async function pause() {
     if (!thread || busy) return;
     setBusy(true);
@@ -22,7 +23,11 @@ export function BrowserHandoff({ threadRef }: { threadRef: ScopedThreadRef }) {
     try {
       const result = await interrupt({
         environmentId: threadRef.environmentId,
-        input: buildThreadTurnInterruptInput(thread),
+        input: {
+          threadId: threadRef.threadId,
+          commandId: CommandId.make(randomUUID()),
+          ...(thread?.runtime?.activeRunId ? { runId: thread.runtime.activeRunId } : {}),
+        },
       });
       setMessage(
         result._tag === "Failure"

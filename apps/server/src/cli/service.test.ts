@@ -7,7 +7,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Terminal from "effect/Terminal";
-import { Command } from "effect/unstable/cli";
+import { Command } from "effect/cli";
 import { afterEach, vi } from "vite-plus/test";
 
 import packageJson from "../../package.json" with { type: "json" };
@@ -26,7 +26,7 @@ const status = {
   supported: true,
   installed: true,
   current: true,
-  unitPath: "/home/me/.config/systemd/user/doer.service",
+  unitPath: "/home/me/.config/systemd/user/t3code.service",
   logPath: "/home/me/.t3/userdata/logs/boot-service.log",
 } as const;
 
@@ -34,9 +34,9 @@ it("reports the installed service version and host paths", () => {
   assert.equal(
     formatServiceStatus(status, "0.0.29"),
     [
-      "Doer service",
-      "  Status: installed · @lag4/doer-cli@0.0.29",
-      "  Unit: /home/me/.config/systemd/user/doer.service",
+      "T3 Code service",
+      "  Status: installed · t3@0.0.29",
+      "  Unit: /home/me/.config/systemd/user/t3code.service",
       "  Logs: /home/me/.t3/userdata/logs/boot-service.log",
     ].join("\n"),
   );
@@ -45,7 +45,7 @@ it("reports the installed service version and host paths", () => {
 it("gives a direct repair command for a stale service", () => {
   assert.include(
     formatServiceStatus({ ...status, current: false }, "0.0.29"),
-    "Next: Run `npx @lag4/doer-cli@0.0.29 service update`.",
+    "Next: Run `t3 service install` to repair it.",
   );
 });
 
@@ -64,8 +64,8 @@ it("explains an incomplete nightly installation and keeps repair on its installe
   expect(output).toContain("last login session ends");
   expect(output).toContain('sudo loginctl enable-linger "$(id -un)"');
   expect(output).toContain("[service-stopped]");
-  expect(output).toContain("npx @lag4/doer-cli@0.0.32-nightly.1 service update");
-  expect(output).not.toContain("@lag4/doer-cli@latest");
+  expect(output).toContain("Run `t3 service install` to repair it.");
+  expect(output).not.toContain("npx");
 });
 
 it("points an older service at a repair, never at npx", () => {
@@ -73,8 +73,8 @@ it("points an older service at a repair, never at npx", () => {
     { ...status, current: false, installedVersion: "0.0.28" },
     "0.0.29",
   );
-  expect(output).toContain("npx @lag4/doer-cli@0.0.29 service update");
-  expect(output).not.toContain("npx @lag4/doer-cli@0.0.28 service update");
+  expect(output).toContain("Run `t3 service install` to repair it.");
+  expect(output).not.toContain("npx");
 });
 
 it("explains where the service is supported", () => {
@@ -90,12 +90,9 @@ it("reports a newer installed service and tells the CLI to catch up to it", () =
     "0.0.31",
   );
 
-  assert.include(
-    output,
-    "@lag4/doer-cli@0.0.32-nightly.1 (newer than this @lag4/doer-cli@0.0.31 CLI)",
-  );
-  assert.include(output, "npx @lag4/doer-cli@0.0.32-nightly.1 service update");
-  assert.notInclude(output, "npx @lag4/doer-cli@latest service update");
+  assert.include(output, "t3@0.0.32-nightly.1 (newer than this t3@0.0.31 CLI)");
+  assert.include(output, "Run `t3 update 0.0.32-nightly.1` to match it");
+  assert.notInclude(output, "npx");
 });
 
 const newerServiceStatus = { ...status, current: false, installedVersion: "999.0.0" };

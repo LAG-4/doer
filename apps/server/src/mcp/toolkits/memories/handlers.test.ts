@@ -1,10 +1,5 @@
-import {
-  EnvironmentId,
-  ProjectId,
-  ProviderInstanceId,
-  ThreadId,
-  type OrchestrationThreadShell,
-} from "@t3tools/contracts";
+import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
+import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import type { DoerMemory } from "@t3tools/shared/doerMemory";
 import { describe, expect, it } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
@@ -13,10 +8,10 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
-import type { Tool } from "effect/unstable/ai";
+import type { Tool } from "effect/ai";
 
 import { DoerMemoryStore } from "../../../persistence/Services/DoerMemoryStore.ts";
-import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { DoerTaskContext as ProjectionSnapshotQuery } from "../../../memory/DoerTaskContext.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import { MemoriesToolkitHandlersLive } from "./handlers.ts";
 import { MemoriesToolkit } from "./tools.ts";
@@ -32,14 +27,18 @@ const testCrypto = Crypto.make({
 
 const invocation = (): McpInvocationContext.McpInvocationScope => ({
   environmentId: EnvironmentId.make("environment-1"),
-  threadId: THREAD_ID,
-  providerSessionId: "provider-session-1",
-  providerInstanceId: ProviderInstanceId.make("codex"),
+  requestNamespace: "test",
+  client: undefined,
+  thread: {
+    threadId: THREAD_ID,
+    providerSessionId: "provider-session-1",
+    providerInstanceId: ProviderInstanceId.make("codex"),
+  },
   capabilities: new Set(),
   issuedAt: 1,
 });
 
-function makeThread(): OrchestrationThreadShell {
+function makeThread() {
   return {
     id: THREAD_ID,
     projectId: PROJECT_ID,
@@ -54,6 +53,7 @@ function makeThread(): OrchestrationThreadShell {
     createdAt: "2026-08-01T00:00:00.000Z",
     updatedAt: "2026-08-20T00:00:00.000Z",
     archivedAt: null,
+    deletedAt: null,
     settledOverride: null,
     settledAt: null,
     session: null,
@@ -70,6 +70,7 @@ const makeHarness = Effect.fn("makeMemoriesToolkitHarness")(function* (
   const rows = yield* Ref.make(new Map(seed.map((row) => [row.id, row])));
   const read = Ref.get(rows).pipe(Effect.map((map) => [...map.values()]));
   const dependencies = Layer.mergeAll(
+    Layer.mock(ThreadManagementService.ThreadManagementService)({}),
     Layer.mock(ProjectionSnapshotQuery)({
       getThreadShellById: (threadId) =>
         Effect.succeed(threadId === THREAD_ID ? Option.some(makeThread()) : Option.none()),

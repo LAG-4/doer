@@ -1,14 +1,15 @@
+import * as McpToolAccess from "../../McpToolAccess.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeCrypto from "node:crypto";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import { McpInvocationContext } from "../../McpInvocationContext.ts";
-import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { requireDoerThreadScope } from "../../McpInvocationContext.ts";
+import { DoerTaskContext as ProjectionSnapshotQuery } from "../../../memory/DoerTaskContext.ts";
 import { WorkspaceFileSystem } from "../../../workspace/WorkspaceFileSystem.ts";
 import { generateDocument, generatePresentation, generateSpreadsheet } from "./generate.ts";
 import { OutputFailedError, OutputsToolkit } from "./tools.ts";
 
-const make = Effect.gen(function* () {
+export const make = Effect.gen(function* () {
   const snapshots = yield* ProjectionSnapshotQuery;
   const files = yield* WorkspaceFileSystem;
   const save = Effect.fn("Outputs.save")(function* (
@@ -16,7 +17,7 @@ const make = Effect.gen(function* () {
     format: "docx" | "xlsx" | "pptx",
     generate: () => Promise<Uint8Array>,
   ) {
-    const scope = yield* McpInvocationContext;
+    const scope = yield* requireDoerThreadScope;
     const context = yield* snapshots
       .getThreadCheckpointContext(scope.threadId)
       .pipe(
@@ -69,3 +70,14 @@ const make = Effect.gen(function* () {
   });
 });
 export const OutputsToolkitHandlersLive = OutputsToolkit.toLayer(make);
+
+export const layer = McpToolAccess.toLayer(
+  OutputsToolkit,
+  make.pipe(
+    Effect.map((handlers) => ({
+      create_document: McpToolAccess.actsAsCaller(handlers.create_document),
+      create_spreadsheet: McpToolAccess.actsAsCaller(handlers.create_spreadsheet),
+      create_presentation: McpToolAccess.actsAsCaller(handlers.create_presentation),
+    })),
+  ),
+);

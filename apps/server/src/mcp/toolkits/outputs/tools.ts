@@ -1,8 +1,10 @@
+import { OrchestratorMcpFailure } from "@t3tools/contracts";
+import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as Schema from "effect/Schema";
-import * as Tool from "effect/unstable/ai/Tool";
-import * as Toolkit from "effect/unstable/ai/Toolkit";
+import * as Tool from "effect/ai/Tool";
+import * as Toolkit from "effect/ai/Toolkit";
 import { McpInvocationContext } from "../../McpInvocationContext.ts";
-import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { DoerTaskContext as ProjectionSnapshotQuery } from "../../../memory/DoerTaskContext.ts";
 import { WorkspaceFileSystem } from "../../../workspace/WorkspaceFileSystem.ts";
 
 const Text = Schema.String.check(Schema.isMaxLength(8_000));
@@ -19,7 +21,12 @@ export class OutputFailedError extends Schema.TaggedError<OutputFailedError>()(
     return `Could not create the file. ${this.detail} Keep the draft and try again.`;
   }
 }
-const dependencies = [McpInvocationContext, ProjectionSnapshotQuery, WorkspaceFileSystem];
+const dependencies = [
+  ThreadManagementService.ThreadManagementService,
+  McpInvocationContext,
+  ProjectionSnapshotQuery,
+  WorkspaceFileSystem,
+];
 const document = Tool.make("create_document", {
   description:
     "Create a formatted Word document in this Task's Space, using Doer's bundled tools. Supply a short title and sections of plain text. Write complete reviewed content; never invent personal facts. Returns a relative file path: link it in your response. Each call saves a new copy and keeps previous files.",
@@ -33,7 +40,7 @@ const document = Tool.make("create_document", {
     ).check(Schema.isMinLength(1), Schema.isMaxLength(100)),
   }),
   success: Result,
-  failure: OutputFailedError,
+  failure: Schema.Union([OutputFailedError, OrchestratorMcpFailure]),
   dependencies,
 })
   .annotate(Tool.Title, "Create document")
@@ -56,7 +63,7 @@ const spreadsheet = Tool.make("create_spreadsheet", {
     ).check(Schema.isMinLength(1), Schema.isMaxLength(20)),
   }),
   success: Result,
-  failure: OutputFailedError,
+  failure: Schema.Union([OutputFailedError, OrchestratorMcpFailure]),
   dependencies,
 })
   .annotate(Tool.Title, "Create spreadsheet")
@@ -78,7 +85,7 @@ const presentation = Tool.make("create_presentation", {
     ).check(Schema.isMinLength(1), Schema.isMaxLength(50)),
   }),
   success: Result,
-  failure: OutputFailedError,
+  failure: Schema.Union([OutputFailedError, OrchestratorMcpFailure]),
   dependencies,
 })
   .annotate(Tool.Title, "Create presentation")

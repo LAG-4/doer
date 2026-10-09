@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 
 import { FileSaveCoordinator } from "./fileSaveCoordinator";
 
@@ -43,28 +43,6 @@ describe("FileSaveCoordinator", () => {
     expect(persist).toHaveBeenCalledWith("latest");
     expect(onConfirmed).toHaveBeenCalledWith("latest");
     expect(onPendingChange.mock.calls).toEqual([[true], [true], [false]]);
-  });
-
-  it("persists an explicit save immediately without waiting for the debounce", async () => {
-    vi.useFakeTimers();
-    const persist = vi
-      .fn<(contents: string) => Promise<AtomCommandResult<void, never>>>()
-      .mockResolvedValue(AsyncResult.success(undefined));
-    const onPendingChange = vi.fn();
-    const onConfirmed = vi.fn();
-    const coordinator = new FileSaveCoordinator({
-      debounceMs: 500,
-      persist,
-      onPendingChange,
-      onConfirmed,
-    });
-
-    coordinator.save("sheet-bytes");
-    await Promise.resolve();
-    expect(persist).toHaveBeenCalledOnce();
-    expect(persist).toHaveBeenCalledWith("sheet-bytes");
-    expect(onConfirmed).toHaveBeenCalledWith("sheet-bytes");
-    expect(onPendingChange.mock.calls).toEqual([[true], [false]]);
   });
 
   it("keeps pending state until an edit made during a write is also saved", async () => {
@@ -114,6 +92,31 @@ describe("FileSaveCoordinator", () => {
     expect(persist).toHaveBeenCalledOnce();
     expect(persist).toHaveBeenCalledWith("unsaved");
   });
+
+  it.each([false, true])(
+    "keeps an edit pending after write permission is removed (closing=%s)",
+    async (closeEditor) => {
+      vi.useFakeTimers();
+      let canWrite = true;
+      const persist = vi.fn().mockResolvedValue(AsyncResult.success(undefined));
+      const onPendingChange = vi.fn();
+      const coordinator = new FileSaveCoordinator({
+        debounceMs: 500,
+        canPersist: () => canWrite,
+        persist,
+        onPendingChange,
+        onConfirmed: vi.fn(),
+      });
+
+      coordinator.change("unsaved");
+      canWrite = false;
+      if (closeEditor) coordinator.dispose();
+      await vi.runAllTimersAsync();
+
+      expect(persist).not.toHaveBeenCalled();
+      expect(onPendingChange).toHaveBeenLastCalledWith(true);
+    },
+  );
 
   it("flushes an edit made while a write was in flight when the editor closes", async () => {
     vi.useFakeTimers();

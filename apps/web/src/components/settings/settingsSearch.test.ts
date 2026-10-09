@@ -170,6 +170,7 @@ describe("searchSettings", () => {
       "source-control-writer-model",
       "source-control-writing-style",
       "t3-connect",
+      "hold-webhooks-while-offline",
       "tailscale-https",
       "wsl-backend",
       "auto-settle-inactive-threads",
@@ -221,6 +222,24 @@ describe("searchSettings", () => {
     expect(browser).toContain("publish-agent-activity");
   });
 
+  it("offers webhook holding only while the managed tunnel is on, like its row", () => {
+    const availability = {
+      hasCloudPublicConfig: true,
+      hasEnvironment: true,
+      hasProviderSettingsEnvironment: true,
+      hasMacProviderSettingsEnvironment: false,
+      canManageLocalBackend: true,
+      isWslSettingsRowVisible: false,
+      hasThreadAutoSettlement: false,
+    };
+    const itemIds = (managedTunnelActive: boolean) =>
+      filterAvailableSettingsSearchItems({ ...availability, managedTunnelActive }).map(
+        (item) => item.id,
+      );
+    expect(itemIds(false)).not.toContain("hold-webhooks-while-offline");
+    expect(itemIds(true)).toContain("hold-webhooks-while-offline");
+  });
+
   it("shows automatic settlement settings when the server supports them", () => {
     const available = filterAvailableSettingsSearchItems({
       hasCloudPublicConfig: false,
@@ -233,8 +252,8 @@ describe("searchSettings", () => {
     });
 
     expect(searchSettings("auto-settle", available).map((item) => item.id)).toEqual([
-      "auto-settle-merged-threads",
       "auto-settle-inactive-threads",
+      "auto-settle-merged-threads",
       "days-before-auto-settle",
     ]);
   });
@@ -270,38 +289,6 @@ describe("searchSettings", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("hides experimental connection rows until the host switch is on, keeping the toggle", () => {
-    // A stale or unknown host selection resolves to off, so search never
-    // surfaces another computer's Gmail/Microsoft/Office rows.
-    const availability = {
-      hasCloudPublicConfig: false,
-      hasEnvironment: true,
-      hasProviderSettingsEnvironment: true,
-      hasMacProviderSettingsEnvironment: false,
-      canManageLocalBackend: false,
-      isWslSettingsRowVisible: false,
-      hasThreadAutoSettlement: false,
-    };
-    const off = filterAvailableSettingsSearchItems({
-      ...availability,
-      hasExperimentalConnections: false,
-    }).map((item) => item.id);
-    expect(off).toContain("experimental-connections");
-    expect(off).not.toContain("microsoft");
-    expect(off).not.toContain("gmail-access");
-    expect(off).not.toContain("spreadsheet-access");
-    expect(off).not.toContain("presentation-access");
-    const on = filterAvailableSettingsSearchItems({
-      ...availability,
-      hasExperimentalConnections: true,
-    }).map((item) => item.id);
-    expect(on).toContain("experimental-connections");
-    expect(on).toContain("microsoft");
-    expect(on).toContain("gmail-access");
-    expect(on).toContain("spreadsheet-access");
-    expect(on).toContain("presentation-access");
-  });
-
   it("serves anchor props to panels from the catalog", () => {
     expect(searchableSetting("word-wrap")).toEqual({ id: "word-wrap", title: "Word wrap" });
     expect(searchableSetting("archive")).toEqual({ id: "archive", title: "Archived threads" });
@@ -314,6 +301,10 @@ describe("searchSettings", () => {
     });
     expect(searchSettings("word wrap")[0]).toMatchObject({
       id: "word-wrap",
+      to: "/settings/appearance",
+    });
+    expect(searchSettings("composer context")[0]).toMatchObject({
+      id: "composer-context",
       to: "/settings/appearance",
     });
     expect(searchSettings("environment identification")[0]).toMatchObject({
@@ -486,8 +477,8 @@ describe("auto-settlement search availability", () => {
       hasThreadAutoSettlement: availability.eligibleEnvironmentIds.length > 0,
     });
     expect(searchSettings("auto-settle", items).map((item) => item.id)).toEqual([
-      "auto-settle-merged-threads",
       "auto-settle-inactive-threads",
+      "auto-settle-merged-threads",
       "days-before-auto-settle",
     ]);
   });

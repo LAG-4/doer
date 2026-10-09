@@ -1,3 +1,4 @@
+import { VcsProcess } from "../vcs/VcsProcess.ts";
 /**
  * CheckpointStore - Repository interface for filesystem-backed workspace checkpoints.
  *
@@ -111,9 +112,13 @@ export class CheckpointStore extends Context.Service<
 export const make = Effect.gen(function* () {
   const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
   const config = yield* Effect.serviceOption(ServerConfig);
-  const folders = Option.isSome(config)
-    ? yield* FolderCheckpoints.make(config.value.stateDir)
-    : null;
+  const process = yield* Effect.serviceOption(VcsProcess);
+  const folders =
+    Option.isSome(config) && Option.isSome(process)
+      ? yield* FolderCheckpoints.make(config.value.stateDir).pipe(
+          Effect.provideService(VcsProcess, process.value),
+        )
+      : null;
 
   const resolveCheckpoints = Effect.fn("CheckpointStore.resolveCheckpoints")(function* (
     operation: string,
