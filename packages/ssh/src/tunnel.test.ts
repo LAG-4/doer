@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NetService from "@t3tools/shared/Net";
-import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -98,67 +98,17 @@ const NODE_SCRIPT = {
 } as const;
 
 describe("ssh tunnel scripts", () => {
-  it("installs and runs the release archive without Node, npm, or npx", () => {
-    const script = SshTunnel.buildRemoteT3RunnerScript(ARCHIVE);
-
-    assert.include(script, "T3_ARCHIVE_VERSION='1.2.3-preview.20260911.4'");
-    assert.include(script, "T3_NODE_SCRIPT_PATH=''");
+  it("resolves and runs the fork npm package without leaving an npm wrapper", () => {
+    const script = SshTunnel.buildRemoteT3RunnerScript({ packageSpec: "@lag4/doer-cli@1.2.3" });
+    assert.include(script, "require_installed_t3_cli npx --yes --package '@lag4/doer-cli@1.2.3'");
     assert.include(
       script,
-      "T3_RELEASE_BASE_URL='https://github.com/pingdotgg/t3code/releases/download'",
+      "require_installed_t3_cli npm exec --yes --package '@lag4/doer-cli@1.2.3'",
     );
-    assert.include(script, 'T3_RUNTIME_DIR="$HOME/.t3/runtime/versions/$T3_ARCHIVE_VERSION"');
-    assert.include(script, 'T3_ARCHIVE="t3-$T3_ARCHIVE_VERSION-$T3_PLATFORM-$T3_ARCH.tar.gz"');
-    assert.include(script, "SHA256SUMS");
-    assert.include(script, 'exec "$T3_RUNTIME_DIR/t3" "$@"');
-    assert.notInclude(script, "npx");
-    assert.notInclude(script, "npm exec");
-    assert.notInclude(script, "t3@latest");
-    assert.notInclude(script, 'exec t3 "$@"');
-    // Concurrent launches serialize on a per-version mkdir lock and recheck
-    // the completion marker after acquiring it.
-    assert.include(
-      script,
-      'T3_LOCK="$HOME/.t3/runtime/versions/.$T3_ARCHIVE_VERSION.install.lock"',
-    );
-    // mkdir is the exclusive create; the pid follows atomically. A dead owner
-    // is reclaimed at once, a never-published owner after a short grace.
-    assert.include(script, 'while ! mkdir "$T3_LOCK" 2>/dev/null; do');
-    assert.include(script, 'mv "$T3_LOCK/pid.tmp" "$T3_LOCK/pid"');
-    assert.include(script, 'if ! kill -0 "$T3_LOCK_OWNER" 2>/dev/null; then');
-    assert.include(script, 'if [ "$T3_LOCK_UNOWNED" -ge 5 ]; then');
-    assert.include(script, 'if [ "$T3_LOCK_WAITED" -ge 360 ]; then');
-    assert.include(script, '"$T3_STAGING/SHA256SUMS" 30');
-    assert.include(script, '"$T3_STAGING/$T3_ARCHIVE" 240');
-    assert.notInclude(script, "T3_LOCK_CANDIDATE");
-    assert.notInclude(script, "-mmin");
-    assert.equal(script.split("if ! t3_runtime_ready; then").length - 1, 2);
-    assert.isBelow(
-      script.indexOf('"$T3_STAGING/t3" --version'),
-      script.indexOf('> "$T3_STAGING/.install-complete"'),
-    );
-    // Node discovery is defined for the dev path but only ever invoked inside
-    // the node-script branch, which the archive path skips entirely.
-    assert.equal(script.split("ensure_remote_node_path || true").length - 1, 1);
-    assert.isBelow(
-      script.indexOf("ensure_remote_node_path || true"),
-      script.indexOf('exec node "$T3_NODE_SCRIPT_PATH" "$@"'),
-    );
-    assert.isBelow(
-      script.indexOf('exec node "$T3_NODE_SCRIPT_PATH" "$@"'),
-      script.indexOf("T3_ARCHIVE_VERSION="),
-    );
-
-    const launch = SshTunnel.buildRemoteLaunchScript({
-      ...ARCHIVE,
-      releaseBaseUrl: "https://mirror.example/t3/",
-    });
-    assert.include(launch, "T3_ARCHIVE_MODE=1");
-    assert.include(launch, "T3_RELEASE_BASE_URL='https://mirror.example/t3'");
-    assert.include(launch, '"$RUNNER_FILE" __ssh-helper pick-port "$PORT_FILE"');
-    assert.include(launch, '"$RUNNER_FILE" __ssh-helper wait-ready "$REMOTE_PORT"');
-    assert.include(launch, '"$RUNNER_FILE" __ssh-helper runtime-port "$DEFAULT_RUNTIME_FILE"');
-    assert.include(SshTunnel.buildRemoteLaunchScript(NODE_SCRIPT), "T3_ARCHIVE_MODE=0");
+    assert.include(script, 'exec "$T3_CLI_PATH" "$@"');
+    assert.include(script, 'exec doer "$@"');
+    assert.notInclude(script, "pingdotgg/t3code");
+    assert.notInclude(script, "SHA256SUMS");
   });
 
   it("rejects archive versions that are not a single exact version segment", () => {
@@ -177,20 +127,13 @@ describe("ssh tunnel scripts", () => {
         archiveVersion,
       );
     }
-    assert.include(
-      SshTunnel.buildRemoteT3RunnerScript(ARCHIVE),
-      "T3_ARCHIVE_VERSION='1.2.3-preview.20260911.4'",
-    );
   });
 
-  it("refuses to build a runner with neither an archive version nor a node script", () => {
+  it("defaults to the fork npm package when no runner is configured", () => {
     for (const input of [undefined, {}, { archiveVersion: "  " }, { nodeScriptPath: null }]) {
-      assert.throws(
-        () => SshTunnel.buildRemoteT3RunnerScript(input),
-        SshTunnel.SshMissingRunnerError,
-      );
+      assert.include(SshTunnel.buildRemoteT3RunnerScript(input), "'@lag4/doer-cli@latest'");
     }
-    assert.throws(() => SshTunnel.buildRemoteLaunchScript(), SshTunnel.SshMissingRunnerError);
+    assert.include(SshTunnel.buildRemoteLaunchScript(), "'@lag4/doer-cli@latest'");
   });
 
   it("does not hard-code a remote node engine range", () => {
@@ -211,7 +154,6 @@ describe("ssh tunnel scripts", () => {
       "T3_NODE_SCRIPT_PATH='/Users/julius/Development/Work/codething-mvp/apps/server/dist/bin.mjs'",
     );
     assert.include(script, 'exec node "$T3_NODE_SCRIPT_PATH" "$@"');
-    assert.include(script, "T3_ARCHIVE_VERSION=''");
     assert.include(script, 'prepend_path_if_dir "$HOME/.local/bin"');
     assert.include(script, `T3_NODE_ENGINE_RANGE='${TEST_NODE_ENGINE_RANGE}'`);
     assert.include(script, "remote_node_satisfies_engine()");
@@ -229,7 +171,10 @@ describe("ssh tunnel scripts", () => {
     assert.include(script, "nvm use --silent default");
     assert.include(script, 'for T3_NODE_BIN in "$NVM_DIR"/versions/node/*/bin');
     assert.notInclude(script, "ensure $NVM_DIR/nvm.sh is available");
-    assert.notInclude(script, "npx");
+    assert.isBelow(
+      script.indexOf('exec node "$T3_NODE_SCRIPT_PATH" "$@"'),
+      script.indexOf("require_installed_t3_cli npx"),
+    );
   });
 
   it("uses the remote t3 runner for launch and pairing scripts", () => {
@@ -254,11 +199,11 @@ describe("ssh tunnel scripts", () => {
     assert.include(launch, '"$RUNNER_FILE" serve --host 127.0.0.1');
     assert.include(launch, '--base-dir "$DEFAULT_SERVER_HOME"');
     assert.notInclude(launch, "server-home");
-    assert.include(launch, "Remote T3 server did not become ready");
+    assert.include(launch, "Remote Doer server did not become ready");
     assert.include(launch, 'wait_ready "60000"');
     assert.include(launch, 'if [ -s "$LOG_FILE" ]; then');
     assert.include(launch, "It wrote nothing to %s");
-    assert.include(launch, "T3_ARCHIVE_VERSION='1.2.3-preview.20260911.4'");
+    assert.include(launch, "'@lag4/doer-cli@latest'");
     assert.include(
       SshTunnel.buildRemotePairingScript(stateKey, ARCHIVE),
       '"$RUNNER_FILE" auth pairing create --base-dir "$PAIRING_BASE_DIR" --json',
@@ -270,7 +215,7 @@ describe("ssh tunnel scripts", () => {
     assert.notInclude(SshTunnel.buildRemotePairingScript(stateKey, ARCHIVE), "server-home");
     assert.include(
       SshTunnel.buildRemotePairingScript(stateKey, ARCHIVE),
-      "T3_ARCHIVE_VERSION='1.2.3-preview.20260911.4'",
+      "'@lag4/doer-cli@latest'",
     );
     assert.include(
       SshTunnel.buildRemoteStopScript(stateKey),
@@ -687,115 +632,64 @@ describe("ssh tunnel scripts", () => {
   );
 });
 
-// The archive runner is generated shell; string assertions cannot prove the
-// lock excludes concurrent installers. Run the real script against a tiny
-// fake archive served from a file:// mirror.
-describe("archive runner script", () => {
-  const hostPlatform = HostProcessPlatform.defaultValue();
-  const hostArch = HostProcessArchitecture.defaultValue();
-  const windowsHost = hostPlatform === "win32";
-  const archiveVersion = "1.2.3-preview.20260911.4";
-
-  const runRunner = (home: string, runner: string) =>
-    Effect.gen(function* () {
-      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      const child = yield* spawner.spawn(
-        ChildProcess.make("sh", [runner, "--version"], {
-          env: { PATH: process.env.PATH ?? "", HOME: home },
-          extendEnv: false,
-        }),
-      );
-      const [stdout, stderr, exitCode] = yield* Effect.all(
-        [
-          child.stdout.pipe(
-            Stream.decodeText(),
-            Stream.runFold(
-              () => "",
-              (acc, chunk) => acc + chunk,
-            ),
-          ),
-          child.stderr.pipe(
-            Stream.decodeText(),
-            Stream.runFold(
-              () => "",
-              (acc, chunk) => acc + chunk,
-            ),
-          ),
-          child.exitCode.pipe(Effect.map(Number)),
-        ],
-        { concurrency: "unbounded" },
-      );
-      return { stdout, stderr, exitCode };
-    });
-
-  // A fake "executable" that answers --version, packed the way the release
-  // workflow packs the real archive: one top-level directory named after the
-  // stem, checksummed in SHA256SUMS.
-  const makeMirror = Effect.fn("makeMirror")(function* (root: string) {
-    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-    const platform = hostPlatform === "darwin" ? "darwin" : "linux";
-    const arch = hostArch === "arm64" ? "arm64" : "x64";
-    const stem = `t3-${archiveVersion}-${platform}-${arch}`;
-    const stage = `${root}/stage/${stem}`;
-    const release = `${root}/mirror/v${archiveVersion}`;
-    const script = [
-      "set -eu",
-      `mkdir -p '${stage}' '${release}'`,
-      `printf '#!/bin/sh\\necho t3 v${archiveVersion}\\n' > '${stage}/t3'`,
-      `chmod +x '${stage}/t3'`,
-      `tar -czf '${release}/${stem}.tar.gz' -C '${root}/stage' '${stem}'`,
-      `cd '${release}' && (sha256sum '${stem}.tar.gz' 2>/dev/null || shasum -a 256 '${stem}.tar.gz') > SHA256SUMS`,
-    ].join("\n");
-    const child = yield* spawner.spawn(ChildProcess.make("sh", ["-c", script]));
-    assert.equal(Number(yield* child.exitCode), 0);
-    return `file://${root}/mirror`;
-  });
-
-  it.effect.skipIf(windowsHost)(
-    "installs once when several launches race, and reclaims stale locks",
-    () =>
+// Run generated shell against local package-manager fixtures, never the network.
+describe.skipIf(HostProcessPlatform.defaultValue() === "win32")("npm runner script", () => {
+  it.live.each(["npx", "npm"] as const)(
+    "resolves a pinned package with %s and reports install failures",
+    (manager) =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
-        const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-archive-runner-" });
-        const releaseBaseUrl = yield* makeMirror(root);
-        const runner = `${root}/run-t3.sh`;
+        const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const root = yield* fs.makeTempDirectoryScoped({ prefix: "doer-npm-runner-" });
+        const home = `${root}/home`;
+        const bin = `${home}/bin`;
+        const cli = `${root}/installed-doer`;
+        const runner = `${root}/run-doer.sh`;
+        const receipt = `${root}/package-args`;
+        yield* fs.makeDirectory(bin, { recursive: true });
+        yield* fs.writeFileString(cli, '#!/bin/sh\nprintf "doer %s\\n" "$@"\n', { mode: 0o755 });
         yield* fs.writeFileString(
           runner,
-          SshTunnel.buildRemoteT3RunnerScript({ archiveVersion, releaseBaseUrl }),
+          SshTunnel.buildRemoteT3RunnerScript({ packageSpec: "@lag4/doer-cli@1.2.3" }),
         );
-        const home = `${root}/home`;
-        yield* fs.makeDirectory(home, { recursive: true });
-
-        const results = yield* Effect.all(
-          [runRunner(home, runner), runRunner(home, runner), runRunner(home, runner)],
-          { concurrency: "unbounded" },
+        const run = Effect.gen(function* () {
+          const child = yield* spawner.spawn(
+            ChildProcess.make("/bin/sh", [runner, "--version"], {
+              env: { PATH: bin, HOME: home },
+              extendEnv: false,
+            }),
+          );
+          const [stdout, stderr, exitCode] = yield* Effect.all(
+            [
+              child.stdout.pipe(Stream.decodeText(), Stream.mkString),
+              child.stderr.pipe(Stream.decodeText(), Stream.mkString),
+              child.exitCode.pipe(Effect.map(Number)),
+            ],
+            { concurrency: "unbounded" },
+          );
+          return { stdout, stderr, exitCode };
+        });
+        yield* fs.writeFileString(
+          `${bin}/${manager}`,
+          `#!/bin/sh\nprintf '%s\\n' "$@" > '${receipt}'\nprintf '%s\\n' '${cli}'\n`,
+          { mode: 0o755 },
         );
-        for (const result of results) {
-          assert.equal(result.exitCode, 0, result.stderr);
-          assert.include(result.stdout, `t3 v${archiveVersion}`);
-        }
-        const versionsDir = `${home}/.t3/runtime/versions`;
-        assert.deepEqual(yield* fs.readDirectory(versionsDir), [archiveVersion]);
-        assert.equal(
-          (yield* fs.readFileString(`${versionsDir}/${archiveVersion}/.install-complete`)).trim(),
-          archiveVersion,
-        );
+        const installed = yield* run;
+        assert.equal(installed.exitCode, 0, installed.stderr);
+        assert.equal(installed.stdout.trim(), "doer --version");
+        assert.include(yield* fs.readFileString(receipt), "@lag4/doer-cli@1.2.3");
 
-        // A lock left by a crashed installer (dead pid) must not block the
-        // next launch, and neither must one that never published a pid.
-        const lock = `${versionsDir}/.${archiveVersion}.install.lock`;
-        yield* fs.remove(`${versionsDir}/${archiveVersion}`, { recursive: true });
-        yield* fs.makeDirectory(lock);
-        yield* fs.writeFileString(`${lock}/pid`, "999999\n");
-        const afterDead = yield* runRunner(home, runner);
-        assert.equal(afterDead.exitCode, 0, afterDead.stderr);
+        // npm may exit successfully after a native build failure without producing a CLI.
+        yield* fs.writeFileString(`${bin}/${manager}`, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+        const missing = yield* run;
+        assert.equal(missing.exitCode, 1);
+        assert.include(missing.stderr, "npm produced no doer executable");
+        assert.include(missing.stderr, "Install a C toolchain");
 
-        yield* fs.remove(`${versionsDir}/${archiveVersion}`, { recursive: true });
-        yield* fs.makeDirectory(lock);
-        const afterUnowned = yield* runRunner(home, runner);
-        assert.equal(afterUnowned.exitCode, 0, afterUnowned.stderr);
-        assert.isFalse(yield* fs.exists(lock));
+        yield* fs.writeFileString(`${bin}/${manager}`, "#!/bin/sh\nexit 2\n", { mode: 0o755 });
+        const failed = yield* run;
+        assert.equal(failed.exitCode, 1);
+        assert.include(failed.stderr, "could not install @lag4/doer-cli@1.2.3");
       }).pipe(Effect.provide(NodeServices.layer)),
-    60_000,
   );
 });

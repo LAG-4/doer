@@ -716,15 +716,6 @@ export class SshInvalidArchiveVersionError extends Schema.TaggedError<SshInvalid
 const EXACT_ARCHIVE_VERSION =
   /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
 
-export class SshMissingRunnerError extends Schema.TaggedError<SshMissingRunnerError>()(
-  "SshMissingRunnerError",
-  {},
-) {
-  override get message(): string {
-    return "A remote t3 runner needs an archive version or a node script path.";
-  }
-}
-
 export function buildRemoteT3RunnerScript(input?: RemoteT3RunnerOptions): string {
   const packageSpec = shellSingleQuote(input?.packageSpec?.trim() || "@lag4/doer-cli@latest");
   const nodeScriptPath = input?.nodeScriptPath?.trim() || "";
