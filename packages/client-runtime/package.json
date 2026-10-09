@@ -419,10 +419,6 @@
       "types": "./src/experimentalConnections.ts",
       "default": "./src/experimentalConnections.ts"
     },
-    "./work-log/tool-output": {
-      "types": "./src/work-log/toolOutput.ts",
-      "default": "./src/work-log/toolOutput.ts"
-    },
     "./state/environment-http-auth": {
       "types": "./src/state/environmentHttpAuth.ts",
       "default": "./src/state/environmentHttpAuth.ts"
