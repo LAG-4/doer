@@ -21,7 +21,7 @@ import { DoerTaskContext as ProjectionSnapshotQuery } from "../../../memory/Doer
 import { GmailToolError, GmailToolkit } from "./tools.ts";
 import { validateMailChange, type MailChange } from "../../../integrations/gmailMailbox.ts";
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const gmail = yield* GmailConnection;
   const experimentalConnections = yield* ExperimentalConnections.ExperimentalConnections;
   const serverSettings = yield* ServerSettingsService;
@@ -73,7 +73,7 @@ export const make = Effect.gen(function* () {
     run: Effect.Effect<A, GmailConnectionError>,
   ) =>
     Effect.gen(function* () {
-      const { scope, isAllowed } = context;
+      const { isAllowed } = context;
       const confirmation = yield* McpServer.elicit({
         message: `${operation === "send" ? "Send this email?" : "Apply this Gmail change?"}\n\n${detail}`,
         schema: Schema.Struct({ approved: Schema.Boolean }),

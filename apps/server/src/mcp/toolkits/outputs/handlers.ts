@@ -9,7 +9,7 @@ import { WorkspaceFileSystem } from "../../../workspace/WorkspaceFileSystem.ts";
 import { generateDocument, generatePresentation, generateSpreadsheet } from "./generate.ts";
 import { OutputFailedError, OutputsToolkit } from "./tools.ts";
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const snapshots = yield* ProjectionSnapshotQuery;
   const files = yield* WorkspaceFileSystem;
   const save = Effect.fn("Outputs.save")(function* (
@@ -69,7 +69,6 @@ export const make = Effect.gen(function* () {
     create_presentation: (input) => save(input.title, "pptx", () => generatePresentation(input)),
   });
 });
-export const OutputsToolkitHandlersLive = OutputsToolkit.toLayer(make);
 
 export const layer = McpToolAccess.toLayer(
   OutputsToolkit,

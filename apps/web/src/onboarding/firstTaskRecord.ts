@@ -1,5 +1,3 @@
-import { useSyncExternalStore } from "react";
-
 /**
  * Records where a new user stands in the first-task onboarding flow.
  *
@@ -30,16 +28,7 @@ export interface FirstTaskRecord {
 
 const FIRST_TASK_STORAGE_KEY = "doer.first-task.v1";
 
-const listeners = new Set<() => void>();
-
-function emit() {
-  for (const listener of listeners) {
-    listener();
-  }
-}
-
-// The hook snapshot must be referentially stable while the stored bytes are
-// unchanged, or every parent re-render would look like a record change.
+// Cache parsed records while their stored bytes remain unchanged.
 let cachedRaw: string | null | "unread" = "unread";
 let cachedRecord: FirstTaskRecord | null = null;
 
@@ -87,7 +76,7 @@ function parseRecord(raw: string | null): FirstTaskRecord | null {
   }
 }
 
-/** Snapshot behind the hook; also the unit-testable core. */
+/** Read the persisted first-task record. */
 export function readFirstTaskRecord(): FirstTaskRecord | null {
   let raw: string | null = null;
   try {
@@ -108,7 +97,6 @@ export function writeFirstTaskRecord(record: FirstTaskRecord): void {
     // A full or blocked store must never break onboarding; the in-memory
     // task still works, it just won't survive a reload.
   }
-  emit();
 }
 
 export function updateFirstTaskRecord(
@@ -119,21 +107,4 @@ export function updateFirstTaskRecord(
   // effects observing the record never re-fire on their own output.
   if (next === null || next === readFirstTaskRecord()) return;
   writeFirstTaskRecord(next);
-}
-
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === FIRST_TASK_STORAGE_KEY) listener();
-  };
-  window.addEventListener("storage", onStorage);
-  return () => {
-    listeners.delete(listener);
-    window.removeEventListener("storage", onStorage);
-  };
-}
-
-/** The current first-task record, reactive across tabs and writers. */
-export function useFirstTaskRecord(): FirstTaskRecord | null {
-  return useSyncExternalStore(subscribe, readFirstTaskRecord, () => null);
 }

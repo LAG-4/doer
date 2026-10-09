@@ -50,6 +50,3 @@ export function isAdvancedSettingId(id: string | undefined): boolean {
       ))
   );
 }
-export function isAdvancedSettingsItem(item: { to: string; id: string }): boolean {
-  return isAdvancedSettingsPath(item.to) || isAdvancedSettingId(item.id);
-}

@@ -40,7 +40,7 @@ import { mediaFileReference } from "@t3tools/client-runtime/media-reference";
 import { FolderTree, Globe2, WrapTextIcon } from "lucide-react";
 import { Code2, Eye, Table2 } from "lucide";
 import * as Schema from "effect/Schema";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { isBrowserPreviewFile, openFileInPreview } from "~/browser/openFileInPreview";
 import { useAssetUrlRefresh, useAssetUrlState } from "~/assets/assetUrls";
@@ -72,6 +72,12 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 
 import { AttachmentFilePreview } from "./AttachmentFilePreview";
+const OfficeDocumentSurface = lazy(() =>
+  import("./OfficeDocumentSurface").then((module) => ({ default: module.OfficeDocumentSurface })),
+);
+const SpreadsheetSurface = lazy(() =>
+  import("./SpreadsheetSurface").then((module) => ({ default: module.SpreadsheetSurface })),
+);
 import { AudioPreview } from "./AudioPreview";
 import { BrowserDocumentFrame, isPdfPreviewFile } from "./BrowserDocumentFrame";
 import { DelimitedTablePreview } from "./DelimitedTablePreview";
@@ -1048,6 +1054,7 @@ export default function FilePreviewPanel({
   const draft = typeof composerDraftTarget === "string";
   const { resolvedTheme } = useTheme();
   const wordWrap = useClientSettings((settings) => settings.wordWrap);
+  const simpleModeEnabled = useClientSettings((settings) => settings.simpleModeEnabled);
   const canOperatePreview = useEnvironmentScope(environmentId, AuthPreviewOperateScope);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const remoteOpenState = useRemoteOpenState(environmentId);
@@ -1397,6 +1404,39 @@ export default function FilePreviewPanel({
               title={relativePath}
               workspaceMutationId={workspaceMutationId}
             />
+          ) : simpleModeEnabled &&
+            relativePath &&
+            !isHostFile &&
+            /\.(docx|pptx)$/i.test(relativePath) ? (
+            <Suspense fallback={<FileSurfaceLoading />}>
+              <OfficeDocumentSurface
+                key={relativePath}
+                environmentId={environmentId}
+                cwd={cwd}
+                relativePath={relativePath}
+              />
+            </Suspense>
+          ) : simpleModeEnabled &&
+            relativePath &&
+            !isHostFile &&
+            canWriteFiles &&
+            /\.xlsx$/i.test(relativePath) ? (
+            <Suspense fallback={<FileSurfaceLoading />}>
+              <SpreadsheetSurface
+                key={relativePath}
+                environmentId={environmentId}
+                cwd={cwd}
+                relativePath={relativePath}
+                workspaceMutationId={workspaceMutationId}
+                onPendingChange={onPendingChange}
+                canOpenInExternalApp={
+                  absolutePath !== null &&
+                  (environmentId === primaryEnvironmentId ||
+                    remoteOpenState.mode !== "local-exec") &&
+                  availableEditors.includes("file-manager")
+                }
+              />
+            </Suspense>
           ) : relativePath && file.error && file.data === null ? (
             <div
               role="alert"

@@ -40,7 +40,7 @@ const dispatchFailure =
       ? Effect.failCause(cause as Cause.Cause<never>)
       : Effect.fail(new Failure({ cause }) as InstanceType<MemoryFailure>);
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const store = yield* DoerMemoryStore.DoerMemoryStore;
   const snapshots = yield* ProjectionSnapshotQuery.DoerTaskContext;
   const crypto = yield* Crypto.Crypto;

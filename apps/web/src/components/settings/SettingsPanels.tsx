@@ -1,4 +1,5 @@
 import { SettingsGroup } from "./SettingsGroup";
+import { MemoryManager } from "./MemoryManager";
 import { useScopedSettingsWriteAllowed } from "./useScopedSettings";
 import { Spinner } from "~/components/ui/spinner";
 import { NotificationSettings } from "./NotificationSettings";
@@ -2188,6 +2189,7 @@ export function GeneralSettingsPanel() {
   // is written. Per-machine tuning (background activity overrides) still
   // needs exactly one environment.
   const environmentId = environment?.environmentId ?? null;
+  const memoryEnvironmentId = environmentId ?? connectedEnvironments[0]?.environmentId;
   const isEnvironmentScope = scope.environmentIds.length === 1 && environmentId !== null;
   const hasServerTargets = connectedEnvironments.length > 0;
   const [backgroundActivityDialogOpen, setBackgroundActivityDialogOpen] = useState(false);
@@ -2262,6 +2264,15 @@ export function GeneralSettingsPanel() {
   return (
     <SettingsPageContainer>
       <ProjectDefaultsSettings category="general" />
+      {settings.simpleModeEnabled && memoryEnvironmentId ? (
+        <MemoryManager
+          environmentId={memoryEnvironmentId}
+          scope="about-you"
+          sectionId="about-you-memory"
+          title="What Doer remembers about you"
+          description="Review, correct, or forget the details Doer uses across your Spaces on this computer."
+        />
+      ) : null}
       <SettingsSection id="organization" title="Organization">
         <SettingsRow
           {...searchableSetting("project-grouping")}

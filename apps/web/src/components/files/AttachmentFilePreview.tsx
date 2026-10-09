@@ -1,5 +1,5 @@
 import { filePreviewDelimiter } from "@t3tools/shared/delimitedPreview";
-import type { EnvironmentId } from "@t3tools/contracts";
+import { ChatAttachmentId, type EnvironmentId } from "@t3tools/contracts";
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import { readFilePreviewResponse } from "@t3tools/client-runtime/file-preview";
 import { filePreviewKind, FILE_TEXT_PREVIEW_MAX_BYTES } from "@t3tools/shared/filePreview";
@@ -28,6 +28,11 @@ import {
 } from "./fileSurfaceChrome";
 
 const SourcePreview = lazy(() => import("./ReadOnlySourcePreview"));
+const SpreadsheetAttachmentSurface = lazy(() =>
+  import("./SpreadsheetAttachmentSurface").then((module) => ({
+    default: module.SpreadsheetAttachmentSurface,
+  })),
+);
 
 /** Signed asset URLs live for an hour; treat anything older than this as worth re-minting. */
 const STALE_URL_MS = 5 * 60_000;
@@ -66,6 +71,7 @@ export function AttachmentFilePreview(props: {
   onRemove?: () => void;
   onClose?: () => void;
 }) {
+  const simpleModeEnabled = useClientSettings((settings) => settings.simpleModeEnabled);
   const kind = filePreviewKind(props);
   const delimiter = filePreviewDelimiter(props);
   const renderedMode =
@@ -234,6 +240,19 @@ export function AttachmentFilePreview(props: {
     />
   ) : !url || (needsText && !content) ? (
     <FileSurfaceLoading />
+  ) : simpleModeEnabled && props.asset && /\.xlsx$/i.test(props.name) ? (
+    <Suspense fallback={<FileSurfaceLoading />}>
+      <SpreadsheetAttachmentSurface
+        environmentId={props.asset.environmentId}
+        attachment={{
+          type: "file",
+          id: ChatAttachmentId.make(props.asset.attachmentId),
+          name: props.name,
+          mimeType: props.mimeType,
+          sizeBytes: props.sizeBytes,
+        }}
+      />
+    </Suspense>
   ) : needsText && content ? (
     delimiter && rendered ? (
       <DelimitedTablePreview name={props.name} text={content.text} delimiter={delimiter} />

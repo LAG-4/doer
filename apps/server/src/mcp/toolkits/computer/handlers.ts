@@ -167,15 +167,6 @@ const handlers = {
     }),
 } satisfies Parameters<typeof ComputerToolkit.toLayer>[0];
 
-const { computer_observe, ...standardHandlers } = handlers;
-
-export const ComputerStandardToolkitHandlersLive =
-  ComputerStandardToolkit.toLayer(standardHandlers);
-
-export const ComputerObserveToolkitHandlersLive = ComputerObserveToolkit.toLayer({
-  computer_observe,
-});
-
 const guarded = {
   computer_status: McpToolAccess.actsAsCaller(handlers.computer_status),
   computer_start: McpToolAccess.actsAsCaller(handlers.computer_start),

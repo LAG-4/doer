@@ -60,7 +60,7 @@ export function connectedSourcePath(input: {
       throw new MicrosoftAccountError("Choose a supported source to read.");
   }
 }
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const connection = yield* MicrosoftConnection;
   const experimentalConnections = yield* ExperimentalConnections.ExperimentalConnections;
   const snapshots = yield* ProjectionSnapshotQuery;

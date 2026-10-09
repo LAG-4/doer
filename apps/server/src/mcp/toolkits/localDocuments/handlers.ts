@@ -25,7 +25,7 @@ type Kind = "local-spreadsheets" | "local-presentations";
 const failure = (message: string) => new LocalDocumentError({ message });
 const sha256 = (bytes: Uint8Array) => NodeCrypto.createHash("sha256").update(bytes).digest("hex");
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const settingsService = yield* ServerSettingsService;
   const experimentalConnections = yield* ExperimentalConnections.ExperimentalConnections;
   const snapshots = yield* ProjectionSnapshotQuery;

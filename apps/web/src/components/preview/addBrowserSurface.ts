@@ -10,7 +10,7 @@ import { useRightPanelStore } from "~/rightPanelStore";
 import { openPreviewSession } from "./openPreviewSession";
 
 /** Homepage opened whenever a browser tab is created manually (no URL given). */
-export const DEFAULT_MANUAL_BROWSER_URL = "https://www.google.com";
+const DEFAULT_MANUAL_BROWSER_URL = "https://www.google.com";
 
 /** Creates a new browser tab. Reopening an existing tab is a separate UI action. */
 export async function addBrowserSurface<E>(input: {
