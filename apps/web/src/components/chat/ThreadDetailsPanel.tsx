@@ -6,6 +6,7 @@ import type {
   ThreadId,
 } from "@t3tools/contracts";
 
+import { useClientSettings } from "~/hooks/useSettings";
 import type { DraftId } from "../../composerDraftStore";
 import { useT3ProjectFileScripts } from "../../hooks/useT3ProjectFileScripts";
 import { type EnvMode, type EnvironmentOption } from "../BranchToolbar.logic";
@@ -63,9 +64,10 @@ export interface ThreadDetailsPanelProps extends Pick<
 }
 
 export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
+  const simpleModeEnabled = useClientSettings((settings) => settings.simpleModeEnabled);
   const fileScripts = useT3ProjectFileScripts(
     props.environmentId,
-    props.activeProjectScripts ? props.gitCwd : null,
+    !simpleModeEnabled && props.activeProjectScripts ? props.gitCwd : null,
   );
   const branchToolbarProps = {
     showGitControls: props.isGitRepo,
@@ -106,7 +108,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
             showHeading={false}
           >
             <div className="flex flex-col">
-              {density === "full" ? (
+              {!simpleModeEnabled && density === "full" ? (
                 <BranchToolbar
                   layout="panel"
                   panelSection="workspace"
@@ -118,7 +120,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                 />
               ) : null}
 
-              {density !== "essential" && props.showOpenInPicker ? (
+              {!simpleModeEnabled && density !== "essential" && props.showOpenInPicker ? (
                 <OpenInPicker
                   keybindings={props.keybindings}
                   environmentId={props.environmentId}
@@ -128,7 +130,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                 />
               ) : null}
 
-              {props.activeProjectScripts ? (
+              {!simpleModeEnabled && props.activeProjectScripts ? (
                 <ProjectScriptsControl
                   environmentId={props.environmentId}
                   displayMode="panel"
@@ -144,7 +146,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
             </div>
           </ThreadDetailsSection>
 
-          {props.gitCwd ? (
+          {!simpleModeEnabled && props.gitCwd ? (
             <ThreadDetailsSection
               headingId="thread-details-version-control-heading"
               title="Version Control"

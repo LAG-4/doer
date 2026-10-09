@@ -36,7 +36,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 
 import { formatRelativeTime } from "../../timestampFormat";
-import { useEnvironmentSettings } from "../../hooks/useSettings";
+import { useClientSettings, useEnvironmentSettings } from "../../hooks/useSettings";
 import { getCustomModelOptionsByInstance } from "../../modelSelection";
 import {
   applyProviderInstanceSettings,
@@ -779,6 +779,7 @@ function ScheduledTaskEditorDialog({
   readonly task: ScheduledTask | null;
   readonly onClose: () => void;
 }) {
+  const simpleModeEnabled = useClientSettings((settings) => settings.simpleModeEnabled);
   const { scope, connectedEnvironments } = useSettingsScope();
   const [environmentId, setEnvironmentId] = useState(initialEnvironmentId);
   const environment = useEnvironment(environmentId);
@@ -912,7 +913,11 @@ function ScheduledTaskEditorDialog({
       reportFailure("Invalid interval", "Enter an interval of at least one minute.");
       return;
     }
-    if (draft.workspaceMode === "existing_worktree" && !draft.existingWorktreePath.trim()) {
+    if (
+      !simpleModeEnabled &&
+      draft.workspaceMode === "existing_worktree" &&
+      !draft.existingWorktreePath.trim()
+    ) {
       reportFailure("Checkout path is required", "Enter the path of the checkout to run in.");
       return;
     }
@@ -925,7 +930,7 @@ function ScheduledTaskEditorDialog({
         ? draft.baseModelSelection
         : selection;
     const workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy =
-      draft.workspaceMode === "root"
+      simpleModeEnabled || draft.workspaceMode === "root"
         ? { type: "root" }
         : draft.workspaceMode === "existing_worktree"
           ? { type: "existing_worktree", worktreePath: draft.existingWorktreePath.trim() }
@@ -1049,7 +1054,10 @@ function ScheduledTaskEditorDialog({
             </Field>
 
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Project" htmlFor="scheduled-task-project">
+              <Field
+                label={simpleModeEnabled ? "Space" : "Project"}
+                htmlFor="scheduled-task-project"
+              >
                 <Select
                   value={selectedProjectId}
                   onValueChange={(projectId) =>
@@ -1057,7 +1065,9 @@ function ScheduledTaskEditorDialog({
                   }
                 >
                   <SelectTrigger size="sm" id="scheduled-task-project">
-                    <SelectValue placeholder="Select a project">
+                    <SelectValue
+                      placeholder={simpleModeEnabled ? "Select a Space" : "Select a project"}
+                    >
                       {selectedProject?.title}
                     </SelectValue>
                   </SelectTrigger>
@@ -1071,26 +1081,28 @@ function ScheduledTaskEditorDialog({
                 </Select>
               </Field>
 
-              <Field label="Workspace" htmlFor="scheduled-task-workspace">
-                <Select
-                  value={draft.workspaceMode}
-                  onValueChange={(value) =>
-                    setDraft((current) => ({ ...current, workspaceMode: value as WorkspaceMode }))
-                  }
-                >
-                  <SelectTrigger size="sm" id="scheduled-task-workspace">
-                    <SelectValue>{WORKSPACE_MODE_LABELS[draft.workspaceMode]}</SelectValue>
-                  </SelectTrigger>
-                  <SelectPopup>
-                    <SelectItem value="worktree">Create a new worktree</SelectItem>
-                    <SelectItem value="root">Use the project checkout</SelectItem>
-                    <SelectItem value="existing_worktree">Use a specific checkout</SelectItem>
-                  </SelectPopup>
-                </Select>
-              </Field>
+              {!simpleModeEnabled ? (
+                <Field label="Workspace" htmlFor="scheduled-task-workspace">
+                  <Select
+                    value={draft.workspaceMode}
+                    onValueChange={(value) =>
+                      setDraft((current) => ({ ...current, workspaceMode: value as WorkspaceMode }))
+                    }
+                  >
+                    <SelectTrigger size="sm" id="scheduled-task-workspace">
+                      <SelectValue>{WORKSPACE_MODE_LABELS[draft.workspaceMode]}</SelectValue>
+                    </SelectTrigger>
+                    <SelectPopup>
+                      <SelectItem value="worktree">Create a new worktree</SelectItem>
+                      <SelectItem value="root">Use the project checkout</SelectItem>
+                      <SelectItem value="existing_worktree">Use a specific checkout</SelectItem>
+                    </SelectPopup>
+                  </Select>
+                </Field>
+              ) : null}
             </div>
 
-            {draft.workspaceMode === "worktree" ? (
+            {!simpleModeEnabled && draft.workspaceMode === "worktree" ? (
               <Field label="Base branch" htmlFor="scheduled-task-base-ref">
                 <WorktreeBaseBranchPicker
                   key={`${environmentId}:${selectedProjectId}`}
@@ -1107,7 +1119,7 @@ function ScheduledTaskEditorDialog({
                 />
               </Field>
             ) : null}
-            {draft.workspaceMode === "existing_worktree" ? (
+            {!simpleModeEnabled && draft.workspaceMode === "existing_worktree" ? (
               <Field label="Checkout path" htmlFor="scheduled-task-checkout">
                 <Input
                   id="scheduled-task-checkout"
