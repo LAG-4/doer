@@ -14,7 +14,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as Option from "effect/Option";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useSettingsScope } from "./SettingsScopeContext";
-import { SettingsSection } from "./settingsLayout";
+import { SettingsSection, SettingsSectionBody } from "./settingsLayout";
 import { Button } from "../ui/button";
 
 const requestMicrosoft = createEnvironmentCommand(connectionAtomRuntime, {
@@ -32,12 +32,91 @@ const requestMicrosoft = createEnvironmentCommand(connectionAtomRuntime, {
       return yield* client.microsoft(prepared, action);
     }),
 });
-export function MicrosoftConnectionCard() {
+export function MicrosoftConnectionCard({
+  connectionsVisible = false,
+}: {
+  /**
+   * While the experimental-connections master switch is off, the card hides
+   * everything except disconnecting a currently connected account.
+   */
+  readonly connectionsVisible?: boolean;
+}) {
   const { environment } = useSettingsScope();
   const environmentId = environment?.environmentId ?? null;
+  if (!connectionsVisible) {
+    return <HiddenConnection key={environmentId} environmentId={environmentId} />;
+  }
   return (
     <SettingsSection title="Microsoft" id="microsoft">
       <Connection key={environmentId} environmentId={environmentId} />
+    </SettingsSection>
+  );
+}
+/**
+ * While the master switch is off: show nothing unless an account is actually
+ * connected, in which case offer only disconnect. Status checks stay allowed
+ * server-side, so this view works without re-enabling anything.
+ */
+function HiddenConnection({ environmentId }: { environmentId: EnvironmentId | null }) {
+  const request = useAtomCommand(requestMicrosoft, { reportFailure: false });
+  const [status, setStatus] = useState<MicrosoftStatus | null>(null);
+  const [loadedEnvironmentId, setLoadedEnvironmentId] = useState<EnvironmentId | null>(null);
+  const [disconnecting, setDisconnecting] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  useEffect(() => {
+    if (!environmentId) return;
+    let cancelled = false;
+    void request({ environmentId, input: { action: "status" } }).then((result) => {
+      if (cancelled) return;
+      setLoadedEnvironmentId(environmentId);
+      if (result._tag === "Failure") return;
+      if (result.value.kind === "status") setStatus(result.value.status);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [environmentId, request]);
+  // Derived during render instead of a synchronous setState in the effect:
+  // loading until this computer's status resolves. (Remounts per computer
+  // via key, so no stale-computer flash.)
+  const busy = (environmentId !== null && loadedEnvironmentId !== environmentId) || disconnecting;
+  if (!status?.connected || environmentId === null) return null;
+  return (
+    <SettingsSection title="Microsoft" id="microsoft">
+      <SettingsSectionBody>
+        <p className="max-w-prose text-sm text-muted-foreground">
+          Connected as {status.account ?? "your Microsoft account"}. Experimental connections are
+          off; disconnecting still works here.
+        </p>
+        <div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => {
+              if (disconnecting || environmentId === null) return;
+              setDisconnecting(true);
+              setMessage(null);
+              void request({ environmentId, input: { action: "disconnect" } }).then((result) => {
+                setDisconnecting(false);
+                if (result._tag === "Failure") {
+                  setMessage("Could not reach this computer. Reconnect and try again.");
+                  return;
+                }
+                if (result.value.kind === "status") setStatus(result.value.status);
+                else if ("message" in result.value) setMessage(result.value.message);
+              });
+            }}
+          >
+            Disconnect Microsoft
+          </Button>
+        </div>
+        {message ? (
+          <p role="status" className="max-w-prose text-sm text-muted-foreground">
+            {message}
+          </p>
+        ) : null}
+      </SettingsSectionBody>
     </SettingsSection>
   );
 }
@@ -87,30 +166,46 @@ function Connection({ environmentId }: { environmentId: EnvironmentId | null }) 
     void run({ action: "status" });
   }, [run]);
   return (
-    <div className="flex flex-col gap-3">
-      <p className="text-sm text-muted-foreground">
+    <SettingsSectionBody>
+      <p className="max-w-prose text-sm text-muted-foreground">
         Find and read Outlook email, calendar events and OneDrive files when you ask. SharePoint is
         optional. Doer does not send messages or change your account. Selected content is shared
         with the AI service you choose for the Task.
       </p>
       {!environmentId ? (
-        <p>Select a connected computer to manage its account.</p>
+        <p className="max-w-prose text-sm text-muted-foreground">
+          Select a connected computer to manage its account.
+        </p>
       ) : status === null ? (
-        <p role="status">{busy ? "Checking your connection…" : "Connection unavailable."}</p>
+        <div className="flex max-w-prose flex-wrap items-center gap-2">
+          <p role="status" className="min-w-0 flex-1 text-sm text-muted-foreground">
+            {busy ? "Checking your connection…" : "Connection unavailable."}
+          </p>
+          {!busy ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!environmentId}
+              onClick={() => void run({ action: "status" })}
+            >
+              Retry
+            </Button>
+          ) : null}
+        </div>
       ) : !status.configured ? (
-        <p>
-          This installation does not have Microsoft sign-in configured yet. You can attach exported
-          files to a Task.
+        <p className="max-w-prose text-sm text-muted-foreground">
+          Microsoft sign-in is not available on this computer yet. You can still attach exported
+          email or files to a Task and Doer will use them.
         </p>
       ) : (
         <>
-          <p className="text-sm">
+          <p className="max-w-prose text-sm">
             {status.connected
               ? `Connected as ${status.account ?? "your Microsoft account"}`
               : "Not connected"}
             {status.connected && status.sharePoint ? " · SharePoint enabled" : ""}
           </p>
-          <label className="flex items-center gap-2 text-sm">
+          <label className="flex max-w-prose items-center gap-2 text-sm">
             <input
               type="checkbox"
               checked={sharePoint}
@@ -119,13 +214,13 @@ function Connection({ environmentId }: { environmentId: EnvironmentId | null }) 
             />{" "}
             Include SharePoint work files
           </label>
-          <p className="text-xs text-muted-foreground">
+          <p className="max-w-prose text-xs text-muted-foreground">
             A work administrator may need to approve read access. You can connect without SharePoint
             or attach files instead.
           </p>
           {signIn ? (
-            <div className="flex flex-col gap-2 rounded-lg border p-3">
-              <p>
+            <div className="flex max-w-prose flex-col gap-2 rounded-lg border border-border/60 p-3">
+              <p className="max-w-prose text-sm">
                 Open Microsoft's sign-in page and enter <strong>{signIn.userCode}</strong>. Complete
                 sign-in there, then return here.
               </p>
@@ -141,7 +236,7 @@ function Connection({ environmentId }: { environmentId: EnvironmentId | null }) 
                 Expires at {new Date(signIn.expiresAt).toLocaleTimeString()}. Keep passwords and
                 verification codes on Microsoft's page.
               </p>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button size="sm" disabled={busy} onClick={() => void run({ action: "finish" })}>
                   I've signed in · check connection
                 </Button>
@@ -156,39 +251,47 @@ function Connection({ environmentId }: { environmentId: EnvironmentId | null }) 
               </div>
             </div>
           ) : (
-            <Button
-              size="sm"
-              disabled={busy}
-              onClick={() => void run({ action: "start", sharePoint })}
-            >
-              {status.connected ? "Reconnect Microsoft" : "Connect Microsoft"}
-            </Button>
+            <div>
+              <Button
+                size="sm"
+                disabled={busy}
+                onClick={() => void run({ action: "start", sharePoint })}
+              >
+                {status.connected ? "Reconnect Microsoft" : "Connect Microsoft"}
+              </Button>
+            </div>
           )}
           {status.connected || signIn ? (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy}
-              onClick={() => void run({ action: "disconnect" })}
-            >
-              {signIn ? "Cancel sign-in and disconnect" : "Disconnect Microsoft"}
-            </Button>
+            <div>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() => void run({ action: "disconnect" })}
+              >
+                {signIn ? "Cancel sign-in and disconnect" : "Disconnect Microsoft"}
+              </Button>
+            </div>
           ) : null}
         </>
       )}
       {message ? (
-        <p role="status" className="text-sm text-muted-foreground">
+        <p role="status" className="max-w-prose text-sm text-muted-foreground">
           {message}
         </p>
       ) : null}
-      <Button
-        size="sm"
-        variant="ghost"
-        disabled={busy || !environmentId}
-        onClick={() => void run({ action: "status" })}
-      >
-        Check connection
-      </Button>
-    </div>
+      {status !== null && status.configured ? (
+        <div>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={busy || !environmentId}
+            onClick={() => void run({ action: "status" })}
+          >
+            Check connection
+          </Button>
+        </div>
+      ) : null}
+    </SettingsSectionBody>
   );
 }

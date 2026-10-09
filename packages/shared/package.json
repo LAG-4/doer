@@ -379,6 +379,10 @@
       "types": "./src/doerMemory.ts",
       "import": "./src/doerMemory.ts"
     },
+    "./experimentalConnections": {
+      "types": "./src/experimentalConnections.ts",
+      "import": "./src/experimentalConnections.ts"
+    },
     "./microsoftConnection": {
       "types": "./src/microsoftConnection.ts",
       "default": "./src/microsoftConnection.ts"

@@ -476,25 +476,65 @@ it.layer(NodeServices.layer)("automation decider", (it) => {
     }),
   );
 
-  it.effect("manual dedicated runs execute while shared chats retain the user's modes", () =>
+  it.effect("manual runs preserve saved modes and never escalate", () =>
     Effect.gen(function* () {
-      for (const dedicatedThread of [true, false]) {
+      // Dedicated supervised thread (the reported bug): a manual run must
+      // keep approval-required + plan instead of escalating to full-access.
+      // Dedicated explicit full-access keeps working; shared chats keep the
+      // user's modes. Neither path may emit a mode-change sub-command.
+      const cases = [
+        {
+          name: "dedicated-supervised-plan",
+          dedicatedThread: true,
+          runtimeMode: "approval-required",
+          interactionMode: "plan",
+        },
+        {
+          name: "dedicated-explicit-full-access",
+          dedicatedThread: true,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+        },
+        {
+          name: "shared-supervised-plan",
+          dedicatedThread: false,
+          runtimeMode: "approval-required",
+          interactionMode: "plan",
+        },
+        {
+          name: "shared-full-access",
+          dedicatedThread: false,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+        },
+      ] as const;
+      for (const setup of cases) {
         const result = yield* decideOrchestrationCommand({
           command: {
             type: "automation.run-now",
-            commandId: CommandId.make(`cmd-manual-modes-${dedicatedThread}`),
+            commandId: CommandId.make(`cmd-manual-modes-${setup.name}`),
             automationId: AutomationId.make("automation-1"),
           },
           readModel: makeReadModel({
-            automations: [makeAutomation({ dedicatedThread })],
-            thread: makeThread({ runtimeMode: "approval-required", interactionMode: "plan" }),
+            automations: [makeAutomation({ dedicatedThread: setup.dedicatedThread })],
+            thread: makeThread({
+              runtimeMode: setup.runtimeMode,
+              interactionMode: setup.interactionMode,
+            }),
           }),
         });
         const events = Array.isArray(result) ? result : [result];
+        expect(
+          events.some(
+            (event) =>
+              event.type === "thread.runtime-mode-updated" ||
+              event.type === "thread.interaction-mode-updated",
+          ),
+        ).toBe(false);
         const turn = events.find((event) => event.type === "thread.turn-start-requested");
         expect(turn?.payload).toMatchObject({
-          runtimeMode: dedicatedThread ? "full-access" : "approval-required",
-          interactionMode: dedicatedThread ? "default" : "plan",
+          runtimeMode: setup.runtimeMode,
+          interactionMode: setup.interactionMode,
         });
         const fired = events.find((event) => event.type === "automation.fired");
         if (fired?.type !== "automation.fired") return expect.unreachable("expected manual run");

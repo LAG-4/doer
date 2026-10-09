@@ -10,6 +10,8 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import * as ExperimentalConnections from "../../../integrations/ExperimentalConnections.ts";
+import { EXPERIMENTAL_CONNECTIONS_COPY } from "@t3tools/shared/experimentalConnections";
 import { ServerSettingsService } from "../../../serverSettings.ts";
 import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { WorkspaceFileSystem } from "../../../workspace/WorkspaceFileSystem.ts";
@@ -23,6 +25,7 @@ const sha256 = (bytes: Uint8Array) => NodeCrypto.createHash("sha256").update(byt
 
 const make = Effect.gen(function* () {
   const settingsService = yield* ServerSettingsService;
+  const experimentalConnections = yield* ExperimentalConnections.ExperimentalConnections;
   const snapshots = yield* ProjectionSnapshotQuery;
   const files = yield* WorkspaceFileSystem;
 
@@ -33,6 +36,9 @@ const make = Effect.gen(function* () {
           failure("This local file tool is off. Enable it in Settings → Tools."),
         ),
       );
+      // Master switch first: stale per-tool toggles never bypass it.
+      if (!(yield* experimentalConnections.get))
+        return yield* failure(EXPERIMENTAL_CONNECTIONS_COPY.toolDenied);
       const thread = yield* snapshots
         .getThreadShellById(scope.threadId)
         .pipe(Effect.orElseSucceed(() => Option.none()));

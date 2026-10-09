@@ -19,10 +19,12 @@ import {
   enrichProviderSnapshotWithVersionAdvisory,
   homebrewOwnershipFromCommandPath,
   makeCachedProviderMaintenanceResolution,
+  makeOpenCodeProviderMaintenanceResolver,
   makePackageManagedProviderMaintenanceResolver,
   makeProviderMaintenanceCapabilities,
   normalizeCommandPath,
   npmGlobalPrefixFromCommandPath,
+  openCodeNpmPackageOwnerFromRealPath,
   parseHomebrewLatestVersion,
   ProviderVersionCache,
   resolveLatestProviderVersion,
@@ -39,7 +41,10 @@ const windowsHost = HostProcessPlatform.defaultValue() === "win32";
 const makeTempDir = (name: string) =>
   Crypto.Crypto.pipe(
     Effect.flatMap((crypto) => crypto.randomUUIDv4),
-    Effect.map((id) => NodePath.join(NodeOS.tmpdir(), `${name}-${id}`)),
+    // Canonicalize the tmp root (macOS spells it /var/... but the real path
+    // is /private/var/...): fixtures join this root while resolution reads
+    // back real paths, and the suite must not assert two spellings as different.
+    Effect.map((id) => NodePath.join(NodeFS.realpathSync(NodeOS.tmpdir()), `${name}-${id}`)),
   );
 const isNativeTestCommandPath =
   (expectedPathSegment: string) =>
@@ -784,6 +789,270 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
       yield* resolve({ fresh: true });
       yield* resolve();
       expect(resolutions).toBe(2);
+    }),
+  );
+
+  it("derives the owning OpenCode npm line from the real executable path", () => {
+    expect(
+      openCodeNpmPackageOwnerFromRealPath("/opt/node/lib/node_modules/opencode-ai/bin/opencode.js"),
+    ).toBe("opencode-ai");
+    expect(
+      openCodeNpmPackageOwnerFromRealPath(
+        "/opt/node/lib/node_modules/@opencode/cli/bin/opencode.js",
+      ),
+    ).toBe("@opencode/cli");
+    expect(
+      openCodeNpmPackageOwnerFromRealPath(
+        "/Users/jane/.bun/install/global/node_modules/@opencode/cli/bin/opencode.js",
+      ),
+    ).toBe("@opencode/cli");
+    // The temporary probing runtime names its line but must never be updated.
+    expect(
+      openCodeNpmPackageOwnerFromRealPath(
+        "/private/tmp/doer-opencode-latest-runtime/node_modules/@opencode/cli/bin/opencode.exe",
+      ),
+    ).toBe("@opencode/cli");
+    expect(openCodeNpmPackageOwnerFromRealPath("/usr/local/bin/opencode")).toBe("unknown");
+    // A path naming both lines proves neither.
+    expect(
+      openCodeNpmPackageOwnerFromRealPath(
+        "/tmp/x/node_modules/opencode-ai/node_modules/@opencode/cli/bin/opencode.js",
+      ),
+    ).toBe("ambiguous");
+  });
+});
+
+const openCodeUpdate = makeOpenCodeProviderMaintenanceResolver({
+  provider: driver("opencode"),
+  nativeUpdate: {
+    args: ["upgrade"],
+    isCommandPath: isNativeTestCommandPath("/.opencode/bin/opencode"),
+  },
+});
+
+/** Symlink `<tempDir>/.bun/bin/opencode` into a global package entry point, like Bun does. */
+function linkBunGlobal(tempDir: string, packageSegments: ReadonlyArray<string>) {
+  const target = NodePath.join(
+    tempDir,
+    ".bun",
+    "install",
+    "global",
+    ...packageSegments,
+    "bin",
+    "opencode.js",
+  );
+  writeExecutable(target);
+  const link = NodePath.join(tempDir, ".bun", "bin", "opencode");
+  NodeFS.mkdirSync(NodePath.dirname(link), { recursive: true });
+  NodeFS.symlinkSync(target, link);
+  return link;
+}
+
+it.layer(NodeServices.layer)("openCodeProviderMaintenance", (it) => {
+  it.effect.skipIf(windowsHost)("updates a v2 Bun global with the owning v2 package", () =>
+    Effect.gen(function* () {
+      const tempDir = yield* makeTempDir("t3-opencode-bun-v2");
+      const link = linkBunGlobal(tempDir, ["node_modules", "@opencode", "cli"]);
+
+      const capabilities = yield* resolveProviderMaintenanceCapabilitiesEffect(openCodeUpdate, {
+        binaryPath: link,
+        env: { PATH: "" },
+      }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn));
+
+      expect(capabilities.packageName).toBe("@opencode/cli");
+      expect(capabilities.update).toMatchObject({
+        executable: "bun",
+        args: ["i", "-g", "@opencode/cli@latest"],
+        lockKey: "bun-global",
+      });
+    }),
+  );
+
+  it.effect.skipIf(windowsHost)("preserves the v1 package for a v1 Bun global", () =>
+    Effect.gen(function* () {
+      const tempDir = yield* makeTempDir("t3-opencode-bun-v1");
+      const link = linkBunGlobal(tempDir, ["node_modules", "opencode-ai"]);
+
+      const capabilities = yield* resolveProviderMaintenanceCapabilitiesEffect(openCodeUpdate, {
+        binaryPath: link,
+        env: { PATH: "" },
+      }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn));
+
+      expect(capabilities.packageName).toBe("opencode-ai");
+      expect(capabilities.update).toMatchObject({
+        executable: "bun",
+        args: ["i", "-g", "opencode-ai@latest"],
+        lockKey: "bun-global",
+      });
+    }),
+  );
+
+  it.effect.skipIf(windowsHost)("updates a v2 npm global with the owning v2 package", () =>
+    Effect.gen(function* () {
+      const tempDir = yield* makeTempDir("t3-opencode-npm-v2");
+      const target = NodePath.join(
+        tempDir,
+        "lib",
+        "node_modules",
+        "@opencode",
+        "cli",
+        "bin",
+        "opencode.js",
+      );
+      writeExecutable(target);
+      const link = NodePath.join(tempDir, "bin", "opencode");
+      NodeFS.mkdirSync(NodePath.dirname(link), { recursive: true });
+      NodeFS.symlinkSync(target, link);
+
+      const capabilities = yield* resolveProviderMaintenanceCapabilitiesEffect(openCodeUpdate, {
+        binaryPath: link,
+        env: { PATH: "" },
+      }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn));
+
+      expect(capabilities.packageName).toBe("@opencode/cli");
+      expect(capabilities.update?.executable).toBe("npm");
+      expect(capabilities.update?.args).toContain("@opencode/cli@latest");
+      expect(capabilities.update?.lockKey.startsWith("npm-global:")).toBe(true);
+    }),
+  );
+
+  it.effect.skipIf(windowsHost)("stays manual for the temporary probing runtime", () =>
+    Effect.gen(function* () {
+      const tempDir = yield* makeTempDir("t3-opencode-temp-runtime");
+      const probing = NodePath.join(
+        tempDir,
+        "doer-opencode-latest-runtime",
+        "node_modules",
+        "@opencode",
+        "cli",
+        "bin",
+        "opencode.exe",
+      );
+      writeExecutable(probing);
+
+      const capabilities = yield* resolveProviderMaintenanceCapabilitiesEffect(openCodeUpdate, {
+        binaryPath: probing,
+        env: { PATH: "" },
+      }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn));
+
+      expect(capabilities.packageName).toBe("@opencode/cli");
+      expect(capabilities.update).toBeNull();
+    }),
+  );
+
+  it.effect.skipIf(windowsHost)("stays manual for an install naming both lines", () =>
+    Effect.gen(function* () {
+      const tempDir = yield* makeTempDir("t3-opencode-ambiguous");
+      const target = NodePath.join(
+        tempDir,
+        "node_modules",
+        "opencode-ai",
+        "node_modules",
+        "@opencode",
+        "cli",
+        "bin",
+        "opencode.js",
+      );
+      writeExecutable(target);
+      const link = NodePath.join(tempDir, "bin", "opencode");
+      NodeFS.mkdirSync(NodePath.dirname(link), { recursive: true });
+      NodeFS.symlinkSync(target, link);
+
+      const capabilities = yield* resolveProviderMaintenanceCapabilitiesEffect(openCodeUpdate, {
+        binaryPath: link,
+        env: { PATH: "" },
+      }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn));
+
+      // Ambiguous ownership must not guess a line for registry comparison.
+      expect(capabilities.packageName).toBeNull();
+      expect(capabilities.update).toBeNull();
+    }),
+  );
+
+  it.effect.skipIf(windowsHost)("stays manual for a global binary with silent ownership", () =>
+    Effect.gen(function* () {
+      const tempDir = yield* makeTempDir("t3-opencode-silent-global");
+      const stored = NodePath.join(tempDir, "store", "opencode");
+      writeExecutable(stored);
+      const link = NodePath.join(tempDir, ".bun", "bin", "opencode");
+      NodeFS.mkdirSync(NodePath.dirname(link), { recursive: true });
+      NodeFS.symlinkSync(stored, link);
+
+      const capabilities = yield* resolveProviderMaintenanceCapabilitiesEffect(openCodeUpdate, {
+        binaryPath: link,
+        env: { PATH: "" },
+      }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn));
+
+      expect(capabilities.packageName).toBeNull();
+      expect(capabilities.update).toBeNull();
+    }),
+  );
+
+  it.effect.skipIf(windowsHost)("stays manual for the native updater channel", () =>
+    Effect.gen(function* () {
+      const tempDir = yield* makeTempDir("t3-opencode-native");
+      const nativePath = NodePath.join(tempDir, ".opencode", "bin", "opencode");
+      writeExecutable(nativePath);
+
+      const capabilities = yield* resolveProviderMaintenanceCapabilitiesEffect(openCodeUpdate, {
+        binaryPath: nativePath,
+        env: { PATH: "" },
+      }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn));
+
+      // `upgrade` may fetch any release line, so the channel proves nothing.
+      expect(capabilities.packageName).toBeNull();
+      expect(capabilities.update).toBeNull();
+    }),
+  );
+
+  it.effect("keeps Windows shims manual without a verified target", () =>
+    Effect.gen(function* () {
+      const tempDir = yield* makeTempDir("t3-opencode-win-shim");
+      const shimDir = NodePath.join(tempDir, "npm");
+      const shim = NodePath.join(shimDir, "opencode.cmd");
+      writeExecutable(shim);
+      const writeManifest = (packageName: string) => {
+        const packageDir = NodePath.join(shimDir, "node_modules", ...packageName.split("/"));
+        NodeFS.mkdirSync(packageDir, { recursive: true });
+        NodeFS.writeFileSync(
+          NodePath.join(packageDir, "package.json"),
+          JSON.stringify({ name: packageName }),
+        );
+      };
+      const resolveShim = () =>
+        resolveProviderMaintenanceCapabilitiesEffect(openCodeUpdate, {
+          binaryPath: shim,
+          env: { PATH: "" },
+        }).pipe(
+          Effect.provideService(HostProcessPlatform, "win32"),
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn),
+        );
+
+      // Both lines installed: ownership is impossible to prove, so manual
+      // with no registry package to compare against.
+      writeManifest("opencode-ai");
+      writeManifest("@opencode/cli");
+      const both = yield* resolveShim();
+      expect(both.packageName).toBeNull();
+      expect(both.update).toBeNull();
+
+      // Even exactly one adjacent manifest does not prove this particular
+      // shim points at that package, so manual as well.
+      NodeFS.rmSync(NodePath.join(shimDir, "node_modules", "opencode-ai"), { recursive: true });
+      const single = yield* resolveShim();
+      expect(single.packageName).toBeNull();
+      expect(single.update).toBeNull();
+    }),
+  );
+
+  it.effect("returns manual with no package for a missing binary", () =>
+    Effect.gen(function* () {
+      const capabilities = yield* resolveProviderMaintenanceCapabilitiesEffect(openCodeUpdate, {
+        env: { PATH: "" },
+      }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn));
+
+      expect(capabilities.packageName).toBeNull();
+      expect(capabilities.update).toBeNull();
     }),
   );
 });

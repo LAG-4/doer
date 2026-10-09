@@ -49,6 +49,8 @@ import { expandHomePath } from "../pathExpansion.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { resolveCodexHomeLayout } from "../provider/Drivers/CodexHomeLayout.ts";
 import { resolveAntigravityInstanceDirectories } from "../provider/antigravityAuthSupport.ts";
+import { resolveOpenCodeShadowUsageRoots } from "../provider/openCodeDataHome.ts";
+import { openCodeManagedDir } from "../provider/opencodeInstall.ts";
 import { mergeProviderInstanceEnvironment } from "../provider/ProviderInstanceEnvironment.ts";
 import { readOpenCodeUsage } from "./opencodeUsageReader.ts";
 import { readAntigravityUsage } from "./antigravityUsageReader.ts";
@@ -519,12 +521,43 @@ export const make = Effect.gen(function* () {
       return [...canonical];
     });
     const dataHome = hostEnvironment["XDG_DATA_HOME"]?.trim();
-    for (const dir of yield* envRoots("OPENCODE_DATA_DIR", [
+    // Doer's OpenCode runtime writes new turns to per-instance shadow data
+    // dirs (see openCodeDataHome); scan those alongside the global native
+    // history so isolated turns keep paid usage/history tracking working.
+    const openCodeInstances = Object.entries(settings.providerInstances)
+      .filter(([, instance]) => instance.driver === "opencode")
+      .map(([id, instance]) => ({
+        instanceId: id,
+        environment: instance.environment ?? [],
+      }));
+    const shadowRoots = resolveOpenCodeShadowUsageRoots({
+      managedDir: openCodeManagedDir(config.baseDir),
+      instances:
+        openCodeInstances.length > 0
+          ? openCodeInstances
+          : [{ instanceId: "opencode", environment: [] }],
+    });
+    const nativeRoots = yield* envRoots("OPENCODE_DATA_DIR", [
       path.join(
         dataHome && path.isAbsolute(dataHome) ? dataHome : path.join(home, ".local", "share"),
         "opencode",
       ),
-    ])) {
+    ]);
+    // A host `OPENCODE_DATA_DIR` override replaces the native defaults above
+    // but must not suppress the shadow roots: canonicalize and append the
+    // missing ones independently (same real-path rule as `envRoots`).
+    const seenRoots = new Set(nativeRoots);
+    for (const root of shadowRoots) {
+      const resolved = path.resolve(root);
+      const canonical = yield* fileSystem
+        .realPath(resolved)
+        .pipe(Effect.orElseSucceed(() => resolved));
+      if (!seenRoots.has(canonical)) {
+        seenRoots.add(canonical);
+        nativeRoots.push(canonical);
+      }
+    }
+    for (const dir of nativeRoots) {
       const result = yield* Effect.promise(() => readOpenCodeUsage(dir, windowStartMs));
       scanned.push({
         provider: "opencode",

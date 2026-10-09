@@ -534,8 +534,8 @@ importers:
         specifier: ^1.3.15
         version: 1.15.13
       '@opencode/client':
-        specifier: ^2.0.11
-        version: 2.0.19(effect@4.0.0-rc.115(patch_hash=0dfc4bb8ebd80fb3e06b91ef61346f5259517ab0f2437644fe95ae531084b1f5))
+        specifier: ^2.0.25
+        version: 2.0.25(effect@4.0.0-rc.115(patch_hash=0dfc4bb8ebd80fb3e06b91ef61346f5259517ab0f2437644fe95ae531084b1f5))
       diff:
         specifier: 8.0.3
         version: 8.0.3
@@ -3645,8 +3645,8 @@ packages:
   '@opencode-ai/sdk@1.15.13':
     resolution: {integrity: sha512-4TwojIoQ8EG6/mVBuUVYZXiFcwNmiiytEnjnvyuvSJjGwFIlw2YIBFxtSVC3FbwwbwHT63teh1RHiQUUC4U5xw==}
 
-  '@opencode/client@2.0.19':
-    resolution: {integrity: sha512-N6Z9/uePIoU7Xby4szaCEnTpNy6/t+UhwT7MXOp2X/cubDqV/rLcvR0qoTcH4OIfnJqwBLn8wskDKzd/ZMRaJw==}
+  '@opencode/client@2.0.25':
+    resolution: {integrity: sha512-ur/LTb/1ANOskbGM3ZMDurpK8q0BIQuWys/MD499/Eodv6PzybM9hJY4cKJMyD2lNqu9v3349IsV1mj7gCdt7w==}
     peerDependencies:
       effect: 4.0.0-rc.115
       solid-js: '>=1.9.0'
@@ -3656,11 +3656,11 @@ packages:
       solid-js:
         optional: true
 
-  '@opencode/protocol@2.0.19':
-    resolution: {integrity: sha512-WUfQX8ltMrry7JDZY5N+x9JaJ7nUJXKvcm2wedRYf3On+eMsQ3+Ln740n03e06pz1FXsozBNdLYPT4q4YsJoCA==}
+  '@opencode/protocol@2.0.25':
+    resolution: {integrity: sha512-A2fbaIc1OOIe9wE0P9dMFD7xxUXS0kyd635l4dS3jfvWAzNTNP24PPtMMw07NKfFh4neEmCh2vvZB5zKP383Fg==}
 
-  '@opencode/schema@2.0.19':
-    resolution: {integrity: sha512-k7aJtI2XmmPpCWzYeQjbd32A55gx/NOuE0TcpiFGZTZJPGk+W+gYNSbB6XCW4iFhax+Ovb0HaC0UdE2rTRkL4Q==}
+  '@opencode/schema@2.0.25':
+    resolution: {integrity: sha512-z064XvBBmdDQLCUYjBinGeCqdbDK3DZ49raFFrzE95eIth3qBkU2Q872VLSqCCLLgDcwKZuRNrwSFNtcc4xvcw==}
 
   '@oslojs/encoding@1.1.0':
     resolution: {integrity: sha512-70wQhgYmndg4GCPxPPxPGevRKqTIJ2Nh4OkiMWmDAVYsTQ+Ta7Sq+rPevXyXGdzr30/qZBnyOalCszoMxlyldQ==}
@@ -14293,19 +14293,19 @@ snapshots:
     dependencies:
       cross-spawn: 7.0.6
 
-  '@opencode/client@2.0.19(effect@4.0.0-rc.115(patch_hash=0dfc4bb8ebd80fb3e06b91ef61346f5259517ab0f2437644fe95ae531084b1f5))':
+  '@opencode/client@2.0.25(effect@4.0.0-rc.115(patch_hash=0dfc4bb8ebd80fb3e06b91ef61346f5259517ab0f2437644fe95ae531084b1f5))':
     dependencies:
-      '@opencode/protocol': 2.0.19
-      '@opencode/schema': 2.0.19
+      '@opencode/protocol': 2.0.25
+      '@opencode/schema': 2.0.25
     optionalDependencies:
       effect: 4.0.0-rc.115(patch_hash=0dfc4bb8ebd80fb3e06b91ef61346f5259517ab0f2437644fe95ae531084b1f5)
 
-  '@opencode/protocol@2.0.19':
+  '@opencode/protocol@2.0.25':
     dependencies:
-      '@opencode/schema': 2.0.19
+      '@opencode/schema': 2.0.25
       effect: 4.0.0-rc.115(patch_hash=0dfc4bb8ebd80fb3e06b91ef61346f5259517ab0f2437644fe95ae531084b1f5)
 
-  '@opencode/schema@2.0.19':
+  '@opencode/schema@2.0.25':
     dependencies:
       '@standard-schema/spec': 1.1.0
       effect: 4.0.0-rc.115(patch_hash=0dfc4bb8ebd80fb3e06b91ef61346f5259517ab0f2437644fe95ae531084b1f5)

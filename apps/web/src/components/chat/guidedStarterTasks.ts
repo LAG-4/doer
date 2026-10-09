@@ -41,9 +41,9 @@ export const GUIDED_STARTER_TASKS: readonly GuidedStarterTask[] = [
     attachmentLabel: "Add the document",
     minimumFiles: 1,
     result:
-      "Summarize the attached document in plain language. Cite pages or sections, identify important dates and actions, and distinguish what the document says from your interpretation.",
+      "Summarize the attached document in plain language. Cite pages or sections, identify important dates and actions, and distinguish what the document says from your interpretation. When a downloadable summary would help, create one with the built-in output tools.",
     guidance:
-      "Use only the attached document for its factual summary. Highlight uncertainty and unreadable sections. Offer to explain a section or produce a summary document. For medical, legal or financial decisions, make the limits of the source clear.",
+      "Use only the attached document for its factual summary. Highlight uncertainty, unreadable sections, and missing information. Label assumptions and say what is unknown instead of guessing. For medical, legal or financial decisions, make the limits of the source clear. Offer to explain a section or produce a summary document. Revisions save a new copy and keep the original.",
   },
   {
     id: "application",
@@ -70,9 +70,9 @@ export const GUIDED_STARTER_TASKS: readonly GuidedStarterTask[] = [
     ],
     attachmentLabel: "Add your resume or the job description (optional)",
     result:
-      "Prepare an application tailored to the supplied role, explain the changes, and create downloadable document drafts using the built-in output tools.",
+      "Prepare an application tailored to the supplied role, explain the changes and sources used, and create downloadable document drafts using the built-in output tools. If a tool fails, keep the draft and explain the failure.",
     guidance:
-      "Never invent qualifications, experience, duties or achievements. Do not infer that the candidate has done a duty just because the role needs it. Before finishing, check every claim against the supplied facts; remove unsupported claims or replace them with clearly marked placeholders. Mark gaps for the user to review. If the role or resume is missing, ask for that essential source before drafting. Do not submit an application. Offer revision or a user-controlled application handoff.",
+      "Never invent qualifications, experience, duties or achievements. Do not infer that the candidate has done a duty just because the role needs it. Before finishing, check every claim against the supplied facts; remove unsupported claims or replace them with clearly marked placeholders. Mark gaps, assumptions, and missing sources for the user to review. If the role or resume is missing, ask for that essential source before drafting. Revisions save a new copy and keep the original. Do not submit an application. Offer revision or a user-controlled application handoff.",
   },
   {
     id: "meeting",
@@ -94,9 +94,9 @@ export const GUIDED_STARTER_TASKS: readonly GuidedStarterTask[] = [
     ],
     attachmentLabel: "Add notes or reports (optional)",
     result:
-      "Prepare a short agenda, a briefing with source references, and useful questions. Create a downloadable document when helpful.",
+      "Prepare a short agenda, a briefing with source references, and useful questions. Create a downloadable document with the built-in output tools when helpful; if a tool fails, keep the draft and explain the failure.",
     guidance:
-      "Separate known facts from proposed discussion points. Never invent attendees or decisions. Offer turning meeting notes into actions as a next step; do not send invitations or messages.",
+      "Separate known facts from proposed discussion points, and label assumptions and missing information. Cite which supplied notes each point comes from. Never invent attendees or decisions. Revisions save a new copy and keep the original. Offer turning meeting notes into actions as a next step; do not send invitations or messages.",
   },
   {
     id: "organize",
@@ -210,7 +210,7 @@ export const GUIDED_STARTER_TASKS: readonly GuidedStarterTask[] = [
     result:
       "Write a clean, usable draft. Use the built-in output tools to create a downloadable document; if a tool fails, keep the draft and explain the failure.",
     guidance:
-      "Never invent personal details. Mark missing details clearly. Offer refining the wording or changing the format as next steps.",
+      "Never invent personal details. Mark missing details and assumptions clearly, and cite which reference file each section comes from. Revisions save a new copy and keep the original. Offer refining the wording or changing the format as next steps.",
   },
   {
     id: "prices",

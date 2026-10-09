@@ -10,6 +10,8 @@ import {
   GmailConnection,
   type GmailConnectionError,
 } from "../../../integrations/GmailConnection.ts";
+import * as ExperimentalConnections from "../../../integrations/ExperimentalConnections.ts";
+import { EXPERIMENTAL_CONNECTIONS_COPY } from "@t3tools/shared/experimentalConnections";
 import { GmailSendApproval } from "../../../integrations/GmailSendApproval.ts";
 import { encodeGmailMessage } from "../../../integrations/gmailClient.ts";
 import { OrchestrationEngineService } from "../../../orchestration/Services/OrchestrationEngine.ts";
@@ -20,6 +22,7 @@ import { validateMailChange, type MailChange } from "../../../integrations/gmail
 
 const make = Effect.gen(function* () {
   const gmail = yield* GmailConnection;
+  const experimentalConnections = yield* ExperimentalConnections.ExperimentalConnections;
   const serverSettings = yield* ServerSettingsService;
   const snapshots = yield* ProjectionSnapshotQuery;
   const approvals = yield* GmailSendApproval;
@@ -32,8 +35,11 @@ const make = Effect.gen(function* () {
         () => new GmailToolError({ message: "Gmail is off. Enable it in Settings → Tools." }),
       ),
     );
-    // Re-read on every call so turning the switch off also stops an existing session.
+    // Master switch is part of the live check below (not a one-time
+    // pre-check): approval can pend while the user toggles, so the flag is
+    // re-read both before review and after the user approves.
     const isAllowed = Effect.gen(function* () {
+      if (!(yield* experimentalConnections.get)) return false;
       const settings = yield* serverSettings.getSettings;
       const thread = yield* snapshots.getThreadShellById(scope.threadId);
       if (
@@ -44,6 +50,12 @@ const make = Effect.gen(function* () {
         return false;
       return resolveProjectSettings(settings, thread.value.projectId).settings.enableGmailAccess;
     }).pipe(Effect.orElseSucceed(() => false));
+    // Specific message for the master switch; isAllowed above stays the live
+    // gate re-checked after approval resolves.
+    if (!(yield* experimentalConnections.get))
+      return yield* new GmailToolError({
+        message: EXPERIMENTAL_CONNECTIONS_COPY.toolDenied,
+      });
     if (!(yield* isAllowed))
       return yield* new GmailToolError({ message: "Gmail is off for this Space." });
 
@@ -128,7 +140,7 @@ const make = Effect.gen(function* () {
         if (!(yield* isAllowed))
           return yield* new GmailToolError({
             message:
-              "Gmail access or this task changed while awaiting approval. No action was performed.",
+              "Gmail access, experimental connections, or this task changed while awaiting approval. No action was performed.",
           });
         return yield* run.pipe(
           Effect.mapError((error) => new GmailToolError({ message: error.message })),

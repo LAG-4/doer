@@ -44,4 +44,27 @@ describe("guided everyday work", () => {
       }),
     ).toContain("Do not move, rename or delete until the user approves");
   });
+  it("asks core workflows for downloadable results with sources and new-copy revisions", () => {
+    for (const id of ["understand", "application", "meeting"] as const) {
+      const request = buildStarterRequest({
+        task: GUIDED_STARTER_TASKS.find((task) => task.id === id)!,
+        answers: {},
+        summary: "Do the task",
+        existingPrompt: "",
+        fileNames: [],
+      });
+      expect(request).toContain("built-in output tools");
+      expect(request).toMatch(/assumption/i);
+      expect(request).toContain("save a new copy");
+    }
+    expect(
+      buildStarterRequest({
+        task: GUIDED_STARTER_TASKS.find((task) => task.id === "understand")!,
+        answers: {},
+        summary: "Explain it",
+        existingPrompt: "",
+        fileNames: [],
+      }),
+    ).toContain("missing information");
+  });
 });

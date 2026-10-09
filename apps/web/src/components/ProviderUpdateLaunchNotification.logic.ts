@@ -254,12 +254,16 @@ export function shouldShowPrimaryProviderUpdateToast(view: ProviderUpdateToastVi
   return view.phase !== "running";
 }
 
-function getProviderUpdateRunningToastView(providerCount: number): ProviderUpdateToastView {
+function getProviderUpdateRunningToastView(
+  providerCount: number,
+  simpleMode = false,
+): ProviderUpdateToastView {
   return {
     phase: "running",
     type: "loading",
     title: providerCount === 1 ? "Updating provider" : "Updating providers",
-    description: "Running provider update command.",
+    // Simple mode never shows terminal commands; name the plain action instead.
+    description: simpleMode ? "Updating AI service." : "Running provider update command.",
   };
 }
 
@@ -278,6 +282,8 @@ export function getProviderUpdateRejectedToastView(
 export function getProviderUpdateProgressToastView(input: {
   readonly providers: ReadonlyArray<ServerProvider>;
   readonly providerCount: number;
+  /** Plain-language running text for simple mode (no terminal-command wording). */
+  readonly simpleMode?: boolean;
 }): ProviderUpdateToastView {
   const providers = dedupeProvidersByDriver(input.providers);
   const failedProviders = providers.filter((provider) => provider.updateState?.status === "failed");
@@ -308,7 +314,7 @@ export function getProviderUpdateProgressToastView(input: {
   }
 
   if (providers.some(isProviderUpdateActive)) {
-    return getProviderUpdateRunningToastView(input.providerCount);
+    return getProviderUpdateRunningToastView(input.providerCount, input.simpleMode === true);
   }
 
   const hasCompleteProviderSnapshots = providers.length >= input.providerCount;
@@ -328,7 +334,7 @@ export function getProviderUpdateProgressToastView(input: {
     };
   }
 
-  return getProviderUpdateRunningToastView(input.providerCount);
+  return getProviderUpdateRunningToastView(input.providerCount, input.simpleMode === true);
 }
 
 /** One provider update sent by the cross-machine "Update all", with its result. */

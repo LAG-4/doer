@@ -38,11 +38,14 @@ export const OPENCODE_NPM_INSTALL_SPEC = `${OPENCODE_NPM_PACKAGE}@latest`;
  * v2 CLI distribution. Fresh automatic installs prefer this: `@opencode/cli`
  * tracks the OpenCode 2 line (`opencode-ai@latest` still publishes the v1
  * line), and the package bundles the native binary — no post-install
- * download step. Falls back to {@link OPENCODE_NPM_INSTALL_SPEC} (v1) when
- * the v2 install fails; both are supported at runtime via version routing.
+ * download step. Pinned to the v2 major so a future v3 `latest` can never
+ * install an API Doer does not speak (version gating would reject it at
+ * probe time, but never installing it is better). Falls back to
+ * {@link OPENCODE_NPM_INSTALL_SPEC} (v1) when the v2 install fails; both
+ * are supported at runtime via version routing.
  */
 const OPENCODE_NPM_PACKAGE_V2 = "@opencode/cli";
-export const OPENCODE_NPM_INSTALL_SPEC_V2 = `${OPENCODE_NPM_PACKAGE_V2}@latest`;
+export const OPENCODE_NPM_INSTALL_SPEC_V2 = `${OPENCODE_NPM_PACKAGE_V2}@^2`;
 /** Directory name below `<baseDir>/tools` holding the T3-managed install. */
 const OPENCODE_MANAGED_TOOL_DIRNAME = "opencode";
 /** Release downloads live here; the script uses `.../latest/download/<filename>`. */

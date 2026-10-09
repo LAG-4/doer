@@ -76,4 +76,45 @@ describe("ComposerPendingApprovalPanel", () => {
     expect(markup).toContain(appName);
     expect(markup).toContain(detail);
   });
+
+  it("names a known built-in document action plainly but keeps the raw detail under Advanced", () => {
+    const detail = "t3-code create document";
+    const markup = renderToStaticMarkup(
+      <ComposerPendingApprovalPanel
+        approval={{
+          requestId: ApprovalRequestId.make("approval-doc"),
+          requestKind: "command",
+          createdAt: "2026-07-18T00:00:00.000Z",
+          detail,
+        }}
+        pendingCount={1}
+      />,
+    );
+
+    expect(markup).toContain("Create a document");
+    expect(markup).toContain("Doer wants to create a document for this Task");
+    expect(markup).not.toContain("Doer wants to run a command");
+    expect(markup).toContain("Advanced");
+    expect(markup).toContain(detail);
+  });
+
+  it("keeps honest command wording for shell text that merely mentions the tool", () => {
+    const detail = "bun run release -- create_document";
+    const markup = renderToStaticMarkup(
+      <ComposerPendingApprovalPanel
+        approval={{
+          requestId: ApprovalRequestId.make("approval-shell"),
+          requestKind: "command",
+          createdAt: "2026-07-18T00:00:00.000Z",
+          detail,
+        }}
+        pendingCount={1}
+      />,
+    );
+
+    expect(markup).toContain("Command approval");
+    expect(markup).toContain("Doer wants to run a command");
+    expect(markup).not.toContain("Create a document");
+    expect(markup).toContain(detail);
+  });
 });

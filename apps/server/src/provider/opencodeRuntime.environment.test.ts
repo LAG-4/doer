@@ -113,6 +113,16 @@ describe("verifyOpenCodeServerVersion", () => {
     }),
   );
 
+  effectIt.effect("rejects a future major instead of claiming v1 support", () =>
+    Effect.gen(function* () {
+      const error = yield* verifyOpenCodeServerVersion(
+        makeHealthClient(() => Promise.resolve({ data: { healthy: true, version: "3.0.0" } })),
+      ).pipe(Effect.flip);
+      expect(error).toBeInstanceOf(OpenCodeRuntimeError);
+      expect(error.detail).toContain("newer than this Doer version supports");
+    }),
+  );
+
   for (const data of [
     { healthy: true },
     { healthy: true, version: "not-a-version" },

@@ -60,6 +60,11 @@ export interface SettingsSearchItem {
   readonly localEnvironmentOnly?: boolean;
   readonly wslAvailableOnly?: boolean;
   /**
+   * Its row only renders while the experimental-connections master switch is
+   * on, so search must not point at a missing anchor while it is off.
+   */
+  readonly experimentalConnectionsOnly?: boolean;
+  /**
    * Sorts after every other match. Keybinding commands mirror rows on other
    * surfaces, so "model" must still lead with Default model, not Model Picker.
    */
@@ -76,6 +81,8 @@ export interface SettingsSearchAvailability {
   readonly canManageLocalBackend: boolean;
   readonly isWslSettingsRowVisible: boolean;
   readonly hasThreadAutoSettlement: boolean;
+  /** Experimental connection rows only render while the host master switch is on. */
+  readonly hasExperimentalConnections?: boolean;
 }
 
 /**
@@ -139,6 +146,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "microsoft",
     title: "Microsoft connected apps",
     to: "/settings/integrations",
+    experimentalConnectionsOnly: true,
     searchTerms: ["Outlook email Calendar OneDrive SharePoint account connect sign in"],
   },
   {
@@ -594,21 +602,30 @@ export const SETTINGS_SEARCH_ITEMS = [
     providerSettingsOnly: true,
   },
   {
+    id: "experimental-connections",
+    title: "Experimental connections",
+    to: "/settings/integrations",
+    searchTerms: ["Google Gmail Microsoft Outlook Excel PowerPoint Office plugin tools try beta"],
+  },
+  {
     id: "gmail-access",
     title: "Gmail",
     to: "/settings/integrations",
+    experimentalConnectionsOnly: true,
     searchTerms: ["email Google account connect sign in send tools"],
   },
   {
     id: "spreadsheet-access",
     title: "Spreadsheets",
     to: "/settings/integrations",
+    experimentalConnectionsOnly: true,
     searchTerms: ["Excel xlsx local files tools"],
   },
   {
     id: "presentation-access",
     title: "Presentations",
     to: "/settings/integrations",
+    experimentalConnectionsOnly: true,
     searchTerms: ["PowerPoint pptx local files slides tools"],
   },
   {
@@ -1022,7 +1039,8 @@ export function filterAvailableSettingsSearchItems(
       (!item.localBackendManagementOnly || availability.canManageLocalBackend) &&
       (!item.localEnvironmentOnly || !availability.localEnvironmentDisabled) &&
       (!item.wslAvailableOnly || availability.isWslSettingsRowVisible) &&
-      (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement),
+      (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement) &&
+      (!item.experimentalConnectionsOnly || availability.hasExperimentalConnections),
   );
 }
 

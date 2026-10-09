@@ -155,7 +155,9 @@ const make = Effect.gen(function* () {
               projectId,
               title: input.title,
               modelSelection: thread.modelSelection,
-              runtimeMode: "full-access",
+              // New dedicated tasks start supervised: unattended full access
+              // needs the user's explicit opt-in, never an agent default.
+              runtimeMode: "approval-required",
               interactionMode: "default",
               branch: null,
               worktreePath: null,

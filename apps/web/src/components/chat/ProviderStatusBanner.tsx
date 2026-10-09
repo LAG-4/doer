@@ -4,7 +4,13 @@ import { InfoIcon, XIcon } from "lucide-react";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "../ui/alert";
 import { Button, InlineButton } from "../ui/button";
 import { formatProviderDriverKindLabel } from "../../providerModels";
+import { useClientSettings } from "../../hooks/useSettings";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import {
+  isTechnicalHealthErrorText,
+  stripAnsiErrorText,
+  TECHNICAL_HEALTH_FRIENDLY_DETAIL,
+} from "../settings/providerStatus";
 
 /** Unsupported and broken versions fail mid-turn, so they warn even when ready. */
 function getIncompatibleVersion(status: ServerProvider) {
@@ -97,6 +103,7 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
   onOpenProviderSetup?: (instanceId: ProviderInstanceId) => void;
   status: ServerProvider | null;
 }) {
+  const simpleMode = useClientSettings((settings) => settings.simpleModeEnabled);
   if (!status || getProviderStatusBannerKey(status) === null) {
     return null;
   }
@@ -104,12 +111,31 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
   const providerName = status.displayName?.trim() || formatProviderDriverKindLabel(status.driver);
   const isUnauthenticated = status.status === "error" && status.auth.status === "unauthenticated";
   const incompatible = getIncompatibleVersion(status);
-  const title = isUnauthenticated
-    ? `${providerName} is unauthenticated`
-    : incompatible
-      ? `${providerName} ${status.version ?? ""} is ${incompatible.status === "broken" ? "known to be broken" : "unsupported"}`
-      : `${providerName} provider status`;
-  const message = incompatible?.message ?? getProviderStatusMessage(status);
+  const rawMessage = incompatible?.message ?? getProviderStatusMessage(status);
+  // Raw technical startup/health dumps read as plain actionable copy in
+  // simple mode; the stripped original stays under the tooltip. Auth,
+  // install, and recovery copy is never classified, so sign-in guidance
+  // always stays visible.
+  const technicalDetail =
+    simpleMode && !isUnauthenticated && isTechnicalHealthErrorText(rawMessage)
+      ? stripAnsiErrorText(rawMessage)
+      : null;
+  const title =
+    technicalDetail !== null
+      ? "AI service can't start"
+      : isUnauthenticated
+        ? `${providerName} is unauthenticated`
+        : incompatible
+          ? `${providerName} ${status.version ?? ""} is ${incompatible.status === "broken" ? "known to be broken" : "unsupported"}`
+          : `${providerName} provider status`;
+  // Friendly copy never carries a raw-error hover tooltip in simple mode;
+  // the stripped original lives in the disclosure below instead. Preserved
+  // (actionable) copy is ANSI-stripped for readability in simple mode only.
+  const message = technicalDetail
+    ? TECHNICAL_HEALTH_FRIENDLY_DETAIL
+    : simpleMode
+      ? stripAnsiErrorText(rawMessage)
+      : rawMessage;
   const isWarning =
     incompatible?.status !== "broken" && (status.status === "warning" || incompatible !== null);
 
@@ -124,15 +150,27 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
         <InfoIcon />
         <AlertTitle>{title}</AlertTitle>
         <AlertDescription>
-          <Tooltip>
-            <TooltipTrigger render={<div className="line-clamp-3" />}>{message}</TooltipTrigger>
-            <TooltipPopup side="top" className="whitespace-pre-wrap">
-              {message}
-            </TooltipPopup>
-          </Tooltip>
+          {technicalDetail ? (
+            <>
+              <div className="line-clamp-3">{message}</div>
+              <details>
+                <summary className="cursor-pointer">Advanced details</summary>
+                <pre className="mt-1 max-w-full overflow-x-auto rounded-md bg-muted px-3 py-2 font-mono text-xs whitespace-pre-wrap break-all text-muted-foreground">
+                  {technicalDetail}
+                </pre>
+              </details>
+            </>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger render={<div className="line-clamp-3" />}>{message}</TooltipTrigger>
+              <TooltipPopup side="top" className="whitespace-pre-wrap">
+                {message}
+              </TooltipPopup>
+            </Tooltip>
+          )}
           {onOpenProviderSetup && hasProviderSetup(status) ? (
             <InlineButton onClick={() => onOpenProviderSetup(status.instanceId)}>
-              Open provider setup
+              {simpleMode ? "Open setup" : "Open provider setup"}
             </InlineButton>
           ) : null}
         </AlertDescription>

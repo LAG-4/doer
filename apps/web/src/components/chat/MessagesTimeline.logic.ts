@@ -38,6 +38,7 @@ import {
   type WorktreeSetupSnapshot,
 } from "@t3tools/contracts";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
+import { deriveTurnTaskOutputs } from "./taskResultsPerTurn";
 
 const TIMELINE_MINIMAP_ITEM_SPACING = 8;
 export const TIMELINE_MINIMAP_MIN_ITEMS = 2;
@@ -348,6 +349,14 @@ function isActivityEntry(entry: TimelineEntry): entry is ActivityEntry {
 }
 
 export type MessagesTimelineRow =
+  | {
+      kind: "task-results";
+      id: string;
+      createdAt: string;
+      turnId: TurnId;
+      paths: readonly string[];
+      assistantMessageId: MessageId | null;
+    }
   | {
       kind: "activity-group";
       id: string;
@@ -920,6 +929,86 @@ function attachTrailingToolGroupsToAssistant(
   return result;
 }
 
+/**
+ * One anchored results container per turn, after that turn's terminal
+ * assistant row (or its meta when trailing tools moved it). Falls back to the
+ * last row of the turn when the turn produced files without assistant text.
+ * The anchor is turn-scoped, not message-id-scoped, so it lands after the
+ * terminal chunk whether the checkpoint stamps the first or the last one.
+ * Single O(R+T) pass: index rows once, bucket inserts by index, then one
+ * forward pass. Returns the original array when nothing inserts, so the
+ * stable-row cache keeps its references.
+ */
+function insertPerTurnTaskResultRows(
+  rows: MessagesTimelineRow[],
+  turnDiffSummaries: ReadonlyArray<TurnDiffSummary>,
+): MessagesTimelineRow[] {
+  if (turnDiffSummaries.length === 0 || rows.length === 0) return rows;
+  const byTurn = deriveTurnTaskOutputs(turnDiffSummaries);
+  if (byTurn.size === 0) return rows;
+
+  const lastAssistantRowIndexByTurnId = new Map<TurnId, number>();
+  const lastRowIndexByTurnId = new Map<TurnId, number>();
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    if (!row) continue;
+    if (row.kind === "message" || row.kind === "assistant-meta") {
+      const turnId = row.message.turnId ?? null;
+      if (turnId !== null) {
+        lastRowIndexByTurnId.set(turnId, index);
+        if (row.kind === "assistant-meta" || row.message.role === "assistant") {
+          lastAssistantRowIndexByTurnId.set(turnId, index);
+        }
+      }
+      continue;
+    }
+    if (row.kind === "activity-group" || row.kind === "turn-fold") {
+      lastRowIndexByTurnId.set(row.turnId, index);
+      continue;
+    }
+    if (row.kind === "work-toggle") {
+      if (row.turnId !== undefined && row.turnId !== null)
+        lastRowIndexByTurnId.set(row.turnId, index);
+      continue;
+    }
+    if (row.kind === "work-live" || row.kind === "work") {
+      for (const entry of row.groupedEntries) {
+        if (entry.turnId !== undefined && entry.turnId !== null)
+          lastRowIndexByTurnId.set(entry.turnId, index);
+      }
+    }
+  }
+
+  const buckets = new Map<number, MessagesTimelineRow[]>();
+  for (const [turnId, outputs] of byTurn) {
+    const afterIndex =
+      lastAssistantRowIndexByTurnId.get(turnId) ?? lastRowIndexByTurnId.get(turnId);
+    if (afterIndex === undefined) continue;
+    const resultRow: MessagesTimelineRow = {
+      kind: "task-results",
+      id: `task-results:${turnId}`,
+      createdAt: outputs.completedAt,
+      turnId,
+      paths: outputs.paths,
+      assistantMessageId: outputs.assistantMessageId,
+    };
+    const bucket = buckets.get(afterIndex);
+    if (bucket) bucket.push(resultRow);
+    else buckets.set(afterIndex, [resultRow]);
+  }
+  if (buckets.size === 0) return rows;
+
+  const next: MessagesTimelineRow[] = [];
+  for (let index = 0; index < rows.length; index += 1) {
+    next.push(rows[index]!);
+    const bucket = buckets.get(index);
+    if (bucket) {
+      for (const resultRow of bucket) next.push(resultRow);
+    }
+  }
+  return next;
+}
+
 /** Match each user message to the next assistant checkpoint. */
 function buildRevertTurnCountByUserMessageId(input: {
   supportsConversationRollback: boolean;
@@ -1473,7 +1562,10 @@ export function deriveMessagesTimelineRows(input: {
       createdAt: input.activeTurnStartedAt,
     });
   }
-  const rows = attachTrailingToolGroupsToAssistant(nextRows);
+  const rows = insertPerTurnTaskResultRows(
+    attachTrailingToolGroupsToAssistant(nextRows),
+    input.turnDiffSummaries,
+  );
   input.queuedMessages?.forEach((queuedMessage, index) => {
     rows.push({
       kind: "queued-message",
@@ -1641,6 +1733,17 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
     case "queued-message": {
       const bq = b as typeof a;
       return a.queuedMessage === bq.queuedMessage && a.isNext === bq.isNext;
+    }
+
+    case "task-results": {
+      const br = b as typeof a;
+      return (
+        a.createdAt === br.createdAt &&
+        a.turnId === br.turnId &&
+        a.assistantMessageId === br.assistantMessageId &&
+        a.paths.length === br.paths.length &&
+        a.paths.every((path, index) => path === br.paths[index])
+      );
     }
 
     case "work": {

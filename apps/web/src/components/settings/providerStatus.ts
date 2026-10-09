@@ -169,3 +169,65 @@ export function getProviderVersionAdvisoryPresentation(
     targetVersion: null,
   };
 }
+
+/** Matches ANSI color escapes some CLIs embed in error output. Built from a
+ * char code so no raw control character or control escape appears in source. */
+const ANSI_ESCAPE_PATTERN = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*[A-Za-z]`, "g");
+
+/**
+ * Narrow technical-health signals: CLI startup/exit crashes, health-check and
+ * version-probe failures, and embedded runtime diagnostics. Checked only after
+ * the actionable guards below, so useful copy always wins.
+ */
+const TECHNICAL_HEALTH_PATTERNS = [
+  /server exited before startup/i,
+  /\bstderr\b/i,
+  /database is not empty/i,
+  /session table/i,
+  /exit(?:ed)?(?: with)? code \d/i,
+  /exited before .* completed/i,
+  /cli health check/i,
+  /version probe/i,
+  /probe timed out/i,
+];
+
+/**
+ * Actionable wording that must never read as a technical dump, even wrapped
+ * in ANSI or next to stderr. Checked first: sign-in, credentials, quota, and
+ * install/not-found copy always stays visible with its recovery action.
+ */
+const ACTIONABLE_HEALTH_PATTERNS = [
+  /auth/i,
+  /sign[\s-]?in/i,
+  /log[\s-]?in/i,
+  /api[\s-]?key/i,
+  /quota/i,
+  /rate[\s-]?limit/i,
+  /credit/i,
+  /not installed/i,
+  /not found/i,
+  /install/i,
+];
+
+/** True when detail is a raw technical startup/health dump, not user-actionable copy. */
+export function isTechnicalHealthErrorText(message: string | null | undefined): boolean {
+  if (!message) return false;
+  if (ACTIONABLE_HEALTH_PATTERNS.some((pattern) => pattern.test(message))) return false;
+  // The shared pattern is global (for replace); reset before testing since
+  // global regexes remember their last match.
+  ANSI_ESCAPE_PATTERN.lastIndex = 0;
+  return (
+    ANSI_ESCAPE_PATTERN.test(message) ||
+    TECHNICAL_HEALTH_PATTERNS.some((pattern) => pattern.test(message))
+  );
+}
+
+/** Strip ANSI color escapes for display; the words themselves are preserved. */
+export function stripAnsiErrorText(message: string): string {
+  ANSI_ESCAPE_PATTERN.lastIndex = 0;
+  return message.replace(ANSI_ESCAPE_PATTERN, "");
+}
+
+/** Short plain-language copy shown in simple mode for technical health failures. */
+export const TECHNICAL_HEALTH_FRIENDLY_DETAIL =
+  "The AI service couldn't start. Open setup to try again — technical details are under Advanced.";

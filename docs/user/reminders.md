@@ -10,10 +10,14 @@ ask for it or agree to the suggestion. Ask it to show the setup first if you
 want to review the details before creation.
 
 Results usually appear in the task where you asked. That task keeps its existing
-permissions, so a run can wait for your approval. For work you want kept separate
-and performed without waiting for you, ask for a separate task. It runs with
-permission to work on its own and moves out of Active after the work finishes.
-A separate task needs instructions that make sense without the original chat.
+permissions, so a run can wait for your approval. For work you want kept separate,
+ask for a separate task. A separate task starts supervised, so each run waits for
+your approval and shows as needing attention in Reminders — unless you explicitly
+choose “Work without waiting for me” when creating it, which grants that task full
+access. Doer never switches a reminder to full access on its own; editing a reminder
+never resets its permissions. A finished run moves its separate task out of Active.
+A separate task needs instructions that make sense
+without the original chat.
 
 The computer hosting the task must be on with Doer running. After downtime,
 a missed reminder runs once when Doer starts again; it does not replay every

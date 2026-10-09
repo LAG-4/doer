@@ -417,11 +417,19 @@ describe("UsageService", () => {
       const summary = yield* service.readSummary(WINDOW);
       const sourcesFor = (provider: "opencode" | "antigravity") =>
         summary.sources.filter((source) => source.fingerprint.provider === provider);
-      assert.strictEqual(sourcesFor("opencode").length, 1);
+      // The legacy override aliases dedupe to one native source; Doer's
+      // isolated shadow namespace scans alongside it so new turns are tracked.
+      assert.strictEqual(sourcesFor("opencode").length, 2);
       assert.strictEqual(sourcesFor("antigravity").length, 1);
       assert.strictEqual(
         sourcesFor("opencode")[0]?.fingerprint.resolvedHomePath,
         yield* Effect.promise(() => NodeFSP.realpath(opencode)),
+      );
+      assert(
+        sourcesFor("opencode")[1]?.fingerprint.resolvedHomePath.endsWith(
+          NodePath.join("data", "instance-opencode", "opencode"),
+        ),
+        "expected the isolated shadow namespace as the second opencode source",
       );
       assert.strictEqual(
         sourcesFor("antigravity")[0]?.fingerprint.resolvedHomePath,

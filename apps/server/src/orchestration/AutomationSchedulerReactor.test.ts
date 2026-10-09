@@ -259,7 +259,7 @@ describe("AutomationSchedulerReactor", () => {
     ),
   );
 
-  it.effect("executes a dedicated reminder even if its task was left in plan mode", () =>
+  it.effect("preserves plan mode on a dedicated reminder instead of resetting it", () =>
     Effect.scoped(
       Effect.gen(function* () {
         yield* TestClock.setTime(Date.parse(NOW));
@@ -278,11 +278,11 @@ describe("AutomationSchedulerReactor", () => {
           yield* startHarness(reactor, fixture.activation, fixture.sweepReads);
           const commands = yield* Ref.get(fixture.commands);
           expect(commands.map((command) => command.type)).toEqual([
-            "thread.interaction-mode.set",
             "thread.turn.start",
             "automation.fired",
           ]);
-          expect(commands[0]).toMatchObject({ interactionMode: "default" });
+          const turn = commands.find((command) => command.type === "thread.turn.start");
+          expect(turn).toMatchObject({ interactionMode: "plan" });
         }).pipe(Effect.provide(fixture.layer));
       }),
     ),
@@ -387,7 +387,7 @@ describe("AutomationSchedulerReactor", () => {
     ),
   );
 
-  it.effect("restores full access on a drifted thread before firing", () =>
+  it.effect("preserves a drifted supervised mode instead of escalating it", () =>
     Effect.scoped(
       Effect.gen(function* () {
         yield* TestClock.setTime(Date.parse(NOW));
@@ -407,14 +407,16 @@ describe("AutomationSchedulerReactor", () => {
           const reactor = yield* AutomationSchedulerReactor.AutomationSchedulerReactor;
           yield* startHarness(reactor, fixture.activation, fixture.sweepReads);
           const dispatched = yield* Ref.get(fixture.commands);
+          // No mode reset: the owner's supervised choice stands, and the run
+          // inherits it (waiting for approval, surfaced as needs-attention).
           assert.deepStrictEqual(
             dispatched.map((command) => command.type),
-            ["thread.runtime-mode.set", "thread.turn.start", "automation.fired"],
+            ["thread.turn.start", "automation.fired"],
           );
-          const modeSet = dispatched[0];
-          assert.strictEqual(modeSet?.type, "thread.runtime-mode.set");
-          if (modeSet?.type === "thread.runtime-mode.set") {
-            expect(modeSet.runtimeMode).toBe("full-access");
+          const turn = dispatched.find((command) => command.type === "thread.turn.start");
+          assert.strictEqual(turn?.type, "thread.turn.start");
+          if (turn?.type === "thread.turn.start") {
+            expect(turn.runtimeMode).toBe("approval-required");
           }
         }).pipe(Effect.provide(fixture.layer));
       }),

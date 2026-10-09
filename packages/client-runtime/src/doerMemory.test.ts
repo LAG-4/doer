@@ -89,4 +89,15 @@ describe("doerMemory client", () => {
     );
     await expect(listDoerMemories(offline, {})).rejects.toThrow(/Could not reach Doer/);
   });
+
+  it("calls fetch without a receiver so browser native fetch works", async () => {
+    // Native fetch throws "Illegal invocation" when invoked as a method with
+    // the wrong receiver. The client must never depend on the receiver.
+    const fetchFn = function (this: unknown) {
+      if (this !== undefined) throw new TypeError("Illegal invocation");
+      return Promise.resolve(ok({ memories: [memory] }));
+    } as typeof fetch;
+    const memories = await listDoerMemories(transport(fetchFn), { projectId: "project-1" });
+    expect(memories).toEqual([memory]);
+  });
 });

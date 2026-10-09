@@ -25,7 +25,7 @@ import { buildThreadRouteParams } from "../../threadRoutes";
 import { Button } from "../ui/button";
 import { Label } from "../ui/label";
 import { Textarea } from "../ui/textarea";
-import { SettingsSection } from "./settingsLayout";
+import { SettingsSection, SettingsSectionBody } from "./settingsLayout";
 
 const MAX_ADD_CHARS = DOER_MEMORY_MAX_CONTENT_CHARS;
 
@@ -165,7 +165,10 @@ export function MemoryManager(props: {
     return {
       transport: {
         baseUrl: prepared.value.httpBaseUrl,
-        fetchFn: fetch,
+        // Arrow wrapper keeps native fetch's receiver: passing bare `fetch`
+        // and invoking it as `transport.fetchFn(...)` throws "Illegal
+        // invocation" in browsers and no request is sent.
+        fetchFn: (...args) => fetch(...args),
         ...(authorization !== null ? { authHeader: `Bearer ${authorization.token}` } : {}),
       } satisfies DoerMemoryTransport,
     };
@@ -173,19 +176,23 @@ export function MemoryManager(props: {
   if (connection === null) {
     return (
       <SettingsSection id={props.sectionId} title={props.title}>
-        <p role="status" className="text-sm text-muted-foreground">
-          Connecting…
-        </p>
+        <SettingsSectionBody>
+          <p role="status" className="max-w-prose text-sm text-muted-foreground">
+            Connecting…
+          </p>
+        </SettingsSectionBody>
       </SettingsSection>
     );
   }
   if ("relay" in connection) {
     return (
       <SettingsSection id={props.sectionId} title={props.title}>
-        <p className="text-sm text-muted-foreground">
-          Memory settings are not available over this relay connection yet. Ask Doer in chat to
-          remember, change, or forget things instead.
-        </p>
+        <SettingsSectionBody>
+          <p className="max-w-prose text-sm text-muted-foreground">
+            Memory settings are not available over this relay connection yet. Ask Doer in chat to
+            remember, change, or forget things instead.
+          </p>
+        </SettingsSectionBody>
       </SettingsSection>
     );
   }
@@ -352,89 +359,91 @@ function MemoryManagerLoaded(props: {
 
   return (
     <SettingsSection id={props.sectionId} title={props.title}>
-      <p className="text-sm text-muted-foreground">{props.description}</p>
-      {entries === null ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          Loading saved memories…
-        </p>
-      ) : entries.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          Nothing saved here yet. Ask Doer to remember something in chat, or add one below.
-        </p>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {entries.map((entry) => (
-            <MemoMemoryRow
-              key={entry.id}
-              entry={entry}
-              environmentId={props.environmentId}
-              busy={busy}
-              editing={editingId === entry.id}
-              editDraft={editingId === entry.id ? editDraft : ""}
-              confirming={confirmingId === entry.id}
-              onStartEdit={() => {
-                setEditingId(entry.id);
-                setEditDraft(entry.content);
-                setConfirmingId(null);
-              }}
-              onEditChange={setEditDraft}
-              onSaveEdit={() => saveEdit(entry)}
-              onCancelEdit={() => setEditingId(null)}
-              onAskForget={() => {
-                setConfirmingId(entry.id);
-                setEditingId(null);
-              }}
-              onCancelForget={() => setConfirmingId(null)}
-              onConfirmForget={() => confirmForget(entry)}
-            />
-          ))}
-        </ul>
-      )}
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`${props.sectionId}-add`}>
-          {props.scope === "about-you"
-            ? "Remember something about you"
-            : "Remember something for this Space"}
-        </Label>
-        <Textarea
-          id={`${props.sectionId}-add`}
-          value={draft}
-          rows={2}
-          maxLength={MAX_ADD_CHARS}
-          disabled={busy}
-          placeholder={
-            props.scope === "about-you"
-              ? "Goes by Sam, prefers concise summaries…"
-              : "Garden renovation budget is 4000…"
-          }
-          onChange={(event) => setDraft(event.target.value)}
-        />
-        <div>
-          <Button size="sm" disabled={busy || draft.trim() === ""} onClick={add}>
-            <PlusIcon />
-            {busy ? "Saving…" : "Remember this"}
-          </Button>
-        </div>
-      </div>
-      <p className="text-xs text-muted-foreground">
-        Memories cannot keep secrets safe — never store passwords, keys, or sign-in codes.{" "}
-        {DOER_MEMORY_COPY.localDisclosure}
-      </p>
-      {notice ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          {notice}
-        </p>
-      ) : null}
-      {error ? (
-        <div className="flex items-center gap-2">
-          <p role="alert" className="text-sm text-destructive">
-            {error}
+      <SettingsSectionBody>
+        <p className="max-w-prose text-sm text-muted-foreground">{props.description}</p>
+        {entries === null ? (
+          <p role="status" className="text-sm text-muted-foreground">
+            Loading saved memories…
           </p>
-          <Button size="sm" variant="outline" disabled={busy} onClick={() => void refresh()}>
-            Retry
-          </Button>
+        ) : entries.length === 0 ? (
+          <p className="max-w-prose text-sm text-muted-foreground">
+            Nothing saved here yet. Ask Doer to remember something in chat, or add one below.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {entries.map((entry) => (
+              <MemoMemoryRow
+                key={entry.id}
+                entry={entry}
+                environmentId={props.environmentId}
+                busy={busy}
+                editing={editingId === entry.id}
+                editDraft={editingId === entry.id ? editDraft : ""}
+                confirming={confirmingId === entry.id}
+                onStartEdit={() => {
+                  setEditingId(entry.id);
+                  setEditDraft(entry.content);
+                  setConfirmingId(null);
+                }}
+                onEditChange={setEditDraft}
+                onSaveEdit={() => saveEdit(entry)}
+                onCancelEdit={() => setEditingId(null)}
+                onAskForget={() => {
+                  setConfirmingId(entry.id);
+                  setEditingId(null);
+                }}
+                onCancelForget={() => setConfirmingId(null)}
+                onConfirmForget={() => confirmForget(entry)}
+              />
+            ))}
+          </ul>
+        )}
+        <div className="flex max-w-prose flex-col gap-1.5">
+          <Label htmlFor={`${props.sectionId}-add`}>
+            {props.scope === "about-you"
+              ? "Remember something about you"
+              : "Remember something for this Space"}
+          </Label>
+          <Textarea
+            id={`${props.sectionId}-add`}
+            value={draft}
+            rows={2}
+            maxLength={MAX_ADD_CHARS}
+            disabled={busy}
+            placeholder={
+              props.scope === "about-you"
+                ? "Goes by Sam, prefers concise summaries…"
+                : "Garden renovation budget is 4000…"
+            }
+            onChange={(event) => setDraft(event.target.value)}
+          />
+          <div>
+            <Button size="sm" disabled={busy || draft.trim() === ""} onClick={add}>
+              <PlusIcon />
+              {busy ? "Saving…" : "Remember this"}
+            </Button>
+          </div>
         </div>
-      ) : null}
+        <p className="max-w-prose text-xs text-muted-foreground">
+          Memories cannot keep secrets safe — never store passwords, keys, or sign-in codes.{" "}
+          {DOER_MEMORY_COPY.localDisclosure}
+        </p>
+        {notice ? (
+          <p role="status" className="text-sm text-muted-foreground">
+            {notice}
+          </p>
+        ) : null}
+        {error ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <p role="alert" className="min-w-0 flex-1 text-sm text-destructive">
+              {error}
+            </p>
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => void refresh()}>
+              Retry
+            </Button>
+          </div>
+        ) : null}
+      </SettingsSectionBody>
     </SettingsSection>
   );
 }

@@ -201,7 +201,7 @@ describe("scheduled tasks toolkit handlers", () => {
     }),
   );
 
-  it.effect("mints a full-access thread when asked for a new one", () =>
+  it.effect("mints a supervised thread when asked for a new one", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({ thread: { interactionMode: "plan" } });
       const summary = yield* harness.call("create_scheduled_task", {
@@ -218,7 +218,9 @@ describe("scheduled tasks toolkit handlers", () => {
       ]);
       const create = dispatched[0];
       if (create?.type === "thread.create") {
-        expect(create.runtimeMode).toBe("full-access");
+        // Unattended full access is never an agent default: only the user's
+        // explicit opt-in grants it.
+        expect(create.runtimeMode).toBe("approval-required");
         expect(create.interactionMode).toBe("default");
       } else {
         expect.unreachable("expected thread.create first");

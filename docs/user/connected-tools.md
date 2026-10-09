@@ -1,6 +1,14 @@
 # Tools
 
-Open **Settings → Integrations → Tools** to turn on a tool for This computer. Plugin switches are shared by all Spaces on that computer. Turning a switch on also works for an already running task; turning a switch off stops new calls to that tool, including calls from an already running task.
+**Experimental connections** in **Settings → Connected apps** is the master switch for the
+connections below: Gmail, Microsoft, spreadsheets, and presentations stay hidden and unavailable
+until you turn it on. Each connection still needs your separate approval after that. Turning the
+master switch off stops new calls to these tools immediately — even when an individual switch is
+still on or a saved sign-in exists — without deleting any credentials, so turning it back on
+restores access without signing in again. Disconnecting an account stays available while the
+switch is off.
+
+Open **Settings → Connected apps → Tools** to turn on a tool for This computer. Plugin switches are shared by all Spaces on that computer. Turning a switch on also works for an already running task; turning a switch off stops new calls to that tool, including calls from an already running task.
 
 For quick changes, open **Plugins** beside the access control in a task's message box. Its Gmail, Excel, and PowerPoint switches update the same switches in Settings, and changes in Settings appear in chat. On smaller screens, find them in the message box's **More composer controls** menu.
 

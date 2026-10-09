@@ -73,27 +73,12 @@ export const make = Effect.gen(function* () {
     const turnCommandId = CommandId.make(
       `server:automation:${automation.id}:${planned.occurrenceKey}`,
     );
-    // Scheduled runs are unattended by contract, but only on threads minted
-    // for the automation: a shared chat keeps whatever mode its user chose,
-    // and the run inherits it (stalling on approvals until they answer).
-    if (automation.dedicatedThread !== false && thread.value.runtimeMode !== "full-access") {
-      yield* engine.dispatch({
-        type: "thread.runtime-mode.set",
-        commandId: CommandId.make(`${turnCommandId}:mode`),
-        threadId: automation.threadId,
-        runtimeMode: "full-access",
-        createdAt: now,
-      });
-    }
-    if (automation.dedicatedThread !== false && thread.value.interactionMode !== "default") {
-      yield* engine.dispatch({
-        type: "thread.interaction-mode.set",
-        commandId: CommandId.make(`${turnCommandId}:interaction`),
-        threadId: automation.threadId,
-        interactionMode: "default",
-        createdAt: now,
-      });
-    }
+    // Scheduled runs never escalate permissions: a dedicated thread keeps
+    // whatever mode its owner chose (full access for unattended runs only
+    // with their explicit consent at creation; supervised otherwise, in
+    // which case the run waits for approval and surfaces as needs-attention).
+    // Shared chats likewise keep the user's mode (stalling on approvals
+    // until they answer).
     yield* engine.dispatch({
       type: "thread.turn.start",
       commandId: turnCommandId,
@@ -108,9 +93,8 @@ export const make = Effect.gen(function* () {
         }),
         attachments: [],
       },
-      runtimeMode: automation.dedicatedThread !== false ? "full-access" : thread.value.runtimeMode,
-      interactionMode:
-        automation.dedicatedThread !== false ? "default" : thread.value.interactionMode,
+      runtimeMode: thread.value.runtimeMode,
+      interactionMode: thread.value.interactionMode,
       createdAt: now,
     });
     // The turn dispatch is idempotent on its command id, and the record

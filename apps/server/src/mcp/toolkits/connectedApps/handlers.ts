@@ -6,6 +6,8 @@ import { WorkspaceFileSystem } from "../../../workspace/WorkspaceFileSystem.ts";
 // @effect-diagnostics globalDateInEffect:off preferSchemaOverJson:off
 import * as Effect from "effect/Effect";
 import { MicrosoftConnection } from "../../../connectedApps/MicrosoftConnection.ts";
+import * as ExperimentalConnections from "../../../integrations/ExperimentalConnections.ts";
+import { EXPERIMENTAL_CONNECTIONS_COPY } from "@t3tools/shared/experimentalConnections";
 import { MicrosoftAccountError } from "../../../connectedApps/MicrosoftAccount.ts";
 import { McpInvocationContext } from "../../McpInvocationContext.ts";
 import { ConnectedAppReadError, ConnectedAppsToolkit } from "./tools.ts";
@@ -59,12 +61,18 @@ export function connectedSourcePath(input: {
 }
 const make = Effect.gen(function* () {
   const connection = yield* MicrosoftConnection;
+  const experimentalConnections = yield* ExperimentalConnections.ExperimentalConnections;
   const snapshots = yield* ProjectionSnapshotQuery;
   const files = yield* WorkspaceFileSystem;
   return ConnectedAppsToolkit.of({
     read_connected_sources: (input) =>
       Effect.gen(function* () {
         yield* McpInvocationContext;
+        // Master switch first: a saved Microsoft token never bypasses it.
+        if (!(yield* experimentalConnections.get))
+          return yield* new ConnectedAppReadError({
+            detail: EXPERIMENTAL_CONNECTIONS_COPY.toolDenied,
+          });
         return yield* Effect.tryPromise({
           try: async () => {
             const response = await connection.graph(connectedSourcePath(input));
@@ -91,6 +99,10 @@ const make = Effect.gen(function* () {
     download_connected_file: (input) =>
       Effect.gen(function* () {
         const scope = yield* McpInvocationContext;
+        if (!(yield* experimentalConnections.get))
+          return yield* new ConnectedAppReadError({
+            detail: EXPERIMENTAL_CONNECTIONS_COPY.toolDenied,
+          });
         const context = yield* snapshots.getThreadCheckpointContext(scope.threadId).pipe(
           Effect.mapError(
             () =>

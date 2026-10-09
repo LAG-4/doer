@@ -3,6 +3,7 @@ import type { ServerUpdateState } from "@t3tools/client-runtime/state/server";
 import { Atom } from "effect/unstable/reactivity";
 import { useMemo, useState } from "react";
 
+import { useClientSettings } from "~/hooks/useSettings";
 import type { EnvironmentPresentation } from "~/state/environments";
 import { serverEnvironment } from "~/state/server";
 import {
@@ -41,6 +42,7 @@ export function useAutoBalanceUpdateBanner(
     [environments],
   );
   const states = useAtomValue(statesAtom);
+  const simpleMode = useClientSettings((settings) => settings.simpleModeEnabled);
   const [dismissedNotices, setDismissedNotices] = useState<ReadonlySet<string | ServerUpdateState>>(
     () => new Set(),
   );
@@ -85,9 +87,22 @@ export function useAutoBalanceUpdateBanner(
     (machine) => machine.connected && machine.remoteUpdate && machine.state.status !== "running",
   );
   const count = running || failed || machines.length;
+  // Simple mode hides non-actionable manual-update banners: there is no
+  // one-click path, and the manual command itself is hidden in simple mode.
+  // One-click updates (targets) and in-flight runs still show.
+  if (simpleMode && running === 0 && targets.length === 0) return null;
   const status = running ? "running" : failed ? "failed" : "idle";
   const prefix = running ? "Updating" : failed ? "Could not update" : "Update available for";
-  const title = `${prefix} ${count} ${count === 1 ? "machine" : "machines"}`;
+  // Simple mode names the app and counts computers; Advanced keeps
+  // server/machine terms.
+  const unit = count === 1 ? "computer" : "computers";
+  const title = simpleMode
+    ? running
+      ? `Updating Doer on ${count} ${unit}`
+      : failed
+        ? `Could not update ${count} ${unit}`
+        : `Doer update available for ${count} ${unit}`
+    : `${prefix} ${count} ${count === 1 ? "machine" : "machines"}`;
   return {
     id: `auto-balance-server-updates-${dismissedNotices.size}`,
     variant: failed ? "error" : "default",
@@ -111,7 +126,11 @@ export function useAutoBalanceUpdateBanner(
                   <ServerUpdateProgress state={machine.state} />
                 ) : !machine.remoteUpdate ? (
                   <>
-                    <div className="text-muted-foreground">Manual update required</div>
+                    <div className="text-muted-foreground">
+                      {simpleMode
+                        ? "Advanced settings has the update steps"
+                        : "Manual update required"}
+                    </div>
                     <ServerUpdateAction {...machine} />
                   </>
                 ) : (

@@ -34,6 +34,7 @@ import {
 } from "@t3tools/shared/model";
 import { cn } from "../../lib/utils";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
+import { useClientSettings } from "../../hooks/useSettings";
 import { normalizeProviderAccentColor } from "../../providerInstances";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -56,6 +57,9 @@ import {
   PROVIDER_STATUS_STYLES,
   getProviderSummary,
   getProviderVersionLabel,
+  isTechnicalHealthErrorText,
+  stripAnsiErrorText,
+  TECHNICAL_HEALTH_FRIENDLY_DETAIL,
   type ProviderStatusKey,
 } from "./providerStatus";
 
@@ -478,6 +482,17 @@ export function ProviderInstanceCard({
   const displayName =
     instance.displayName?.trim() || driverOption?.label || String(instance.driver);
   const accentColor = normalizeProviderAccentColor(instance.accentColor);
+  // Simple mode hides copied terminal commands: one-click Install/Update
+  // buttons stay, manual command copy affordances go away.
+  const simpleMode = useClientSettings((settings) => settings.simpleModeEnabled);
+  // Raw technical startup/health dumps (ANSI, exit codes, stderr) read as
+  // friendly short copy in simple mode; the stripped original stays one tap
+  // away in the tooltip/disclosure. Auth, install, and recovery copy is
+  // never classified, so sign-in guidance always stays visible.
+  const technicalHealthDetail =
+    simpleMode && summary.detail && isTechnicalHealthErrorText(summary.detail)
+      ? stripAnsiErrorText(summary.detail)
+      : null;
   const { copyToClipboard } = useCopyToClipboard<{ providerName: string }>({
     onCopy: ({ providerName }) => {
       toastManager.add({
@@ -604,14 +619,25 @@ export function ProviderInstanceCard({
     ) : null;
   const needsAttention = statusKey === "warning" || statusKey === "error";
   const statusDiagnostic = hasCompatibilityWarning && needsAttention ? summary.detail : null;
+  // Simple technical detail hides its hover tooltip (the editor's Advanced
+  // details disclosure carries the original); preserved copy is
+  // ANSI-stripped for readability in simple mode only.
+  const diagnosticDetail =
+    simpleMode && statusDiagnostic ? stripAnsiErrorText(statusDiagnostic) : statusDiagnostic;
+  const tooltipDetail = technicalHealthDetail ? null : diagnosticDetail;
   // Keep compatibility copy compact; the version popover carries the explanation.
-  const inlineStatusDetail = hasCompatibilityWarning
-    ? compatibility?.status === "broken"
-      ? "Incompatible"
-      : compatibility?.status === "unsupported"
-        ? "Unsupported"
-        : "Limited support"
-    : summary.detail;
+  // A technical health dump reads as friendly short copy in simple mode.
+  const inlineStatusDetail = technicalHealthDetail
+    ? TECHNICAL_HEALTH_FRIENDLY_DETAIL
+    : hasCompatibilityWarning
+      ? compatibility?.status === "broken"
+        ? "Incompatible"
+        : compatibility?.status === "unsupported"
+          ? "Unsupported"
+          : "Limited support"
+      : simpleMode && summary.detail
+        ? stripAnsiErrorText(summary.detail)
+        : summary.detail;
   const editorStatusNode =
     isAuthenticated && authEmail ? (
       <>
@@ -680,7 +706,7 @@ export function ProviderInstanceCard({
                     />
                     <TooltipPopup side="top">{versionAdvisory.detail}</TooltipPopup>
                   </Tooltip>
-                ) : updateCommand ? (
+                ) : updateCommand && !simpleMode ? (
                   <Tooltip>
                     <TooltipTrigger
                       render={
@@ -711,9 +737,9 @@ export function ProviderInstanceCard({
               {statusDotNode ? (
                 <span className="flex h-[1.45em] shrink-0 items-center">{statusDotNode}</span>
               ) : null}
-              <ProviderStatusDiagnostic detail={statusDiagnostic}>
+              <ProviderStatusDiagnostic detail={tooltipDetail}>
                 <span
-                  tabIndex={statusDiagnostic ? 0 : undefined}
+                  tabIndex={tooltipDetail ? 0 : undefined}
                   className="pointer-events-auto line-clamp-2 [overflow-wrap:anywhere]"
                 >
                   {summary.headline}
@@ -805,14 +831,14 @@ export function ProviderInstanceCard({
                         : "Update now"}
                   </Button>
                 ) : null}
-                {onRunVersionAction && updateCommand ? (
+                {onRunVersionAction && updateCommand && !simpleMode ? (
                   <div className="flex items-center gap-2 text-3xs font-medium uppercase tracking-wider text-muted-foreground">
                     <span aria-hidden className="h-px flex-1 bg-border" />
                     or, update manually using
                     <span aria-hidden className="h-px flex-1 bg-border" />
                   </div>
                 ) : null}
-                {updateCommand ? (
+                {updateCommand && !simpleMode ? (
                   <div className="flex min-w-0 items-center gap-1 rounded-md border border-border/70 bg-muted/40 py-0.5 pr-0.5 pl-2">
                     <code className="min-w-0 flex-1 truncate font-mono text-2xs text-foreground">
                       {updateCommand}
@@ -879,20 +905,101 @@ export function ProviderInstanceCard({
     />
   );
 
+  const runtimeSection =
+    instance.driver === "codex" && readCodexSetupMode(instance.config) === "managed" ? (
+      <div
+        inert={readOnly}
+        aria-disabled={readOnly || undefined}
+        className={readOnly ? "opacity-50 select-none" : undefined}
+      >
+        <FoldedSettingsSection
+          key={instanceId}
+          id={`provider-instance-${instanceId}-runtime`}
+          title="Runtime"
+          headerPlacement="outside"
+        >
+          {runtime ?? runtimeFields}
+        </FoldedSettingsSection>
+      </div>
+    ) : (
+      <SettingsSection
+        title="Runtime"
+        inert={readOnly}
+        aria-disabled={readOnly || undefined}
+        className={readOnly ? "opacity-50 select-none" : undefined}
+      >
+        {runtimeFields}
+      </SettingsSection>
+    );
+
+  const environmentSection = (
+    <SettingsSection
+      title="Environment"
+      inert={readOnly}
+      aria-disabled={readOnly || undefined}
+      className={readOnly ? "opacity-50 select-none" : undefined}
+    >
+      <ProviderEnvironmentSection
+        environment={instance.environment ?? []}
+        onChange={updateEnvironment}
+      />
+    </SettingsSection>
+  );
+
+  const modelsSection =
+    driverOption !== undefined ? (
+      <SettingsSection
+        title="Models"
+        inert={readOnly}
+        aria-disabled={readOnly || undefined}
+        className={readOnly ? "opacity-50 select-none" : undefined}
+      >
+        <div className="px-3 py-3 sm:px-4">
+          <p className="mb-3 text-xs text-muted-foreground">
+            Favorites, visibility, and ordering are saved on this device. Custom models are saved on
+            the selected environment.
+          </p>
+          <ProviderModelsSection
+            instanceId={instanceId}
+            driverKind={driverKind}
+            models={modelsForDisplay}
+            customModels={customModels}
+            hiddenModels={hiddenModels}
+            favoriteModels={favoriteModels}
+            modelOrder={modelOrder}
+            onChange={updateCustomModels}
+            onHiddenModelsChange={onHiddenModelsChange}
+            onFavoriteModelsChange={onFavoriteModelsChange}
+            onModelOrderChange={onModelOrderChange}
+          />
+        </div>
+      </SettingsSection>
+    ) : null;
+
   return (
     <>
       <SettingsSection title={displayName} icon={titleIconNode} headerAction={editorHeaderAction}>
         <SettingsRow
           title="Display name"
           status={
-            <ProviderStatusDiagnostic detail={statusDiagnostic}>
-              <div
-                tabIndex={statusDiagnostic ? 0 : undefined}
-                className="flex min-w-0 flex-wrap items-baseline gap-x-1.5"
-              >
-                {editorStatusNode}
-              </div>
-            </ProviderStatusDiagnostic>
+            <>
+              <ProviderStatusDiagnostic detail={tooltipDetail}>
+                <div
+                  tabIndex={tooltipDetail ? 0 : undefined}
+                  className="flex min-w-0 flex-wrap items-baseline gap-x-1.5"
+                >
+                  {editorStatusNode}
+                </div>
+              </ProviderStatusDiagnostic>
+              {technicalHealthDetail ? (
+                <details className="max-w-prose pt-1 text-xs text-muted-foreground">
+                  <summary className="cursor-pointer">Advanced details</summary>
+                  <pre className="mt-1 max-w-full overflow-x-auto rounded-md bg-muted px-3 py-2 font-mono whitespace-pre-wrap break-all">
+                    {technicalHealthDetail}
+                  </pre>
+                </details>
+              ) : null}
+            </>
           }
           control={
             <div
@@ -926,72 +1033,23 @@ export function ProviderInstanceCard({
 
       {setup ? <SettingsSection title="Setup">{setup}</SettingsSection> : null}
 
-      {instance.driver === "codex" && readCodexSetupMode(instance.config) === "managed" ? (
-        <div
-          inert={readOnly}
-          aria-disabled={readOnly || undefined}
-          className={readOnly ? "opacity-50 select-none" : undefined}
+      {simpleMode ? (
+        <FoldedSettingsSection
+          id={`provider-instance-${instanceId}-advanced`}
+          title="Advanced AI service settings"
+          headerPlacement="outside"
         >
-          <FoldedSettingsSection
-            key={instanceId}
-            id={`provider-instance-${instanceId}-runtime`}
-            title="Runtime"
-            headerPlacement="outside"
-          >
-            {runtime ?? runtimeFields}
-          </FoldedSettingsSection>
-        </div>
+          {runtimeSection}
+          {environmentSection}
+          {modelsSection}
+        </FoldedSettingsSection>
       ) : (
-        <SettingsSection
-          title="Runtime"
-          inert={readOnly}
-          aria-disabled={readOnly || undefined}
-          className={readOnly ? "opacity-50 select-none" : undefined}
-        >
-          {runtimeFields}
-        </SettingsSection>
+        <>
+          {runtimeSection}
+          {environmentSection}
+          {modelsSection}
+        </>
       )}
-
-      <SettingsSection
-        title="Environment"
-        inert={readOnly}
-        aria-disabled={readOnly || undefined}
-        className={readOnly ? "opacity-50 select-none" : undefined}
-      >
-        <ProviderEnvironmentSection
-          environment={instance.environment ?? []}
-          onChange={updateEnvironment}
-        />
-      </SettingsSection>
-
-      {driverOption !== undefined ? (
-        <SettingsSection
-          title="Models"
-          inert={readOnly}
-          aria-disabled={readOnly || undefined}
-          className={readOnly ? "opacity-50 select-none" : undefined}
-        >
-          <div className="px-3 py-3 sm:px-4">
-            <p className="mb-3 text-xs text-muted-foreground">
-              Favorites, visibility, and ordering are saved on this device. Custom models are saved
-              on the selected environment.
-            </p>
-            <ProviderModelsSection
-              instanceId={instanceId}
-              driverKind={driverKind}
-              models={modelsForDisplay}
-              customModels={customModels}
-              hiddenModels={hiddenModels}
-              favoriteModels={favoriteModels}
-              modelOrder={modelOrder}
-              onChange={updateCustomModels}
-              onHiddenModelsChange={onHiddenModelsChange}
-              onFavoriteModelsChange={onFavoriteModelsChange}
-              onModelOrderChange={onModelOrderChange}
-            />
-          </div>
-        </SettingsSection>
-      ) : null}
     </>
   );
 }

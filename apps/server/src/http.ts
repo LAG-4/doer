@@ -1,5 +1,6 @@
 import * as Mime from "effect/unstable/http/Mime";
 import {
+  AuthAccessWriteScope,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   EnvironmentHttpApi,
@@ -273,7 +274,10 @@ export function resolveDevRedirectUrl(devUrl: URL, requestUrl: URL): string {
 }
 
 export const authenticateRawRouteWithScope = (
-  scope: typeof AuthOrchestrationReadScope | typeof AuthOrchestrationOperateScope,
+  scope:
+    | typeof AuthOrchestrationReadScope
+    | typeof AuthOrchestrationOperateScope
+    | typeof AuthAccessWriteScope,
 ) =>
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;

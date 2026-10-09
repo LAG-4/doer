@@ -157,6 +157,7 @@ import {
   SnapShotAttachmentDetails,
 } from "./SnapShotAttachmentDetails";
 import { ProposedPlanCard } from "./ProposedPlanCard";
+import { TaskResults } from "./TaskResults";
 import { ChangedFilesCard } from "./ChangedFilesTree";
 import { useAtomValue } from "@effect/atom-react";
 import { useFileContextMenuHandler } from "../../fileContextMenu";
@@ -303,6 +304,10 @@ interface TimelineRowSharedState {
   onCancelWorktreeSetup: (() => void) | null;
   onWorktreeSetupWorkLocally: (() => void) | null;
   onOpenWorktreeSetupTerminal: ((terminalId: string) => void) | null;
+  onOpenTaskResultFile: ((path: string) => void) | null;
+  onShowTaskResultSources:
+    | ((info: { turnId: TurnId; assistantMessageId: MessageId | null }) => void)
+    | null;
   onSteerQueuedMessage: (id: string) => void;
   steerQueuedMessageShortcutLabel: string | null;
   onRemoveQueuedMessage: (id: string) => void;
@@ -447,6 +452,12 @@ interface MessagesTimelineProps {
   onImageExpand: (preview: ExpandedImagePreview) => void;
   onFileOpen?: (attachment: ChatFileAttachment) => void;
   onFileDownload?: (attachment: ChatFileAttachment) => void;
+  /** Per-turn results card: open a generated file in the Files surface. */
+  onOpenTaskResultFile?: ((path: string) => void) | null;
+  /** Per-turn results card: scroll to the assistant message that produced it. */
+  onShowTaskResultSources?:
+    | ((info: { turnId: TurnId; assistantMessageId: MessageId | null }) => void)
+    | null;
   activeThreadEnvironmentId: EnvironmentId;
   markdownCwd: string | undefined;
   resolvedTheme: "light" | "dark";
@@ -519,6 +530,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onImageExpand,
   onFileOpen = NOOP_OPEN_ATTACHMENT,
   onFileDownload = NOOP_OPEN_ATTACHMENT,
+  onOpenTaskResultFile,
+  onShowTaskResultSources,
   activeThreadEnvironmentId,
   markdownCwd,
   resolvedTheme,
@@ -1193,6 +1206,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onCancelWorktreeSetup: onCancelWorktreeSetup ?? null,
       onWorktreeSetupWorkLocally: onWorktreeSetupWorkLocally ?? null,
       onOpenWorktreeSetupTerminal: onOpenWorktreeSetupTerminal ?? null,
+      onOpenTaskResultFile: onOpenTaskResultFile ?? null,
+      onShowTaskResultSources: onShowTaskResultSources ?? null,
       onSteerQueuedMessage,
       steerQueuedMessageShortcutLabel,
       onRemoveQueuedMessage,
@@ -1229,6 +1244,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onCancelWorktreeSetup,
       onWorktreeSetupWorkLocally,
       onOpenWorktreeSetupTerminal,
+      onOpenTaskResultFile,
+      onShowTaskResultSources,
       onSteerQueuedMessage,
       steerQueuedMessageShortcutLabel,
       onRemoveQueuedMessage,
@@ -1761,6 +1778,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
         <ReasoningTimelineRow row={row} />
       ) : null}
       {row.kind === "assistant-meta" ? <AssistantMetaTimelineRow row={row} /> : null}
+      {row.kind === "task-results" ? <TaskResultsTimelineRow row={row} /> : null}
       {row.kind === "proposed-plan" ? <ProposedPlanTimelineRow row={row} /> : null}
       {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}
       {row.kind === "thinking" ? <ThinkingTimelineRow /> : null}
@@ -1791,6 +1809,34 @@ function WorktreeSetupTimelineRow({
         !row.embedded && row.snapshot.phase === "running" ? ctx.onWorktreeSetupWorkLocally : null
       }
       onOpenTerminal={onOpenTerminal}
+    />
+  );
+}
+
+/** Generated files anchored to the turn that created them. */
+function TaskResultsTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "task-results" }> }) {
+  const ctx = use(TimelineRowCtx);
+  const threadId = ctx.threadRef?.threadId;
+  const onOpen = ctx.onOpenTaskResultFile;
+  const onSources = ctx.onShowTaskResultSources;
+  const handleOpen = useCallback(
+    (path: string) => {
+      onOpen?.(path);
+    },
+    [onOpen],
+  );
+  const handleSources = useCallback(() => {
+    onSources?.({ turnId: row.turnId, assistantMessageId: row.assistantMessageId });
+  }, [onSources, row.assistantMessageId, row.turnId]);
+  if (!threadId || !onOpen || !onSources) return null;
+  return (
+    <TaskResults
+      layout="inline"
+      environmentId={ctx.activeThreadEnvironmentId}
+      threadId={threadId}
+      paths={row.paths}
+      onOpen={handleOpen}
+      onSources={handleSources}
     />
   );
 }

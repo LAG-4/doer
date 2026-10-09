@@ -1,6 +1,8 @@
 import { memo } from "react";
 import { type PendingApproval } from "../../session-logic";
+import { useClientSettings } from "../../hooks/useSettings";
 import { cn } from "~/lib/utils";
+import { describeBuiltInToolApproval } from "./pendingApprovalPresentation";
 
 interface ComposerPendingApprovalPanelProps {
   approval: PendingApproval;
@@ -16,32 +18,47 @@ export const ComposerPendingApprovalPanel = memo(function ComposerPendingApprova
   const Detail = approval.requestKind === "mcp-elicitation" ? "span" : "code";
   const isEmail = approval.requestId.startsWith("gmail-send:");
   const isMailChange = approval.requestId.startsWith("gmail-change:");
-  const fallbackLabel = isEmail
-    ? "Review email before sending"
-    : isMailChange
-      ? "Review Gmail change"
-      : approval.requestKind === "mcp-elicitation"
-        ? "App access approval"
-        : approval.requestKind === "command"
-          ? "Command approval"
-          : approval.requestKind === "file-read"
-            ? "File read approval"
-            : approval.requestKind === "permission"
-              ? "App permission approval"
-              : "File change approval";
-  const detailAriaLabel = isEmail
-    ? "Email to send"
-    : isMailChange
-      ? "Gmail change to apply"
-      : approval.requestKind === "mcp-elicitation"
-        ? "App access request"
-        : approval.requestKind === "command"
-          ? "Command"
-          : approval.requestKind === "file-read"
-            ? "File to read"
-            : approval.requestKind === "permission"
-              ? "Permission request"
-              : "File change";
+  // Known Doer built-in tool actions arrive as command approvals (the backend
+  // only maps read/edit vs command). Name them plainly instead of showing a
+  // generic "run a command" explanation for product-native work.
+  const builtIn = describeBuiltInToolApproval(approval);
+  const fallbackLabel = builtIn
+    ? builtIn.title
+    : isEmail
+      ? "Review email before sending"
+      : isMailChange
+        ? "Review Gmail change"
+        : approval.requestKind === "mcp-elicitation"
+          ? "App access approval"
+          : approval.requestKind === "command"
+            ? "Command approval"
+            : approval.requestKind === "file-read"
+              ? "File read approval"
+              : approval.requestKind === "permission"
+                ? "App permission approval"
+                : "File change approval";
+  const detailAriaLabel = builtIn
+    ? builtIn.title
+    : isEmail
+      ? "Email to send"
+      : isMailChange
+        ? "Gmail change to apply"
+        : approval.requestKind === "mcp-elicitation"
+          ? "App access request"
+          : approval.requestKind === "command"
+            ? "Command"
+            : approval.requestKind === "file-read"
+              ? "File to read"
+              : approval.requestKind === "permission"
+                ? "Permission request"
+                : "File change";
+  // Simple mode keeps raw commands behind an Advanced disclosure: plain
+  // words first, with the complete command still mounted for inspection.
+  const simpleModeEnabled = useClientSettings((settings) => settings.simpleModeEnabled);
+  const collapseCommand =
+    simpleModeEnabled &&
+    approval.requestKind === "command" &&
+    (approval.detail ?? "").trim() !== "";
 
   return (
     <span
@@ -68,7 +85,29 @@ export const ComposerPendingApprovalPanel = memo(function ComposerPendingApprova
         data-approval-detail="complete"
         tabIndex={0}
       >
-        {approval.detail || fallbackLabel}
+        {builtIn ? (
+          <>
+            <span className="font-sans whitespace-pre-wrap wrap-break-word">
+              {builtIn.description}
+            </span>{" "}
+            <details className="mt-1 font-mono whitespace-pre">
+              <summary className="cursor-pointer text-muted-foreground">Advanced</summary>
+              {approval.detail}
+            </details>
+          </>
+        ) : collapseCommand ? (
+          <>
+            <span className="font-sans whitespace-pre-wrap wrap-break-word">
+              Doer wants to run a command for this task. Nothing runs until you approve it.
+            </span>{" "}
+            <details className="mt-1 font-mono whitespace-pre">
+              <summary className="cursor-pointer text-muted-foreground">Advanced</summary>
+              {approval.detail}
+            </details>
+          </>
+        ) : (
+          approval.detail || fallbackLabel
+        )}
       </Detail>
     </span>
   );

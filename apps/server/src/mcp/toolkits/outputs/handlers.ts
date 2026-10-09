@@ -28,7 +28,13 @@ const make = Effect.gen(function* () {
       return yield* new OutputFailedError({ detail: "This Task is no longer available." });
     const bytes = yield* Effect.tryPromise({
       try: generate,
-      catch: () => new OutputFailedError({ detail: "Check the content and try a smaller file." }),
+      catch: (cause) =>
+        new OutputFailedError({
+          detail:
+            cause instanceof Error && cause.message.trim().length > 0
+              ? cause.message.trim().slice(0, 300)
+              : "Check the content and try a smaller file.",
+        }),
     });
     const stem =
       title

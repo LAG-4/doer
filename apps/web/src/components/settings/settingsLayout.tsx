@@ -221,6 +221,23 @@ export function SettingsSection({
   );
 }
 
+/** Padded body for raw (non-SettingsRow) children inside a SettingsSection.
+ * SettingsGroup expects padded SettingsRows; raw paragraphs/forms need this
+ * wrapper so they don't sit flush against the card border. */
+export function SettingsSectionBody({
+  children,
+  className,
+  ...bodyProps
+}: ComponentPropsWithoutRef<"div"> & {
+  children: ReactNode;
+}) {
+  return (
+    <div {...bodyProps} className={cn("flex flex-col gap-3 px-3 py-3 sm:px-4", className)}>
+      {children}
+    </div>
+  );
+}
+
 export function SettingsUnavailableGroup({
   children,
   message,

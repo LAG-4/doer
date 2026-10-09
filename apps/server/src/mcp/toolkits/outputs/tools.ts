@@ -64,7 +64,7 @@ const spreadsheet = Tool.make("create_spreadsheet", {
   .annotate(Tool.OpenWorld, false);
 const presentation = Tool.make("create_presentation", {
   description:
-    "Create an editable PowerPoint presentation with readable slides using Doer's bundled tools. Keep each slide to one idea, concise bullet points and optional speaker notes. Include sources and dates in notes or a source slide. Each call saves a new copy. Returns a relative file path: link it in your response.",
+    "Create an editable PowerPoint presentation with simple slides using Doer's bundled tools. Keep each slide to one idea, concise bullet points and optional speaker notes. Include sources and dates in notes or a source slide. Each call saves a new copy. Returns a relative file path: link it in your response.",
   parameters: Schema.Struct({
     title: Title,
     slides: Schema.Array(

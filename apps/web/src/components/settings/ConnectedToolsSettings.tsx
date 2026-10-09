@@ -9,15 +9,24 @@ import {
   useUpdateScopedSettings,
 } from "./useScopedSettings";
 
-export function ConnectedToolsSettings() {
+export function ConnectedToolsSettings({
+  connectionsVisible = false,
+}: {
+  /**
+   * While the experimental-connections master switch is off, the per-tool
+   * switches and local Office rows hide. A connected Gmail account still
+   * shows its Disconnect control so cleanup never needs re-enabling.
+   */
+  readonly connectionsVisible?: boolean;
+}) {
   return (
     <ComputerSettingsScope>
-      <ConnectedToolsControls />
+      <ConnectedToolsControls connectionsVisible={connectionsVisible} />
     </ComputerSettingsScope>
   );
 }
 
-function ConnectedToolsControls() {
+function ConnectedToolsControls({ connectionsVisible }: { connectionsVisible: boolean }) {
   const { target } = useSettingsScope();
   const settings = useScopedSettings();
   const update = useUpdateScopedSettings();
@@ -43,6 +52,18 @@ function ConnectedToolsControls() {
   const mixedGmail = useScopedSettingsMixed(["enableGmailAccess"]);
   const mixedSpreadsheets = useScopedSettingsMixed(["enableLocalSpreadsheetAccess"]);
   const mixedPresentations = useScopedSettingsMixed(["enableLocalPresentationAccess"]);
+  if (!connectionsVisible) {
+    // Gated rows hide entirely. Gmail's control renders its Disconnect button
+    // when an account is connected (and null otherwise), so cleanup stays
+    // available without turning the master switch back on.
+    return (
+      <GmailConnectionControl
+        key={target?.environmentId}
+        environmentId={target?.environmentId ?? null}
+        enabled={false}
+      />
+    );
+  }
   return (
     <SettingsSection id="connected-tools" title="Tools">
       <SettingsRow

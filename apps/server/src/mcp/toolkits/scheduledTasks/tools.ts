@@ -219,7 +219,7 @@ export type ScheduledTaskSummary = typeof ScheduledTaskSummary.Type;
 
 const CreateScheduledTaskTool = Tool.make("create_scheduled_task", {
   description:
-    "Set up a reminder that runs later: once, every day, or every week. By default it runs inside THIS task so the user sees results where they already look — no extra chat is created. Pass thread:'new' for a separate task instead, which runs on full access and settles itself after each run. Prefer this over telling the user to come back later. Only use it when the user asks for repetition ('every day', 'remind me', 'keep doing this'), or after offering ('Want me to do this every week? You can undo anytime.') and hearing yes. Never invent reminders the user did not ask for or agree to.",
+    "Set up a reminder that runs later: once, every day, or every week. By default it runs inside THIS task so the user sees results where they already look — no extra chat is created. Pass thread:'new' for a separate task instead, which starts supervised (it waits for the user's approval each run) and settles itself after each run. Never promise unattended full access: only the user can grant that in the reminder editor. Prefer this over telling the user to come back later. Only use it when the user asks for repetition ('every day', 'remind me', 'keep doing this'), or after offering ('Want me to do this every week? You can undo anytime.') and hearing yes. Never invent reminders the user did not ask for or agree to.",
   parameters: CreateScheduledTaskInput,
   success: ScheduledTaskSummary,
   failure: ScheduledTaskToolError,

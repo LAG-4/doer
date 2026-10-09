@@ -15,6 +15,8 @@ import {
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
 import { annotateEnvironmentRequest, requireEnvironmentScope } from "../auth/http.ts";
+import { isEnabled as isExperimentalEnabled } from "./ExperimentalConnections.ts";
+import { EXPERIMENTAL_CONNECTIONS_COPY } from "@t3tools/shared/experimentalConnections";
 import { GmailConnection } from "./GmailConnection.ts";
 import { GmailSendApproval } from "./GmailSendApproval.ts";
 
@@ -37,6 +39,12 @@ export const integrationsHttpApiLayer = HttpApiBuilder.group(
         Effect.fn("integrations.gmailBegin")(function* (args) {
           yield* annotateEnvironmentRequest(args.endpoint.name);
           yield* requireEnvironmentScope(AuthAccessWriteScope);
+          // Disconnect and status stay available while the master switch is
+          // off; beginning a new connection does not.
+          if (!(yield* isExperimentalEnabled))
+            return yield* new EnvironmentHttpConflictError({
+              message: EXPERIMENTAL_CONNECTIONS_COPY.connectDenied,
+            });
           const authorizationUrl = yield* gmail.begin.pipe(
             Effect.mapError(
               (error) => new EnvironmentHttpConflictError({ message: error.message }),
@@ -80,13 +88,18 @@ export const gmailCallbackRouteLayer = HttpRouter.add(
         headers: { "cache-control": "no-store", "referrer-policy": "no-referrer" },
       });
     const gmail = yield* GmailConnection;
-    const completed = yield* gmail.complete(state, code).pipe(
-      Effect.map(() => true),
-      Effect.tapError((error) =>
-        Effect.logWarning("Gmail OAuth callback failed", { reason: error.message }),
-      ),
-      Effect.orElseSucceed(() => false),
-    );
+    // A stale OAuth redirect can arrive after the switch was turned off.
+    // Refuse the exchange; the user can disconnect or re-enable and retry.
+    let completed = false;
+    if (yield* isExperimentalEnabled) {
+      completed = yield* gmail.complete(state, code).pipe(
+        Effect.map(() => true),
+        Effect.tapError((error) =>
+          Effect.logWarning("Gmail OAuth callback failed", { reason: error.message }),
+        ),
+        Effect.orElseSucceed(() => false),
+      );
+    }
     return completed
       ? HttpServerResponse.text(
           "<!doctype html><title>Gmail connected</title><p>Gmail is connected. Return to Doer.</p>",

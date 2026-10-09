@@ -404,8 +404,14 @@ const ATOMIC_SETTINGS_KEYS: ReadonlySet<string> = new Set([
 
 // Preserve explicit opt-in/opt-out states because provider history cannot
 // recover a new opt-in, and a stripped explicit disable would spring back on.
+// The runtime mode is always persisted explicitly (never treated as a
+// strippable default): fresh installs pin their supervised seed, and an
+// explicit full-access choice survives update round-trips. Existing files are
+// still never rewritten on load, so an old implicit default stays untouched
+// until the user changes a setting — and then it is pinned at its same value.
 const PERSISTED_SERVER_SETTINGS_DEFAULTS = {
   ...DEFAULT_SERVER_SETTINGS,
+  defaultRuntimeMode: undefined,
   providers: {
     ...DEFAULT_SERVER_SETTINGS.providers,
     codex: { ...DEFAULT_SERVER_SETTINGS.providers.codex, enabled: undefined },
@@ -635,8 +641,15 @@ const make = Effect.gen(function* () {
     // A file that failed to decode must stay on disk for the user to repair;
     // the fold below only writes when it started from the file's real contents.
     let settingsFileTrusted = true;
+    const configExists = yield* readConfigExists;
+    if (!configExists) {
+      // Genuinely new installations start supervised: an explicit saved
+      // choice, never a silent full-access default. Existing files — even
+      // ones relying on the old implicit default — are never rewritten here.
+      settings = { ...settings, defaultRuntimeMode: "approval-required" };
+    }
 
-    if (yield* readConfigExists) {
+    if (configExists) {
       const raw = yield* readRawConfig;
       const decoded = decodeServerSettingsJsonExit(raw);
       const persistedSettings = decodePersistedOptionalProviderSettingsJsonExit(raw);
@@ -714,8 +727,10 @@ const make = Effect.gen(function* () {
       ? foldLegacyProjectSettings(loaded, legacyProjectRows)
       : loaded;
     // Only rewrite a file that decoded cleanly; an untrusted one stays for the user to repair.
+    // A fresh install persists its supervised default so restarts and paired
+    // clients see the same explicit choice.
     const migrated = settingsFileTrusted ? yield* moveInlineBitbucketTokens(folded) : folded;
-    if (migrated !== loaded) {
+    if (migrated !== loaded || !configExists) {
       yield* writeSettingsAtomically(migrated);
     }
     return migrated;

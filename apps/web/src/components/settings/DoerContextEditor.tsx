@@ -11,7 +11,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { Button } from "../ui/button";
 import { Label } from "../ui/label";
 import { Textarea } from "../ui/textarea";
-import { SettingsSection } from "./settingsLayout";
+import { SettingsSection, SettingsSectionBody } from "./settingsLayout";
 
 export function DoerContextEditor(props: {
   environmentId: EnvironmentId;
@@ -21,11 +21,17 @@ export function DoerContextEditor(props: {
 }) {
   const file = useProjectFileQuery(props.environmentId, props.cwd, props.relativePath, true);
   const directory = useProjectEntriesQuery(props.environmentId, props.cwd, "");
+  const sectionId = props.personal ? "personal-preferences" : "space-context";
+  const sectionTitle = props.personal ? "Personal preferences" : "About this Space";
   if (file.isPending && !file.data)
     return (
-      <p role="status" className="text-sm text-muted-foreground">
-        Loading saved details…
-      </p>
+      <SettingsSection id={sectionId} title={sectionTitle}>
+        <SettingsSectionBody>
+          <p role="status" className="max-w-prose text-sm text-muted-foreground">
+            Loading saved details…
+          </p>
+        </SettingsSectionBody>
+      </SettingsSection>
     );
   // File errors crossing the wire can lose the underlying ENOENT code. Confirm
   // absence through the complete folder listing rather than treating any read failure as empty.
@@ -35,22 +41,38 @@ export function DoerContextEditor(props: {
     !directory.data.truncated &&
     !directory.data.entries.some((entry) => entry.path === props.relativePath);
   if (file.error && directory.isPending && !directory.data)
-    return <p role="status">Loading saved details…</p>;
+    return (
+      <SettingsSection id={sectionId} title={sectionTitle}>
+        <SettingsSectionBody>
+          <p role="status" className="max-w-prose text-sm text-muted-foreground">
+            Loading saved details…
+          </p>
+        </SettingsSectionBody>
+      </SettingsSection>
+    );
   if (file.error && !missing)
     return (
-      <p role="alert" className="text-sm text-destructive">
-        Could not load your saved details. {file.error}
-      </p>
+      <SettingsSection id={sectionId} title={sectionTitle}>
+        <SettingsSectionBody>
+          <p role="alert" className="max-w-prose text-sm text-destructive">
+            Could not load your saved details. {file.error}
+          </p>
+        </SettingsSectionBody>
+      </SettingsSection>
     );
   let context = EMPTY_DOER_CONTEXT;
   try {
     if (file.data) context = parseDoerContext(file.data.contents);
   } catch {
     return (
-      <p role="alert" className="text-sm text-destructive">
-        Your saved details could not be read. Open the context file from Files to repair it; it has
-        been kept.
-      </p>
+      <SettingsSection id={sectionId} title={sectionTitle}>
+        <SettingsSectionBody>
+          <p role="alert" className="max-w-prose text-sm text-destructive">
+            Your saved details could not be read. Open the context file from Files to repair it; it
+            has been kept.
+          </p>
+        </SettingsSectionBody>
+      </SettingsSection>
     );
   }
   return (
@@ -125,74 +147,87 @@ function ContextForm(props: {
       id={props.personal ? "personal-preferences" : "space-context"}
       title={props.personal ? "Personal preferences" : "About this Space"}
     >
-      <p className="text-sm text-muted-foreground">
-        {props.personal
-          ? "Standing instructions used across your Spaces on the selected computer."
-          : "Standing instructions used for Tasks in this Space, including reminders."}{" "}
-        For individual facts Doer remembers ("What Doer remembers" below), add, correct, or forget
-        them there — editing here does not touch that list.
-      </p>
-      {(["about", "preferences", "remembered"] as const).map((field) => (
-        <div key={field} className="flex flex-col gap-1.5">
-          <Label htmlFor={`${prefix}-${field}`}>
-            {field === "about"
-              ? props.personal
-                ? "About you"
-                : "What is this Space for?"
-              : field === "preferences"
-                ? "Preferences"
-                : "Notes to always include"}
-          </Label>
-          <Textarea
-            id={`${prefix}-${field}`}
-            value={draft[field]}
-            rows={3}
-            maxLength={8000}
-            disabled={busy}
-            placeholder={
-              field === "about"
-                ? "Work reports, job search, family planning…"
+      <SettingsSectionBody>
+        {props.personal ? (
+          <>
+            <p className="max-w-prose text-sm text-muted-foreground">
+              Tell Doer how you like to work. These preferences apply to future Tasks; saved facts
+              below are separate.
+            </p>
+            <details className="max-w-prose text-xs text-muted-foreground">
+              <summary className="cursor-pointer">Where is this used?</summary>
+              <p className="pt-1">Used across your Spaces on the selected computer.</p>
+            </details>
+          </>
+        ) : (
+          <p className="max-w-prose text-sm text-muted-foreground">
+            Standing instructions used for Tasks in this Space, including reminders. For individual
+            facts Doer remembers ("What Doer remembers" below), add, correct, or forget them there —
+            editing here does not touch that list.
+          </p>
+        )}
+        {(["about", "preferences", "remembered"] as const).map((field) => (
+          <div key={field} className="flex max-w-prose flex-col gap-1.5">
+            <Label htmlFor={`${prefix}-${field}`}>
+              {field === "about"
+                ? props.personal
+                  ? "About you"
+                  : "What is this Space for?"
                 : field === "preferences"
-                  ? "Use rupees, concise summaries and my report template…"
-                  : "Preferred roles, locations, definitions or reference file names…"
-            }
-            onChange={(event) => setDraft({ ...draft, [field]: event.target.value })}
-          />
-        </div>
-      ))}
-      <p className="text-xs text-muted-foreground">
-        Keep passwords and sign-in codes out of saved details. Facts in an attached document are
-        used for that Task unless you choose to save them here.
-      </p>
-      <div className="flex gap-2">
-        <Button size="sm" disabled={busy || !changed} onClick={() => void save(draft)}>
-          {busy ? "Saving…" : "Save details"}
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={busy || !Object.values(draft).some(Boolean)}
-          onClick={() => void save(EMPTY_DOER_CONTEXT)}
-        >
-          Forget these details
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={busy || (!changed && !savedChanged)}
-          onClick={() => {
-            setDraft(props.initial);
-            setBaseline(props.initial);
-          }}
-        >
-          Discard changes
-        </Button>
-      </div>
-      {message ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          {message}
+                  ? "Preferences"
+                  : "Notes to always include"}
+            </Label>
+            <Textarea
+              id={`${prefix}-${field}`}
+              value={draft[field]}
+              rows={3}
+              maxLength={8000}
+              disabled={busy}
+              placeholder={
+                field === "about"
+                  ? "Work reports, job search, family planning…"
+                  : field === "preferences"
+                    ? "Use rupees, concise summaries and my report template…"
+                    : "Preferred roles, locations, definitions or reference file names…"
+              }
+              onChange={(event) => setDraft({ ...draft, [field]: event.target.value })}
+            />
+          </div>
+        ))}
+        <p className="max-w-prose text-xs text-muted-foreground">
+          Keep passwords and sign-in codes out of saved details. Facts in an attached document are
+          used for that Task unless you choose to save them here.
         </p>
-      ) : null}
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" disabled={busy || !changed} onClick={() => void save(draft)}>
+            {busy ? "Saving…" : "Save details"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy || !Object.values(draft).some(Boolean)}
+            onClick={() => void save(EMPTY_DOER_CONTEXT)}
+          >
+            Forget these details
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={busy || (!changed && !savedChanged)}
+            onClick={() => {
+              setDraft(props.initial);
+              setBaseline(props.initial);
+            }}
+          >
+            Discard changes
+          </Button>
+        </div>
+        {message ? (
+          <p role="status" className="max-w-prose text-sm text-muted-foreground">
+            {message}
+          </p>
+        ) : null}
+      </SettingsSectionBody>
     </SettingsSection>
   );
 }

@@ -4,6 +4,8 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 import { authenticateRawRouteWithScope } from "../http.ts";
+import { isEnabled as isExperimentalEnabled } from "../integrations/ExperimentalConnections.ts";
+import { EXPERIMENTAL_CONNECTIONS_COPY } from "@t3tools/shared/experimentalConnections";
 import { MicrosoftConnection } from "./MicrosoftConnection.ts";
 import { MicrosoftAccountError } from "./MicrosoftAccount.ts";
 
@@ -17,6 +19,17 @@ export const routeLayer = HttpRouter.add(
     const input = yield* request.json.pipe(
       Effect.flatMap(Schema.decodeUnknownEffect(MicrosoftAction)),
     );
+    // Status checks and disconnect stay available while the master switch is
+    // off; starting or finishing a connection does not.
+    if (
+      (input.action === "start" || input.action === "finish") &&
+      !(yield* isExperimentalEnabled)
+    ) {
+      return HttpServerResponse.jsonUnsafe(
+        { kind: "error", message: EXPERIMENTAL_CONNECTIONS_COPY.connectDenied },
+        { headers: { "cache-control": "no-store" } },
+      );
+    }
     const result = yield* Effect.tryPromise({
       try: async () => {
         if (input.action === "start")

@@ -1,7 +1,12 @@
 import JSZip from "jszip";
 import { describe, expect, it } from "vite-plus/test";
 import { parseSpreadsheet } from "@t3tools/shared/spreadsheetWorkbook";
-import { generateDocument, generatePresentation, generateSpreadsheet } from "./generate.ts";
+import {
+  generateDocument,
+  generatePresentation,
+  generateSpreadsheet,
+  validatePresentationInput,
+} from "./generate.ts";
 describe("bundled office outputs", () => {
   it("creates an editable Word file with actual headings and escaped source text", async () => {
     const zip = await JSZip.loadAsync(
@@ -55,5 +60,55 @@ describe("bundled office outputs", () => {
     ]);
     expect((await parseSpreadsheet(bytes)).rows[1]).toEqual(["Rent", "25000"]);
     expect((await parseSpreadsheet(bytes, 1)).activeSheetName).toBe("Sources");
+  });
+  it("rejects blank-only outputs instead of reporting success", async () => {
+    await expect(
+      generateDocument({ title: "Empty", sections: [{ heading: "  ", paragraphs: ["   "] }] }),
+    ).rejects.toThrow(/actual words/);
+    await expect(
+      generateSpreadsheet([
+        {
+          name: "Sheet1",
+          rows: [
+            ["  ", ""],
+            ["", " "],
+          ],
+        },
+      ]),
+    ).rejects.toThrow(/actual words or numbers/);
+    await expect(
+      generatePresentation({ title: "Deck", slides: [{ title: "Only a title", points: [] }] }),
+    ).rejects.toThrow(/titles alone/);
+  });
+  it("rejects overflow instead of producing unreadable files", async () => {
+    await expect(
+      generateDocument({
+        title: "Big",
+        sections: [{ heading: "S", paragraphs: ["x".repeat(8_001)] }],
+      }),
+    ).rejects.toThrow(/8,000/);
+    await expect(
+      generatePresentation({
+        title: "Deck",
+        slides: [{ title: "Crowded", points: Array.from({ length: 8 }, () => "y".repeat(200)) }],
+      }),
+    ).rejects.toThrow(/split crowded slides/);
+  });
+  it("bounds slide titles and allows title-only slides beside real content", () => {
+    expect(() =>
+      validatePresentationInput({
+        title: "Deck",
+        slides: [{ title: "z".repeat(121), points: ["Real point"] }],
+      }),
+    ).toThrow(/1 to 120/);
+    expect(() =>
+      validatePresentationInput({
+        title: "Deck",
+        slides: [
+          { title: "Section", points: [] },
+          { title: "Detail", points: ["Real point"], notes: "Source: supplied notes" },
+        ],
+      }),
+    ).not.toThrow();
   });
 });
