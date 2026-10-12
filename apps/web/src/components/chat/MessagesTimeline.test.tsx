@@ -22,7 +22,7 @@ import { createRoot } from "react-dom/client";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { shouldUseRestingComposerLayout } from "../composerFooterLayout";
 import { useComposerFocusState } from "./useComposerFocusState";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { LegendListRef } from "@legendapp/list/react";
 
 const activityTestState = vi.hoisted(() => ({
@@ -210,16 +210,19 @@ vi.mock("@pierre/diffs/react", () => {
   return { FileDiff: MockFileDiff };
 });
 
-function matchMedia() {
-  return {
+// Install the browser shim before module collection. Importing the timeline in
+// beforeAll charges its entire dependency graph to the setup-hook timeout on CI.
+const matchMedia = vi.hoisted(() => {
+  const matchMedia = () => ({
     matches: false,
     addEventListener: () => {},
     removeEventListener: () => {},
-  };
-}
+  });
+  Object.defineProperty(window, "matchMedia", { value: matchMedia, configurable: true });
+  return matchMedia;
+});
 
-let MessagesTimeline: typeof import("./MessagesTimeline").MessagesTimeline;
-let resolvePreviewAnnotationImage: typeof import("./MessagesTimeline").resolvePreviewAnnotationImage;
+import { MessagesTimeline } from "./MessagesTimeline";
 
 const ElementStub = class ElementStub {};
 function stubDomGlobals() {
@@ -260,10 +263,6 @@ function stubDomGlobals() {
 }
 
 beforeEach(stubDomGlobals);
-beforeAll(async () => {
-  Object.defineProperty(window, "matchMedia", { value: matchMedia, configurable: true });
-  ({ MessagesTimeline, resolvePreviewAnnotationImage } = await import("./MessagesTimeline"));
-}, 30_000);
 
 const ACTIVE_THREAD_ENVIRONMENT_ID = EnvironmentId.make("environment-local");
 const MESSAGE_CREATED_AT = "2026-03-17T19:12:28.000Z";
