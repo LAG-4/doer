@@ -40,7 +40,7 @@ const EMPTY_OVERRIDES: ProjectSettingsOverrides = {};
 
 // These connections belong to the host computer. Keep legacy override fields
 // readable on the wire, but never let them bypass the shared plugin switches.
-export const CONNECTED_TOOL_SETTING_KEYS = [
+const CONNECTED_TOOL_SETTING_KEYS = [
   "enableGmailAccess",
   "enableLocalSpreadsheetAccess",
   "enableLocalPresentationAccess",

@@ -1,15 +1,9 @@
-# T3 Code docs (LAG-4 normie fork)
-
-> Fork note: this repo is a separate normie product built on upstream T3 Code.
-> Product goal, cut/keep/add lists, and normie vocabulary live in `../AGENTS.md` at the top.
-> Keep `docs/user/` in the shipped product's voice (Spaces, This computer, History),
-> without git/terminal/branch/worktree jargon unless inside an Advanced section.
+# T3 Code docs
 
 ## Using T3 Code
 
 - [Install T3 Code](./user/install.md)
 - [Messages and context](./user/composer.md)
-- [Reminders](./user/reminders.md)
 - [Working with threads](./user/thread-sidebar.md)
 - [Permission modes](./user/permission-modes.md)
 - [Terminal history](./user/terminal.md)
@@ -18,15 +12,16 @@
 - [Appearance and themes](./user/appearance.md)
 - [Keyboard shortcuts](./user/keybindings.md)
 - [SnapShots](./user/snap-shot.md)
+- [Visual replies](./user/html-renders.md)
 - [Import browser sessions](./user/browser-import.md)
 - [Devices](./user/devices.md)
-- [Computer use](./user/computer-use.md)
 - [Usage and limits](./user/usage.md)
 - [Product usage data](./user/telemetry.md)
 - [Remote access](./user/remote-access.md)
+- [Outside agents (MCP)](./user/outside-agents.md)
 - [Running in the background](./user/background-service.md)
 - [Updating T3 Code](./user/updating.md)
-- Provider guides: [OpenCode](./user/providers-opencode.md) · [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md) · [Antigravity](./user/providers-antigravity.md)
+- Provider guides: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md) · [OpenCode](./user/providers-opencode.md) · [Antigravity](./user/providers-antigravity.md) · [Pi](./user/providers-pi.md) · [Muse Code](./user/providers-muse.md)
 
 ---
 
@@ -43,6 +38,7 @@ source alone does not explain. Most code changes do not need an internal documen
 - [Glossary](./internals/glossary.md)
 - [Connection runtime](./internals/connection-runtime.md)
 - [Providers](./internals/providers.md)
+- [Adding a provider](./internals/adding-a-provider.md)
 - [Pull request file revisions](./internals/pull-request-file-revisions.md)
 - [Model classification](./internals/model-manifest.md)
 - [Remote environments](./internals/remote.md)
@@ -56,7 +52,6 @@ source alone does not explain. Most code changes do not need an internal documen
 - [Mobile development lifecycle](./internals/mobile-development.md)
 - [Terminal runtime](./internals/terminal-runtime.md)
 - [Devices](./internals/devices.md)
-- [Computer use](./internals/computer-use.md)
 - [Voice input](./internals/voice-input.md)
 
 ### Runbooks

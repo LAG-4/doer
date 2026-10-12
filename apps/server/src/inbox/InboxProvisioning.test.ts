@@ -1,173 +1,53 @@
+import { it, expect } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { DEFAULT_CODEX_MODEL, ProjectId, ProviderInstanceId } from "@t3tools/contracts";
+import { ProjectId, type Project } from "@t3tools/contracts";
 import { HostProcessHomeDirectory } from "@t3tools/shared/hostProcess";
-import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
-import * as Ref from "effect/Ref";
-import * as Stream from "effect/Stream";
-
-import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEngine.ts";
-import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as ProjectService from "../project/ProjectService.ts";
 import { resolveInboxWelcomeTargets } from "./InboxProvisioning.ts";
-import { INBOX_PROJECT_TITLE } from "./InboxWorkspace.ts";
 
-/** Isolated real home per test: provisioning touches the real filesystem. */
-const makeTempHome = Effect.fn("InboxProvisioning.test.makeTempHome")(function* () {
-  const fileSystem = yield* FileSystem.FileSystem;
-  return yield* fileSystem.makeTempDirectoryScoped({ prefix: "doer-inbox-test" });
-});
-
-const unusedProjection = {
-  getUserInputActivity: () => Effect.die("unused"),
-  getThreadActivityPayload: () => Effect.die("unused"),
-  getCommandReadModel: () => Effect.die("unused"),
-  getSnapshot: () => Effect.die("unused"),
-  getShellSnapshot: () => Effect.die("unused"),
-  getArchivedShellSnapshot: () => Effect.die("unused"),
-  getSnapshotSequence: () => Effect.die("unused"),
-  getCounts: () => Effect.die("unused"),
-  getEventReplayStats: () => Effect.die("unused"),
-  getProjectShells: () => Effect.die("unused"),
-  getProjectShellById: () => Effect.die("unused"),
-  getFirstActiveThreadIdByProjectId: () => Effect.die("unused"),
-  getImportedAgentSessionSources: () => Effect.die("unused"),
-  getThreadCheckpointContext: () => Effect.succeed(Option.none()),
-  getFullThreadDiffContext: () => Effect.succeed(Option.none()),
-  listThreadsWithPullRequests: () => Effect.succeed([]),
-  listActivitiesByKind: () => Effect.succeed([]),
-  getThreadRuntimeContext: () => Effect.die("unused"),
-  getTurnStartMessage: () => Effect.die("unused"),
-  getThreadShellById: () => Effect.die("unused"),
-  getThreadDetailById: () => Effect.die("unused"),
-  getThreadDetailSnapshot: () => Effect.die("unused"),
-  searchThreads: () => Effect.succeed({ matches: [] }),
-  getDeletedWorktreeThreads: () => Effect.succeed([]),
-  getAutomationById: () => Effect.die("unused"),
-  listVisibleAutomations: () => Effect.die("unused"),
-  listDueAutomations: () => Effect.die("unused"),
-  listSettleCandidateAutomations: () => Effect.die("unused"),
-};
-
-const recordingEngine = (dispatchCalls: Ref.Ref<ReadonlyArray<Record<string, unknown>>>) =>
-  ({
-    readEvents: () => Stream.empty,
-    readThreadEvents: () => Stream.empty,
-    getThreadReplayStats: () => Effect.die("unused thread replay stats"),
-    dispatch: (command: Record<string, unknown>) =>
-      Ref.update(dispatchCalls, (calls) => [...calls, command]).pipe(Effect.as({ sequence: 1 })),
-    streamDomainEvents: Stream.empty,
-    subscribeDomainEvents: Effect.succeed(Stream.empty),
-    latestSequence: Effect.succeed(0),
-  }) satisfies OrchestrationEngine.OrchestrationEngineService["Service"];
-
-it.effect("reuses the existing inbox project without dispatching", () =>
+it.effect.each([true, false])("provisions the inbox, existing=%s", (exists) =>
   Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const fileSystem = yield* FileSystem.FileSystem;
-    const home = yield* makeTempHome();
-    const inboxProjectId = ProjectId.make("project-inbox");
-    const dispatchCalls = yield* Ref.make<ReadonlyArray<Record<string, unknown>>>([]);
-    const targets = yield* resolveInboxWelcomeTargets.pipe(
-      Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
-        ...unusedProjection,
-        getActiveProjectByWorkspaceRoot: (workspaceRoot: string) =>
-          Effect.succeed(
-            Option.some({
-              id: inboxProjectId,
-              title: INBOX_PROJECT_TITLE,
-              workspaceRoot,
-              defaultModelSelection: {
-                instanceId: ProviderInstanceId.make("codex"),
-                model: DEFAULT_CODEX_MODEL,
-              },
-              scripts: [],
-              createdAt: "2026-01-01T00:00:00.000Z",
-              updatedAt: "2026-01-01T00:00:00.000Z",
-              deletedAt: null,
+    const home = yield* fs.makeTempDirectoryScoped({ prefix: "doer-inbox-test-" });
+    const root = path.join(home, "Documents", "Doer");
+    const project: Project = {
+      id: ProjectId.make("inbox"),
+      title: "My Stuff",
+      workspaceRoot: root,
+      defaultModelSelection: null,
+      scripts: [],
+      createdAt: "2026-10-09T00:00:00.000Z",
+      updatedAt: "2026-10-09T00:00:00.000Z",
+      deletedAt: null,
+    };
+    let created = false;
+    const result = yield* resolveInboxWelcomeTargets.pipe(
+      Effect.provide(
+        Layer.mock(ProjectService.ProjectService)({
+          getByWorkspaceRoot: () => Effect.succeed(exists ? Option.some(project) : Option.none()),
+          bootstrap: (input) =>
+            Effect.sync(() => {
+              expect(input.workspaceRoot).toBe(root);
+              expect(input.createWorkspaceRootIfMissing).toBe(true);
+              created = true;
+              return { project, created: true };
             }),
-          ),
-      }),
-      Effect.provideService(
-        OrchestrationEngine.OrchestrationEngineService,
-        recordingEngine(dispatchCalls),
+        }),
       ),
       Effect.provideService(HostProcessHomeDirectory, home),
     );
-
-    assert.deepStrictEqual(targets, {
-      inboxProjectId,
-      inboxProjectCreated: false,
-      inboxWorkspaceRoot: path.join(home, "Documents", "Doer"),
+    expect(result).toEqual({
+      inboxProjectId: project.id,
+      inboxProjectCreated: !exists,
+      inboxWorkspaceRoot: root,
     });
-    assert.deepStrictEqual(yield* Ref.get(dispatchCalls), []);
-    // Pre-existing records self-repair: the directory lands either way.
-    assert.equal((yield* fileSystem.stat(path.join(home, "Documents", "Doer"))).type, "Directory");
-  }).pipe(Effect.provide(NodeServices.layer)),
-);
-
-it.effect("creates the inbox project including its directory", () =>
-  Effect.gen(function* () {
-    const path = yield* Path.Path;
-    const fileSystem = yield* FileSystem.FileSystem;
-    const home = yield* makeTempHome();
-    assert.isFalse(
-      yield* fileSystem.stat(path.join(home, "Documents", "Doer")).pipe(
-        Effect.as(true),
-        Effect.orElseSucceed(() => false),
-      ),
-    );
-    const dispatchCalls = yield* Ref.make<ReadonlyArray<Record<string, unknown>>>([]);
-    const targets = yield* resolveInboxWelcomeTargets.pipe(
-      Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
-        ...unusedProjection,
-        getActiveProjectByWorkspaceRoot: () => Effect.succeed(Option.none()),
-      }),
-      Effect.provideService(
-        OrchestrationEngine.OrchestrationEngineService,
-        recordingEngine(dispatchCalls),
-      ),
-      Effect.provideService(HostProcessHomeDirectory, home),
-    );
-
-    if (!("inboxProjectId" in targets)) {
-      assert.fail("expected inbox targets when creation succeeds");
-    }
-    assert.equal(targets.inboxProjectCreated, true);
-    const calls = yield* Ref.get(dispatchCalls);
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0]?.["type"], "project.create");
-    assert.equal(calls[0]?.["title"], INBOX_PROJECT_TITLE);
-    assert.equal(calls[0]?.["workspaceRoot"], path.join(home, "Documents", "Doer"));
-    assert.equal(calls[0]?.["createWorkspaceRootIfMissing"], true);
-    assert.equal(calls[0]?.["projectId"], targets.inboxProjectId);
-    assert.equal(targets.inboxWorkspaceRoot, path.join(home, "Documents", "Doer"));
-    assert.equal((yield* fileSystem.stat(path.join(home, "Documents", "Doer"))).type, "Directory");
-  }).pipe(Effect.provide(NodeServices.layer)),
-);
-
-it.effect("degrades to no inbox when creation fails", () =>
-  Effect.gen(function* () {
-    const home = yield* makeTempHome();
-    const targets = yield* resolveInboxWelcomeTargets.pipe(
-      Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
-        ...unusedProjection,
-        getActiveProjectByWorkspaceRoot: () => Effect.succeed(Option.none()),
-      }),
-      Effect.provideService(OrchestrationEngine.OrchestrationEngineService, {
-        readEvents: () => Stream.empty,
-        readThreadEvents: () => Stream.empty,
-        getThreadReplayStats: () => Effect.die("unused thread replay stats"),
-        dispatch: () => Effect.die(new Error("store unavailable")),
-        streamDomainEvents: Stream.empty,
-        subscribeDomainEvents: Effect.succeed(Stream.empty),
-        latestSequence: Effect.succeed(0),
-      } satisfies OrchestrationEngine.OrchestrationEngineService["Service"]),
-      Effect.provideService(HostProcessHomeDirectory, home),
-    );
-
-    assert.deepStrictEqual(targets, {});
+    expect(created).toBe(!exists);
+    expect((yield* fs.stat(root)).type).toBe("Directory");
   }).pipe(Effect.provide(NodeServices.layer)),
 );

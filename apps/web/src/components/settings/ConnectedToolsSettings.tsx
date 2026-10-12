@@ -41,9 +41,8 @@ function ConnectedToolsControls({ connectionsVisible }: { connectionsVisible: bo
     savingRef.current = true;
     setSaving(true);
     try {
-      if (await update({ [key]: value })) {
-        if (key === "enableGmailAccess") setRequestConnection(value);
-      }
+      await update({ [key]: value });
+      if (key === "enableGmailAccess") setRequestConnection(value);
     } finally {
       savingRef.current = false;
       setSaving(false);

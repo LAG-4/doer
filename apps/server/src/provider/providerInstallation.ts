@@ -12,17 +12,13 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
-import { CodexInstallation, type CodexInstallationError } from "./CodexInstallation.ts";
-import { ProviderCliInstallation, supportsCliInstallation } from "./ProviderCliInstallation.ts";
-import { ServerSettingsService } from "../serverSettings.ts";
-import {
-  AntigravityInstallation,
-  type AntigravityInstallationError,
-} from "./AntigravityInstallation.ts";
-import { deriveProviderInstanceConfigMap } from "./Layers/ProviderInstanceRegistryHydration.ts";
-import { ProviderInstanceRegistry } from "./Services/ProviderInstanceRegistry.ts";
-import { ProviderRegistry } from "./Services/ProviderRegistry.ts";
-import { mergeProviderInstanceEnvironment } from "./ProviderInstanceEnvironment.ts";
+import * as CodexInstallation from "./CodexInstallation.ts";
+import * as ServerSettings from "../serverSettings.ts";
+import * as AntigravityInstallation from "./AntigravityInstallation.ts";
+import { deriveProviderInstanceConfigMap } from "./ProviderInstanceRegistryHydration.ts";
+import * as ProviderInstanceRegistry from "./ProviderInstanceRegistry.ts";
+import * as ProviderRegistry from "./ProviderRegistry.ts";
+import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
 
 const ANTIGRAVITY = ProviderDriverKind.make("antigravity");
 const hasBinaryPath = Schema.is(Schema.Struct({ binaryPath: Schema.String }));
@@ -31,12 +27,11 @@ const decodeAntigravitySettings = Schema.decodeUnknownEffect(AntigravitySettings
 
 /** Route instance setup to the environment-owned installer without owning the download. */
 export const makeProviderInstallation = Effect.fn("makeProviderInstallation")(function* () {
-  const antigravityInstallation = yield* AntigravityInstallation;
-  const codexInstallation = yield* CodexInstallation;
-  const cliInstallation = yield* ProviderCliInstallation;
-  const instances = yield* ProviderInstanceRegistry;
-  const providers = yield* ProviderRegistry;
-  const settings = yield* ServerSettingsService;
+  const antigravityInstallation = yield* AntigravityInstallation.AntigravityInstallation;
+  const codexInstallation = yield* CodexInstallation.CodexInstallation;
+  const instances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
+  const providers = yield* ProviderRegistry.ProviderRegistry;
+  const settings = yield* ServerSettings.ServerSettingsService;
 
   const readEntries = Effect.fn("ProviderInstallation.readEntries")(function* (
     instanceId: ProviderInstanceId,
@@ -96,7 +91,7 @@ export const makeProviderInstallation = Effect.fn("makeProviderInstallation")(fu
         instanceId,
         operation,
         detail:
-          "This instance uses a custom executable. Clear its binary path to manage installation in Doer.",
+          "This instance uses a custom executable. Clear its binary path to manage installation in T3 Code.",
       });
     }
     return { installation, driver: instance.driverKind };
@@ -104,14 +99,14 @@ export const makeProviderInstallation = Effect.fn("makeProviderInstallation")(fu
 
   const failure =
     (instanceId: ProviderInstanceId) =>
-    (error: AntigravityInstallationError | CodexInstallationError) =>
+    (
+      error:
+        | AntigravityInstallation.AntigravityInstallationError
+        | CodexInstallation.CodexInstallationError,
+    ) =>
       new ProviderSetupError({ instanceId, operation: error.operation, detail: error.detail });
 
   const start = Effect.fn("ProviderInstallation.start")(function* (input: ProviderSetupInput) {
-    const instance = yield* instances.getInstance(input.instanceId);
-    if (instance && supportsCliInstallation(instance.driverKind)) {
-      return yield* cliInstallation.start(input.instanceId, instance.driverKind);
-    }
     const { installation } = yield* requireInstance(input.instanceId, "install", true);
     return yield* installation.start.pipe(Effect.mapError(failure(input.instanceId)));
   });
@@ -119,10 +114,6 @@ export const makeProviderInstallation = Effect.fn("makeProviderInstallation")(fu
   const cancel = Effect.fn("ProviderInstallation.cancel")(function* (
     input: ProviderInstallCancelInput,
   ) {
-    const instance = yield* instances.getInstance(input.instanceId);
-    if (instance && supportsCliInstallation(instance.driverKind)) {
-      return yield* cliInstallation.cancel(input.instanceId, input.operationId);
-    }
     const { installation } = yield* requireInstance(input.instanceId, "cancel-install");
     return yield* installation
       .cancel(input.operationId)
@@ -131,14 +122,9 @@ export const makeProviderInstallation = Effect.fn("makeProviderInstallation")(fu
 
   const subscribe = (input: ProviderSetupInput) =>
     Stream.unwrap(
-      Effect.gen(function* () {
-        const instance = yield* instances.getInstance(input.instanceId);
-        if (instance && supportsCliInstallation(instance.driverKind)) {
-          return cliInstallation.changes(input.instanceId, instance.driverKind);
-        }
-        const { installation } = yield* requireInstance(input.instanceId, "observe-install");
-        return installation.changes;
-      }),
+      requireInstance(input.instanceId, "observe-install").pipe(
+        Effect.map(({ installation }) => installation.changes),
+      ),
     );
 
   const remove = Effect.fn("ProviderInstallation.remove")(function* (input: ProviderSetupInput) {

@@ -1,9 +1,7 @@
 import {
-  AutomationId,
   EnvironmentId,
   ProjectId,
   ThreadId,
-  type ScopedAutomationRef,
   type ScopedProjectRef,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
@@ -66,10 +64,6 @@ export function threadKey(ref: ScopedThreadRef): string {
   return `${ref.environmentId}\u0000${ref.threadId}`;
 }
 
-export function automationKey(ref: ScopedAutomationRef): string {
-  return `${ref.environmentId}\u0000${ref.automationId}`;
-}
-
 export function projectRefCollectionKey(refs: ReadonlyArray<ScopedProjectRef>): string {
   return JSON.stringify(refs.map((ref) => [ref.environmentId, ref.projectId]));
 }
@@ -109,17 +103,6 @@ export function parseThreadKey(key: string): ScopedThreadRef {
   };
 }
 
-export function parseAutomationKey(key: string): ScopedAutomationRef {
-  const separator = key.indexOf("\u0000");
-  if (separator < 0) {
-    throw new InvalidScopedAutomationKeyError({ key });
-  }
-  return {
-    environmentId: EnvironmentId.make(key.slice(0, separator)),
-    automationId: AutomationId.make(key.slice(separator + 1)),
-  };
-}
-
 export function projectRefsEqual(
   left: ReadonlyArray<ScopedProjectRef>,
   right: ReadonlyArray<ScopedProjectRef>,
@@ -144,20 +127,6 @@ export function threadRefsEqual(
       (ref, index) =>
         ref.environmentId === right[index]?.environmentId &&
         ref.threadId === right[index]?.threadId,
-    )
-  );
-}
-
-export function automationRefsEqual(
-  left: ReadonlyArray<ScopedAutomationRef>,
-  right: ReadonlyArray<ScopedAutomationRef>,
-): boolean {
-  return (
-    left.length === right.length &&
-    left.every(
-      (ref, index) =>
-        ref.environmentId === right[index]?.environmentId &&
-        ref.automationId === right[index]?.automationId,
     )
   );
 }

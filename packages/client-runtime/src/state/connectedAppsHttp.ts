@@ -9,14 +9,14 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import { HttpClient, HttpClientRequest } from "effect/unstable/http";
+import { HttpClient, HttpClientRequest } from "effect/http";
 import { ManagedRelayDpopSigner } from "../relay/managedRelay.ts";
 import { RemoteEnvironmentAuthorization } from "../authorization/service.ts";
 import type { PreparedConnection } from "../connection/model.ts";
 import { executeAuthenticatedEnvironmentHttpRequest } from "./environmentHttpAuth.ts";
 import {
   makeEnvironmentHttpApiUrlBuilder,
-  remoteHttpClientLayer,
+  layerRemoteHttpClient,
   type RemoteEnvironmentRequestError,
 } from "../rpc/http.ts";
 
@@ -108,7 +108,7 @@ export const connectedAppsHttpLayer = Layer.effect(
             ),
         }).pipe(
           Effect.provide(
-            remoteHttpClientLayer((input, init) =>
+            layerRemoteHttpClient((input, init) =>
               globalThis.fetch(input, { ...init, credentials: "include" }),
             ),
           ),
@@ -139,7 +139,7 @@ export const connectedAppsHttpLayer = Layer.effect(
             ),
         }).pipe(
           Effect.provide(
-            remoteHttpClientLayer((input, init) =>
+            layerRemoteHttpClient((input, init) =>
               globalThis.fetch(input, { ...init, credentials: "include" }),
             ),
           ),
@@ -170,7 +170,7 @@ export const connectedAppsHttpLayer = Layer.effect(
             ),
         }).pipe(
           Effect.provide(
-            remoteHttpClientLayer((input, init) =>
+            layerRemoteHttpClient((input, init) =>
               globalThis.fetch(input, { ...init, credentials: "include" }),
             ),
           ),
@@ -210,7 +210,7 @@ export const connectedAppsHttpLayer = Layer.effect(
             }),
         }).pipe(
           Effect.provide(
-            remoteHttpClientLayer((input, init) =>
+            layerRemoteHttpClient((input, init) =>
               globalThis.fetch(input, { ...init, credentials: "include" }),
             ),
           ),

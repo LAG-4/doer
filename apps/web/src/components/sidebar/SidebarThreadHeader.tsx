@@ -1,3 +1,4 @@
+import { useClientSettings } from "~/hooks/useSettings";
 /**
  * The sidebar header: one row holding search, project scope and new thread.
  *
@@ -73,9 +74,11 @@ export function SidebarThreadHeader({
   // list; pointing aria-activedescendant at a removed option strands the
   // screen reader on nothing.
   const activeResultExists = resultsVisible && activeSearchResultIndex < searchResultCount;
+  const simple = useClientSettings((s) => s.simpleModeEnabled);
+  const taskWord = simple ? "Task" : "thread";
   const newThreadLabel = newThreadShortcutLabel
-    ? `New Task (${newThreadShortcutLabel})`
-    : "New Task";
+    ? `New ${taskWord} (${newThreadShortcutLabel})`
+    : `New ${taskWord}`;
 
   return (
     <div className="flex items-center gap-1">
@@ -92,7 +95,7 @@ export function SidebarThreadHeader({
           onChange={(event) => onSearchQueryChange(event.currentTarget.value)}
           onKeyDown={onSearchKeyDown}
           placeholder="Search"
-          aria-label="Search Tasks"
+          aria-label={simple ? "Search Tasks" : "Search threads"}
           role="combobox"
           aria-autocomplete="list"
           aria-expanded={resultsVisible}
@@ -110,7 +113,7 @@ export function SidebarThreadHeader({
             size="icon-micro"
             variant="ghost-muted"
             className="shrink-0"
-            aria-label="Clear Task search"
+            aria-label={simple ? "Clear Task search" : "Clear thread search"}
             onClick={() => {
               onClearSearch();
               searchInputRef.current?.focus();
@@ -127,19 +130,24 @@ export function SidebarThreadHeader({
         {hasProjects ? (
           <>
             {projectScope}
-            <SidebarHeaderIconButton label="New Space" onClick={onNewProject}>
+            <SidebarHeaderIconButton
+              label={simple ? "New Space" : "Add project"}
+              onClick={onNewProject}
+            >
               <FolderPlusIcon />
             </SidebarHeaderIconButton>
           </>
         ) : null}
         <SidebarHeaderIconButton
-          label="New Task"
+          label={simple ? "New Task" : "New thread"}
           tooltip={
             showNewThreadInProjectHint ? (
               <span className="flex flex-col gap-0.5">
                 <span>{newThreadLabel}</span>
                 <span className="text-muted-foreground">
-                  New Task in current Space: Shift+click
+                  {simple
+                    ? "New Task in current Space: Shift+click"
+                    : "New thread in current project: Shift+click"}
                   {newThreadInProjectShortcutLabel ? ` (${newThreadInProjectShortcutLabel})` : ""}
                 </span>
               </span>

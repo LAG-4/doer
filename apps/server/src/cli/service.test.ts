@@ -7,7 +7,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Terminal from "effect/Terminal";
-import { Command } from "effect/unstable/cli";
+import { Command } from "effect/cli";
 import { afterEach, vi } from "vite-plus/test";
 
 import packageJson from "../../package.json" with { type: "json" };
@@ -26,7 +26,7 @@ const status = {
   supported: true,
   installed: true,
   current: true,
-  unitPath: "/home/me/.config/systemd/user/doer.service",
+  unitPath: "/home/me/.config/systemd/user/t3code.service",
   logPath: "/home/me/.t3/userdata/logs/boot-service.log",
 } as const;
 
@@ -36,7 +36,7 @@ it("reports the installed service version and host paths", () => {
     [
       "Doer service",
       "  Status: installed · @lag4/doer-cli@0.0.29",
-      "  Unit: /home/me/.config/systemd/user/doer.service",
+      "  Unit: /home/me/.config/systemd/user/t3code.service",
       "  Logs: /home/me/.t3/userdata/logs/boot-service.log",
     ].join("\n"),
   );
@@ -64,17 +64,17 @@ it("explains an incomplete nightly installation and keeps repair on its installe
   expect(output).toContain("last login session ends");
   expect(output).toContain('sudo loginctl enable-linger "$(id -un)"');
   expect(output).toContain("[service-stopped]");
-  expect(output).toContain("npx @lag4/doer-cli@0.0.32-nightly.1 service update");
-  expect(output).not.toContain("@lag4/doer-cli@latest");
+  expect(output).toContain("Run `npx @lag4/doer-cli@0.0.32-nightly.1 service update`.");
+  expect(output).not.toContain("npx t3");
 });
 
-it("points an older service at a repair, never at npx", () => {
+it("repairs an older service with the current CLI package", () => {
   const output = formatServiceStatus(
     { ...status, current: false, installedVersion: "0.0.28" },
     "0.0.29",
   );
-  expect(output).toContain("npx @lag4/doer-cli@0.0.29 service update");
-  expect(output).not.toContain("npx @lag4/doer-cli@0.0.28 service update");
+  expect(output).toContain("Run `npx @lag4/doer-cli@0.0.29 service update`.");
+  expect(output).not.toContain("npx t3");
 });
 
 it("explains where the service is supported", () => {
@@ -95,7 +95,7 @@ it("reports a newer installed service and tells the CLI to catch up to it", () =
     "@lag4/doer-cli@0.0.32-nightly.1 (newer than this @lag4/doer-cli@0.0.31 CLI)",
   );
   assert.include(output, "npx @lag4/doer-cli@0.0.32-nightly.1 service update");
-  assert.notInclude(output, "npx @lag4/doer-cli@latest service update");
+  assert.notInclude(output, "npx t3");
 });
 
 const newerServiceStatus = { ...status, current: false, installedVersion: "999.0.0" };

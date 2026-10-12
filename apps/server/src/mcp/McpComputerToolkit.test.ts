@@ -1,9 +1,11 @@
+import * as McpToolAccessTestkit from "./McpToolAccess.testkit.ts";
+import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import { expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { McpSchema, McpServer } from "effect/unstable/ai";
+import { McpSchema, McpServer } from "effect/ai";
 
 import * as ServerConfig from "../config.ts";
 import * as ComputerService from "../computer/ComputerService.ts";
@@ -14,9 +16,13 @@ const environmentId = EnvironmentId.make("environment-computer-test");
 const threadId = ThreadId.make("thread-computer-test");
 const invocation = (capabilities: ReadonlyArray<McpInvocationContext.McpCapability>) => ({
   environmentId,
-  threadId,
-  providerSessionId: "provider-session-computer-test",
-  providerInstanceId: ProviderInstanceId.make("codex"),
+  requestNamespace: "test",
+  client: undefined,
+  thread: {
+    threadId,
+    providerSessionId: "provider-session-computer-test",
+    providerInstanceId: ProviderInstanceId.make("codex"),
+  },
   capabilities: new Set(capabilities),
   issuedAt: 1,
 });
@@ -67,6 +73,7 @@ const ComputerServiceMock = Layer.mock(ComputerService.ComputerService)({
 const TestLayer = McpHttpServer.ComputerToolkitRegistrationLive.pipe(
   Layer.provideMerge(McpServer.McpServer.layer),
   Layer.provideMerge(ComputerServiceMock),
+  Layer.provideMerge(McpToolAccessTestkit.liveThreadsLayer),
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-computer-toolkit-test-" })),
   Layer.provide(NodeServices.layer),
 );
@@ -151,6 +158,7 @@ it.effect("surfaces the approval failure when the app is not approved", () => {
       McpHttpServer.ComputerToolkitRegistrationLive.pipe(
         Layer.provideMerge(McpServer.McpServer.layer),
         Layer.provide(unapproved),
+        Layer.provide(McpToolAccessTestkit.liveThreadsLayer),
         Layer.provide(NodeServices.layer),
       ),
     ),

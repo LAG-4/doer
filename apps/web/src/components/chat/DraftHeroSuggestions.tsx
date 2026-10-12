@@ -182,7 +182,7 @@ export function DraftHeroSuggestions({
 
   return (
     <>
-      {visible ? (
+      {visible && simpleMode ? (
         <div className="pointer-events-auto mx-auto w-full max-w-3xl pt-4">
           <p className="mb-3 text-center text-sm text-muted-foreground">
             Choose a guided Task, or type your own above.

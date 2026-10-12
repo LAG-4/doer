@@ -1,3 +1,5 @@
+import { isAdvancedPanel } from "~/simpleMode";
+import { useClientSettings } from "~/hooks/useSettings";
 import { pullRequestHostOf, type SourceControlProviderKind } from "@t3tools/contracts";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { useProjects, useServerConfigs, useThreadShells } from "~/state/entities";
@@ -11,10 +13,10 @@ import type {
   PreviewSessionSnapshot,
   ProjectId,
   PullRequestState,
+  ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import {
-  Bot,
   Smartphone,
   ChevronDown,
   ChevronLeft,
@@ -24,9 +26,8 @@ import {
   Globe2,
   Plus,
   TerminalSquare,
-  Volume2,
-  VolumeOff,
 } from "lucide-react";
+import { Volume2, VolumeOff } from "lucide";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
@@ -34,6 +35,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useEffectEvent,
   useMemo,
   useRef,
   useState,
@@ -43,8 +45,10 @@ import { isElectron } from "~/env";
 import type { DesktopPreviewOverlay } from "~/previewStateStore";
 import type { RightPanelSurface } from "~/rightPanelStore";
 import { cn } from "~/lib/utils";
+import { resolveShortcutCommand, type ShortcutMatchContext } from "~/keybindings";
 import { readLocalApi } from "~/localApi";
 import { Button } from "~/components/ui/button";
+import { MorphIcon } from "~/components/MorphIcon";
 import { AndroidIcon, AppleIcon } from "~/components/Icons";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { Kbd } from "~/components/ui/kbd";
@@ -63,8 +67,8 @@ import { ScrollArea } from "~/components/ui/scroll-area";
 import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
 import { faviconUrlForOrigin } from "~/lib/favicon";
 import { useTheme } from "~/hooks/useTheme";
-import { useClientSettings } from "~/hooks/useSettings";
 import { useDeviceState } from "~/state/device";
+import type { PreviewPanelInlineSize } from "~/hooks/usePreviewPanelInlineSize";
 import {
   newestPullRequestSummary,
   pullRequestEnvironment,
@@ -84,10 +88,13 @@ interface RightPanelTabsProps {
   mode: PreviewPanelMode;
   maximized?: boolean;
   open?: boolean;
+  keybindings: ResolvedKeybindingsConfig;
+  getShortcutContext: () => ShortcutMatchContext;
   /** Forwarded to PreviewPanelShell so this surface persists its own width. */
   widthStorageKey?: string;
   /** Forwarded to PreviewPanelShell as the initial width before a user resize. */
   defaultWidth?: number;
+  inlineSize?: PreviewPanelInlineSize;
   layoutControls?: ReactNode;
   surfaces: readonly RightPanelSurface[];
   /** Fallback environment for surfaces that do not carry their own. */
@@ -122,7 +129,6 @@ interface RightPanelTabsProps {
   onAddFiles: () => void;
   onAddPullRequest: () => void;
   onAddPullRequests: () => void;
-  onAddAgents: () => void;
   onAddDevice: () => void;
   browserAvailable: boolean;
   terminalAvailable: boolean;
@@ -130,11 +136,8 @@ interface RightPanelTabsProps {
   filesAvailable: boolean;
   pullRequestAvailable: boolean;
   pullRequestsAvailable: boolean;
-  agentsAvailable: boolean;
   deviceAvailable: boolean;
   pullRequestStatusSeeds?: Readonly<Record<string, PullRequestTabStatusSeed>>;
-  /** Running + waiting subagents; badges the Agents card in the empty state. */
-  liveAgentCount: number;
   children: ReactNode;
 }
 
@@ -155,13 +158,12 @@ export function shouldOpenDefaultBrowserProfileFromMenuClick(
 }
 
 const SURFACE_DISABLED_REASONS = {
-  browser: "Browser previews are only available in the Doer desktop app.",
+  browser: "Browser previews are only available in the T3 Code desktop app.",
   terminal: "Terminal surfaces are only available from a project thread.",
   files: "Files are only available when a project is open.",
   diff: "Diff is only available for server threads in Git repositories.",
   pullRequest: "This thread's branch has no pull request yet.",
   pullRequests: "No linked pull requests are available for this thread.",
-  agents: "Agents are only available from a thread.",
   device: "Devices are only available from a thread.",
 } as const;
 
@@ -185,24 +187,8 @@ const SURFACE_UNAVAILABLE_HINTS = {
   diff: "Available for Git repositories.",
   pullRequest: "No pull request on this branch yet.",
   pullRequests: "No linked pull requests available.",
-  agents: "Available from a thread.",
   device: "Available from a thread.",
 } as const;
-
-/**
- * Simple mode hides the dev/git-centric launcher entries (Terminal, Diff,
- * Pull request, Linked pull requests). Keyed by shortcut so the empty-state
- * list and the "+" menu stay in sync.
- */
-const SIMPLE_MODE_HIDDEN_SURFACE_SHORTCUTS: ReadonlySet<string> = new Set(["T", "D", "P", "L"]);
-
-export function filterSimpleModeSurfaceActions<Action extends { shortcut: string }>(
-  actions: readonly Action[],
-  simpleModeEnabled: boolean,
-): readonly Action[] {
-  if (!simpleModeEnabled) return actions;
-  return actions.filter((action) => !SIMPLE_MODE_HIDDEN_SURFACE_SHORTCUTS.has(action.shortcut));
-}
 
 type TabContextMenuAction =
   | "rename"
@@ -340,7 +326,6 @@ function RightPanelEmptyState(props: {
   onAddFiles: () => void;
   onAddPullRequest: () => void;
   onAddPullRequests: () => void;
-  onAddAgents: () => void;
   onAddDevice: () => void;
   browserAvailable: boolean;
   terminalAvailable: boolean;
@@ -348,96 +333,80 @@ function RightPanelEmptyState(props: {
   filesAvailable: boolean;
   pullRequestAvailable: boolean;
   pullRequestsAvailable: boolean;
-  agentsAvailable: boolean;
   deviceAvailable: boolean;
-  liveAgentCount: number;
 }) {
   // -1 means no highlight: it only appears on hover or arrow use.
   const [highlight, setHighlight] = useState(-1);
-  const simpleModeEnabled = useClientSettings((settings) => settings.simpleModeEnabled);
+  const simpleMode = useClientSettings((s) => s.simpleModeEnabled);
 
-  const actions = filterSimpleModeSurfaceActions(
-    [
-      {
-        label: "Browser",
-        icon: Globe2,
-        shortcut: "B",
-        available: props.browserAvailable,
-        disabledReason: SURFACE_UNAVAILABLE_HINTS.browser,
-        onClick: props.onAddBrowser,
-        badgeCount: 0,
-      },
-      {
-        label: "Terminal",
-        icon: TerminalSquare,
-        shortcut: "T",
-        available: props.terminalAvailable,
-        disabledReason: SURFACE_UNAVAILABLE_HINTS.terminal,
-        onClick: props.onAddTerminal,
-        badgeCount: 0,
-      },
-      {
-        label: "Files",
-        icon: Files,
-        shortcut: "F",
-        available: props.filesAvailable,
-        disabledReason: SURFACE_UNAVAILABLE_HINTS.files,
-        onClick: props.onAddFiles,
-        badgeCount: 0,
-      },
-      {
-        label: "Diff",
-        icon: FileDiff,
-        shortcut: "D",
-        available: props.diffAvailable,
-        disabledReason: SURFACE_UNAVAILABLE_HINTS.diff,
-        onClick: props.onAddDiff,
-        badgeCount: 0,
-      },
-      {
-        label: "Pull request",
-        icon: PullRequestGlyph.pullRequest,
-        shortcut: "P",
-        available: props.pullRequestAvailable,
-        disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequest,
-        onClick: props.onAddPullRequest,
-        badgeCount: 0,
-      },
-      {
-        label: "Linked pull requests",
-        icon: PullRequestGlyph.link,
-        shortcut: "L",
-        available: props.pullRequestsAvailable,
-        disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequests,
-        onClick: props.onAddPullRequests,
-        badgeCount: 0,
-      },
-      {
-        label: "Agents",
-        icon: Bot,
-        shortcut: "A",
-        available: props.agentsAvailable,
-        disabledReason: SURFACE_UNAVAILABLE_HINTS.agents,
-        onClick: props.onAddAgents,
-        badgeCount: props.liveAgentCount,
-      },
-      {
-        label: "Device",
-        description: "Watch an iOS Simulator or Android Emulator.",
-        icon: Smartphone,
-        shortcut: "M",
-        available: props.deviceAvailable,
-        disabledReason: SURFACE_UNAVAILABLE_HINTS.device,
-        onClick: props.onAddDevice,
-        badgeCount: 0,
-      },
-    ] as const,
-    simpleModeEnabled,
-  );
+  const actions = [
+    {
+      label: "Browser",
+      icon: Globe2,
+      shortcut: "B",
+      available: props.browserAvailable,
+      disabledReason: SURFACE_UNAVAILABLE_HINTS.browser,
+      onClick: props.onAddBrowser,
+    },
+    {
+      label: "Terminal",
+      icon: TerminalSquare,
+      shortcut: "T",
+      available: props.terminalAvailable,
+      disabledReason: SURFACE_UNAVAILABLE_HINTS.terminal,
+      onClick: props.onAddTerminal,
+    },
+    {
+      label: "Files",
+      icon: Files,
+      shortcut: "F",
+      available: props.filesAvailable,
+      disabledReason: SURFACE_UNAVAILABLE_HINTS.files,
+      onClick: props.onAddFiles,
+    },
+    {
+      label: "Diff",
+      icon: FileDiff,
+      shortcut: "D",
+      available: props.diffAvailable,
+      disabledReason: SURFACE_UNAVAILABLE_HINTS.diff,
+      onClick: props.onAddDiff,
+    },
+    {
+      label: "Pull request",
+      icon: PullRequestGlyph.pullRequest,
+      shortcut: "P",
+      available: props.pullRequestAvailable,
+      disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequest,
+      onClick: props.onAddPullRequest,
+    },
+    {
+      label: "Linked pull requests",
+      icon: PullRequestGlyph.link,
+      shortcut: "L",
+      available: props.pullRequestsAvailable,
+      disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequests,
+      onClick: props.onAddPullRequests,
+    },
+    {
+      label: "Device",
+      description: "Watch an iOS Simulator or Android Emulator.",
+      icon: Smartphone,
+      shortcut: "M",
+      available: props.deviceAvailable,
+      disabledReason: SURFACE_UNAVAILABLE_HINTS.device,
+      onClick: props.onAddDevice,
+    },
+  ] as const;
+  const visibleActions = simpleMode
+    ? actions.filter(
+        (a) => !["Terminal", "Diff", "Pull request", "Linked pull requests"].includes(a.label),
+      )
+    : actions;
 
   type SurfaceAction = (typeof actions)[number];
 
-  const availableActions = actions.filter((action) => action.available);
+  const availableActions = visibleActions.filter((action) => action.available);
   const highlightIndex =
     availableActions.length === 0 ? -1 : Math.min(highlight, availableActions.length - 1);
 
@@ -454,7 +423,8 @@ function RightPanelEmptyState(props: {
       const action = surfaceShortcutActionForKey(shortcutActionsRef.current, event);
       if (!action) return;
       if (document.querySelector(LAUNCHER_SHORTCUT_BLOCKING_LAYERS)) return;
-      const target = event.target;
+      // The composed path starts at the real target, which may sit inside a shadow root.
+      const target = event.composedPath()[0] ?? event.target;
       if (target instanceof Element && surfaceShortcutTargetsTypingContext(target)) return;
       event.preventDefault();
       event.stopPropagation();
@@ -505,14 +475,6 @@ function RightPanelEmptyState(props: {
     return (
       <span className="relative inline-flex shrink-0">
         <Icon className={iconClassName} />
-        {action.badgeCount > 0 ? (
-          <span
-            aria-hidden
-            className="absolute -top-1.5 -right-2 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-info px-1 text-3xs font-semibold tabular-nums text-white"
-          >
-            {action.badgeCount}
-          </span>
-        ) : null}
       </span>
     );
   };
@@ -525,7 +487,7 @@ function RightPanelEmptyState(props: {
       aria-label="Open a surface"
       data-surface-launcher-keys={availableActions.map((action) => action.shortcut).join("")}
       className={cn(
-        "flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 outline-none",
+        "scrollbar-gutter-both flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 outline-none",
         // The panel topbar sits above this container; matching bottom padding
         // keeps the list centered against the full panel, not the leftover.
         "pb-(--workspace-topbar-height)",
@@ -534,7 +496,7 @@ function RightPanelEmptyState(props: {
       <div className="w-full max-w-xs py-6">
         <h3 className="mb-3 text-center font-medium text-foreground text-sm">Open a surface</h3>
         <div className="flex flex-col gap-0.5">
-          {actions.map((action) =>
+          {visibleActions.map((action) =>
             action.available ? (
               // The row is itself a button, so the profile chooser sits beside
               // it in a wrapper rather than inside it. Hover lives on the
@@ -648,8 +610,6 @@ function surfaceTitle(
       return `#${surface.number}`;
     case "pull-requests":
       return "Pull requests";
-    case "agents":
-      return "Agents";
     case "device":
       return surface.title ?? surface.target?.name ?? "Device";
     case "preview": {
@@ -733,8 +693,6 @@ function SurfaceIcon({
       );
     case "pull-requests":
       return <PullRequestGlyph.link className="size-3 shrink-0" />;
-    case "agents":
-      return <Bot className="size-3 shrink-0" />;
     case "device":
       return surface.target?.platform === "ios" ? (
         <AppleIcon className="size-3 shrink-0" />
@@ -845,11 +803,15 @@ function PullRequestSurfaceIcon({
 }
 
 export function RightPanelTabs(props: RightPanelTabsProps) {
+  const simple = useClientSettings((s) => s.simpleModeEnabled);
+  const visibleSurfaces = simple
+    ? props.surfaces.filter((s) => !isAdvancedPanel(s.kind))
+    : props.surfaces;
   const ownsDesktopTitleBar = isElectron && props.mode === "inline";
   const browserProfiles = useBrowserDefaults().profiles;
   const { resolvedTheme } = useTheme();
-  const simpleModeEnabled = useClientSettings((settings) => settings.simpleModeEnabled);
   const tabListRef = useRef<HTMLDivElement>(null);
+  const addSurfaceTriggerRef = useRef<HTMLButtonElement>(null);
   const [renamingDevice, setRenamingDevice] = useState<string | null>(null);
   const [addSurfaceMenuOpen, setAddSurfaceMenuOpen] = useState(false);
   const [tabScrollState, setTabScrollState] = useState({
@@ -857,6 +819,30 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     canScrollLeft: false,
     canScrollRight: false,
   });
+
+  if (props.open === false && addSurfaceMenuOpen) setAddSurfaceMenuOpen(false);
+
+  const onNewSurfaceKeyDown = useEffectEvent((event: KeyboardEvent) => {
+    if (event.defaultPrevented || event.isComposing) return;
+    if (
+      resolveShortcutCommand(event, props.keybindings, {
+        context: { ...props.getShortcutContext(), rightPanelOpen: true },
+      }) !== "rightPanel.new"
+    )
+      return;
+    if (!addSurfaceMenuOpen && document.querySelector(LAUNCHER_SHORTCUT_BLOCKING_LAYERS)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.repeat) {
+      addSurfaceTriggerRef.current?.focus();
+      setAddSurfaceMenuOpen(true);
+    }
+  });
+  useEffect(() => {
+    if (props.open === false) return;
+    document.addEventListener("keydown", onNewSurfaceKeyDown, true);
+    return () => document.removeEventListener("keydown", onNewSurfaceKeyDown, true);
+  }, [props.open]);
 
   const updateTabScrollState = useCallback(() => {
     const viewport = tabScrollViewport(tabListRef.current);
@@ -889,75 +875,64 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     });
   }, []);
 
-  const addSurfaceActions = filterSimpleModeSurfaceActions(
-    [
-      {
-        label: "Browser",
-        icon: Globe2,
-        shortcut: "B",
-        available: props.browserAvailable,
-        disabledReason: SURFACE_DISABLED_REASONS.browser,
-        onClick: props.onAddBrowser,
-      },
-      {
-        label: "Terminal",
-        icon: TerminalSquare,
-        shortcut: "T",
-        available: props.terminalAvailable,
-        disabledReason: SURFACE_DISABLED_REASONS.terminal,
-        onClick: props.onAddTerminal,
-      },
-      {
-        label: "Files",
-        icon: Files,
-        shortcut: "F",
-        available: props.filesAvailable,
-        disabledReason: SURFACE_DISABLED_REASONS.files,
-        onClick: props.onAddFiles,
-      },
-      {
-        label: "Diff",
-        icon: FileDiff,
-        shortcut: "D",
-        available: props.diffAvailable,
-        disabledReason: SURFACE_DISABLED_REASONS.diff,
-        onClick: props.onAddDiff,
-      },
-      {
-        label: "Pull request",
-        icon: PullRequestGlyph.pullRequest,
-        shortcut: "P",
-        available: props.pullRequestAvailable,
-        disabledReason: SURFACE_DISABLED_REASONS.pullRequest,
-        onClick: props.onAddPullRequest,
-      },
-      {
-        label: "Linked pull requests",
-        icon: PullRequestGlyph.link,
-        shortcut: "L",
-        available: props.pullRequestsAvailable,
-        disabledReason: SURFACE_DISABLED_REASONS.pullRequests,
-        onClick: props.onAddPullRequests,
-      },
-      {
-        label: "Agents",
-        icon: Bot,
-        shortcut: "A",
-        available: props.agentsAvailable,
-        disabledReason: SURFACE_DISABLED_REASONS.agents,
-        onClick: props.onAddAgents,
-      },
-      {
-        label: "Device",
-        icon: Smartphone,
-        shortcut: "M",
-        available: props.deviceAvailable,
-        disabledReason: SURFACE_DISABLED_REASONS.device,
-        onClick: props.onAddDevice,
-      },
-    ] as const,
-    simpleModeEnabled,
-  );
+  const addSurfaceActions = [
+    {
+      label: "Browser",
+      icon: Globe2,
+      shortcut: "B",
+      available: props.browserAvailable,
+      disabledReason: SURFACE_DISABLED_REASONS.browser,
+      onClick: props.onAddBrowser,
+    },
+    {
+      label: "Terminal",
+      icon: TerminalSquare,
+      shortcut: "T",
+      available: props.terminalAvailable,
+      disabledReason: SURFACE_DISABLED_REASONS.terminal,
+      onClick: props.onAddTerminal,
+    },
+    {
+      label: "Files",
+      icon: Files,
+      shortcut: "F",
+      available: props.filesAvailable,
+      disabledReason: SURFACE_DISABLED_REASONS.files,
+      onClick: props.onAddFiles,
+    },
+    {
+      label: "Diff",
+      icon: FileDiff,
+      shortcut: "D",
+      available: props.diffAvailable,
+      disabledReason: SURFACE_DISABLED_REASONS.diff,
+      onClick: props.onAddDiff,
+    },
+    {
+      label: "Pull request",
+      icon: PullRequestGlyph.pullRequest,
+      shortcut: "P",
+      available: props.pullRequestAvailable,
+      disabledReason: SURFACE_DISABLED_REASONS.pullRequest,
+      onClick: props.onAddPullRequest,
+    },
+    {
+      label: "Linked pull requests",
+      icon: PullRequestGlyph.link,
+      shortcut: "L",
+      available: props.pullRequestsAvailable,
+      disabledReason: SURFACE_DISABLED_REASONS.pullRequests,
+      onClick: props.onAddPullRequests,
+    },
+    {
+      label: "Device",
+      icon: Smartphone,
+      shortcut: "M",
+      available: props.deviceAvailable,
+      disabledReason: SURFACE_DISABLED_REASONS.device,
+      onClick: props.onAddDevice,
+    },
+  ] as const;
 
   const handleAddSurfaceMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     const action = surfaceShortcutActionForKey(addSurfaceActions, event.nativeEvent);
@@ -1129,6 +1104,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       {...(props.open !== undefined ? { open: props.open } : {})}
       {...(props.widthStorageKey !== undefined ? { widthStorageKey: props.widthStorageKey } : {})}
       {...(props.defaultWidth !== undefined ? { defaultWidth: props.defaultWidth } : {})}
+      {...(props.inlineSize ? { inlineSize: props.inlineSize } : {})}
     >
       <div
         className={cn(
@@ -1152,7 +1128,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           data-right-panel-tab-list
         >
           <div className="flex h-full w-max min-w-full items-center gap-1">
-            {props.surfaces.map((surface) => {
+            {visibleSurfaces.map((surface) => {
               const active = surface.id === props.activeSurfaceId;
               const pending = props.pendingSurfaceIds.has(surface.id);
               const title = surfaceTitle(surface, props.previewSessions, props.terminalLabelsById);
@@ -1216,11 +1192,10 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                                 .catch(() => undefined);
                             }}
                           >
-                            {audio === "muted" ? (
-                              <VolumeOff className="size-3" />
-                            ) : (
-                              <Volume2 className="size-3" />
-                            )}
+                            <MorphIcon
+                              className="size-3"
+                              icon={audio === "muted" ? VolumeOff : Volume2}
+                            />
                           </button>
                         }
                       />
@@ -1282,9 +1257,10 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                 </div>
               );
             })}
-            {props.surfaces.length > 0 ? (
+            {props.open !== false ? (
               <Menu open={addSurfaceMenuOpen} onOpenChange={setAddSurfaceMenuOpen}>
                 <MenuTrigger
+                  ref={addSurfaceTriggerRef}
                   render={
                     <Button
                       aria-label="Add panel surface"
@@ -1438,7 +1414,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddFiles={props.onAddFiles}
             onAddPullRequest={props.onAddPullRequest}
             onAddPullRequests={props.onAddPullRequests}
-            onAddAgents={props.onAddAgents}
             onAddDevice={props.onAddDevice}
             browserAvailable={props.browserAvailable}
             terminalAvailable={props.terminalAvailable}
@@ -1446,9 +1421,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             filesAvailable={props.filesAvailable}
             pullRequestAvailable={props.pullRequestAvailable}
             pullRequestsAvailable={props.pullRequestsAvailable}
-            agentsAvailable={props.agentsAvailable}
             deviceAvailable={props.deviceAvailable}
-            liveAgentCount={props.liveAgentCount}
           />
         ) : (
           props.children

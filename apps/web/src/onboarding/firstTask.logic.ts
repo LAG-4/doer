@@ -1,7 +1,4 @@
-import {
-  PROVIDER_SEND_TURN_MAX_FILE_BYTES,
-  type OrchestrationSessionStatus,
-} from "@t3tools/contracts";
+import { PROVIDER_SEND_TURN_MAX_FILE_BYTES } from "@t3tools/contracts";
 
 /**
  * Pure helpers for the first-task onboarding experience.
@@ -126,3 +123,12 @@ export function formatFirstTaskFileSize(sizeBytes: number): string {
   if (sizeBytes < 1024 * 1024) return `${(sizeBytes / 1024).toFixed(1)} KB`;
   return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+type OrchestrationSessionStatus =
+  | "idle"
+  | "ready"
+  | "running"
+  | "starting"
+  | "stopped"
+  | "interrupted"
+  | "error";

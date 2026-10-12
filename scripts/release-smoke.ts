@@ -17,6 +17,7 @@ const workspaceFiles = [
   "apps/desktop/package.json",
   "apps/web/package.json",
   "apps/mobile/package.json",
+  "apps/mobile/deps",
   "apps/mobile/modules/t3-markdown-text/package.json",
   "apps/mobile/modules/t3-review-diff/package.json",
   "apps/mobile/modules/t3-terminal/package.json",
@@ -30,6 +31,14 @@ const workspaceFiles = [
   "packages/tailscale/package.json",
   "packages/effect-acp/package.json",
   "packages/effect-codex-app-server/package.json",
+  "packages/provider-acp/package.json",
+  "packages/provider-core/package.json",
+  "packages/provider-cursor/package.json",
+  "packages/provider-grok/package.json",
+  "packages/provider-muse/package.json",
+  "packages/provider-opencode/package.json",
+  "packages/provider-pi/package.json",
+  "packages/provider-testing/package.json",
   "scripts/package.json",
 ] as const;
 
@@ -38,7 +47,7 @@ function copyWorkspaceManifestFixture(targetRoot: string): void {
     const sourcePath = NodePath.resolve(repoRoot, relativePath);
     const destinationPath = NodePath.resolve(targetRoot, relativePath);
     NodeFS.mkdirSync(NodePath.dirname(destinationPath), { recursive: true });
-    NodeFS.cpSync(sourcePath, destinationPath);
+    NodeFS.cpSync(sourcePath, destinationPath, { recursive: true });
   }
 
   const patchesDirectory = NodePath.resolve(repoRoot, "patches");

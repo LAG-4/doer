@@ -1,6 +1,8 @@
+import { OrchestratorMcpFailure } from "@t3tools/contracts";
+import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as Schema from "effect/Schema";
-import * as Tool from "effect/unstable/ai/Tool";
-import * as Toolkit from "effect/unstable/ai/Toolkit";
+import * as Tool from "effect/ai/Tool";
+import * as Toolkit from "effect/ai/Toolkit";
 import { McpInvocationContext } from "../../McpInvocationContext.ts";
 const Id = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1000));
 export class ConnectedAppReadError extends Schema.TaggedError<ConnectedAppReadError>()(
@@ -34,8 +36,8 @@ const read = Tool.make("read_connected_sources", {
     sources: Schema.String,
     truncated: Schema.Boolean,
   }),
-  failure: ConnectedAppReadError,
-  dependencies: [McpInvocationContext],
+  failure: Schema.Union([ConnectedAppReadError, OrchestratorMcpFailure]),
+  dependencies: [ThreadManagementService.ThreadManagementService, McpInvocationContext],
 })
   .annotate(Tool.Title, "Read connected sources")
   .annotate(Tool.Readonly, true)
@@ -50,8 +52,8 @@ const download = Tool.make("download_connected_file", {
     driveId: Schema.optional(Id),
   }),
   success: Schema.Struct({ relativePath: Schema.String, retrievedAt: Schema.String }),
-  failure: ConnectedAppReadError,
-  dependencies: [McpInvocationContext],
+  failure: Schema.Union([ConnectedAppReadError, OrchestratorMcpFailure]),
+  dependencies: [ThreadManagementService.ThreadManagementService, McpInvocationContext],
 })
   .annotate(Tool.Title, "Save connected file for this Task")
   .annotate(Tool.Destructive, false)

@@ -1,3 +1,4 @@
+import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -5,7 +6,7 @@ import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import { MicrosoftConnection } from "../../../connectedApps/MicrosoftConnection.ts";
 import * as ExperimentalConnections from "../../../integrations/ExperimentalConnections.ts";
-import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { DoerTaskContext as ProjectionSnapshotQuery } from "../../../memory/DoerTaskContext.ts";
 import { WorkspaceFileSystem } from "../../../workspace/WorkspaceFileSystem.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import { ConnectedAppsToolkitHandlersLive } from "./handlers.ts";
@@ -16,6 +17,7 @@ const threadId = ThreadId.make("ms-task");
 function scenario(experimental: boolean) {
   return Effect.gen(function* () {
     const dependencies = Layer.mergeAll(
+      Layer.mock(ThreadManagementService.ThreadManagementService)({}),
       ExperimentalConnections.layerTest(experimental),
       // Layer.mock requires the class's plain-Promise methods in full
       // (only Effect members are optional); unused paths stay inert.
@@ -67,9 +69,13 @@ function scenario(experimental: boolean) {
         Effect.result,
         Effect.provideService(McpInvocationContext.McpInvocationContext, {
           environmentId: EnvironmentId.make("host"),
-          threadId,
-          providerSessionId: "session",
-          providerInstanceId: ProviderInstanceId.make("opencode-custom"),
+          requestNamespace: "test",
+          client: undefined,
+          thread: {
+            threadId,
+            providerSessionId: "session",
+            providerInstanceId: ProviderInstanceId.make("opencode-custom"),
+          },
           capabilities: new Set<McpInvocationContext.McpCapability>([]),
           issuedAt: 1,
         }),

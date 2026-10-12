@@ -7,11 +7,11 @@ import { afterEach, describe, expect, it } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import { HttpRouter } from "effect/unstable/http";
+import { HttpRouter } from "effect/http";
 
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
-import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import { DoerTaskContext as ProjectionSnapshotQuery } from "./DoerTaskContext.ts";
+import { layerMemory as SqlitePersistenceMemory } from "../persistence/Sqlite.ts";
 import { DoerMemoryStoreLive } from "../persistence/Layers/DoerMemoryStore.ts";
 import { DOER_MEMORY_ROUTE_PATH, doerMemoryRouteLayer } from "./DoerMemoryRoutes.ts";
 

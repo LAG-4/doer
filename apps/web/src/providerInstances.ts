@@ -15,8 +15,7 @@
 import {
   DEFAULT_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
-  isOpenCodeFreeModelSlug,
-  PREFERRED_DEFAULT_OPENCODE_MODELS,
+  isUnconfiguredDefaultInstanceEnabled,
   resolveProviderInstanceEnabled,
   type ModelSelection,
   type ProviderDriverKind,
@@ -55,6 +54,10 @@ export interface ProviderInstanceEntry {
   readonly driverKind: ProviderDriverKind;
   readonly displayName: string;
   readonly accentColor?: string | undefined;
+  /** Registry identity used to resolve the official icon for generic ACP instances. */
+  readonly acpRegistryAgentId?: string | undefined;
+  /** Catalog-advertised icon URL. The renderer still applies the official-CDN allowlist. */
+  readonly acpRegistryIconUrl?: string | undefined;
   readonly continuationGroupKey?: string | undefined;
   readonly enabled: boolean;
   readonly installed: boolean;
@@ -69,6 +72,24 @@ export interface ProviderInstanceEntry {
   readonly isAvailable: boolean;
   readonly snapshot: ServerProvider;
   readonly models: ReadonlyArray<ServerProviderModel>;
+}
+
+export type ProviderCatalogAvailability = "loading" | "ready" | "unavailable" | "unconfigured";
+
+/**
+ * Keep a provider catalogue that has not arrived yet distinct from a loaded
+ * catalogue with no usable entries. Environment config streams are reactive:
+ * treating their initial `null` as a final empty list strands otherwise
+ * recoverable threads behind a misleading "no providers" state.
+ */
+export function resolveProviderCatalogAvailability(input: {
+  readonly catalogLoaded: boolean;
+  readonly entries: ReadonlyArray<ProviderInstanceEntry>;
+  readonly selectedEntry: ProviderInstanceEntry | undefined;
+}): ProviderCatalogAvailability {
+  if (!input.catalogLoaded) return "loading";
+  if (input.selectedEntry !== undefined) return "ready";
+  return input.entries.length === 0 ? "unconfigured" : "unavailable";
 }
 
 /**
@@ -106,6 +127,9 @@ export function deriveProviderInstanceEntries(
       driverKind,
       displayName: resolveProviderInstanceDisplayName(snapshot),
       accentColor: normalizeProviderAccentColor(snapshot.accentColor),
+      ...(driverKind === "acpRegistry" && snapshot.iconUrl
+        ? { acpRegistryIconUrl: snapshot.iconUrl }
+        : {}),
       continuationGroupKey: snapshot.continuation?.groupKey,
       enabled: snapshot.enabled,
       installed: snapshot.installed,
@@ -129,17 +153,17 @@ export function deriveProviderInstanceEntries(
  * the thread's own environment.
  */
 export function deriveProviderEntriesByEnvironment(
-  providersByEnvironment: Iterable<readonly [string, ReadonlyArray<ServerProvider>]>,
+  providersByEnvironment: Iterable<
+    readonly [string, ReadonlyArray<ServerProvider>, Pick<ServerSettings, "providerInstances">?]
+  >,
 ): ReadonlyMap<string, ReadonlyMap<string, ProviderInstanceEntry>> {
   const byEnvironment = new Map<string, ReadonlyMap<string, ProviderInstanceEntry>>();
-  for (const [environmentId, providers] of providersByEnvironment) {
+  for (const [environmentId, providers, settings] of providersByEnvironment) {
+    const derived = deriveProviderInstanceEntries(providers);
+    const entries = settings ? applyProviderInstanceSettings(derived, settings) : derived;
     byEnvironment.set(
       environmentId,
-      new Map(
-        deriveProviderInstanceEntries(providers).map(
-          (entry) => [entry.instanceId as string, entry] as const,
-        ),
-      ),
+      new Map(entries.map((entry) => [entry.instanceId as string, entry] as const)),
     );
   }
   return byEnvironment;
@@ -151,32 +175,46 @@ export function deriveProviderEntriesByEnvironment(
  * settings write, so picker visibility must follow settings rather than waiting
  * for probe reconciliation.
  *
- * Only built-in default instances have a legacy `providers` entry. Every
- * other instance exists through `providerInstances`; if it is absent there,
- * its streamed snapshot is stale (for example immediately after deletion)
- * and is treated as disabled.
+ * A built-in default instance without a `providerInstances` entry keeps its
+ * streamed state, since the server runs it with default config. Any other
+ * instance missing from `providerInstances` is stale (for example
+ * immediately after deletion) and is treated as disabled.
  */
 export function applyProviderInstanceSettings(
   entries: ReadonlyArray<ProviderInstanceEntry>,
-  settings: Pick<ServerSettings, "providerInstances" | "providers">,
+  settings: Pick<ServerSettings, "providerInstances">,
 ): ReadonlyArray<ProviderInstanceEntry> {
-  const legacyProviders = settings.providers as Readonly<
-    Record<string, { readonly enabled?: boolean } | undefined>
-  >;
-
   return entries.map((entry) => {
     const explicitInstance = Object.hasOwn(settings.providerInstances, entry.instanceId)
       ? settings.providerInstances[entry.instanceId]
       : undefined;
-    const legacyProvider = Object.hasOwn(legacyProviders, entry.driverKind)
-      ? legacyProviders[entry.driverKind]
-      : undefined;
     const enabled = explicitInstance
       ? resolveProviderInstanceEnabled(explicitInstance)
-      : entry.isDefault && legacyProvider
-        ? (legacyProvider.enabled ?? entry.enabled)
+      : entry.isDefault
+        ? isUnconfiguredDefaultInstanceEnabled(entry.instanceId)
         : false;
-    return enabled === entry.enabled ? entry : { ...entry, enabled };
+    if (entry.driverKind !== "acpRegistry" || explicitInstance === undefined) {
+      return enabled === entry.enabled ? entry : { ...entry, enabled };
+    }
+    const config =
+      explicitInstance.config !== null && typeof explicitInstance.config === "object"
+        ? (explicitInstance.config as Readonly<Record<string, unknown>>)
+        : null;
+    if (config?.source === "local") {
+      return { ...entry, enabled, acpRegistryAgentId: undefined, acpRegistryIconUrl: undefined };
+    }
+    const agentId = config?.agentId;
+    const iconUrl = config?.registryIconUrl;
+    return {
+      ...entry,
+      enabled,
+      ...(typeof agentId === "string" && agentId.trim()
+        ? { acpRegistryAgentId: agentId.trim() }
+        : {}),
+      ...(typeof iconUrl === "string" && iconUrl.trim()
+        ? { acpRegistryIconUrl: iconUrl.trim() }
+        : {}),
+    };
   });
 }
 
@@ -216,7 +254,7 @@ export function sortProviderInstanceEntries(
  * Look up a single instance entry by exact `instanceId`. Missing snapshots
  * are not inferred from driver kind in UI routing code.
  */
-function getProviderInstanceEntry(
+export function getProviderInstanceEntry(
   providers: ReadonlyArray<ServerProvider>,
   instanceId: ProviderInstanceId,
 ): ProviderInstanceEntry | undefined {
@@ -236,18 +274,6 @@ export function getDefaultProviderInstanceModel(
 ): string | undefined {
   const entry = getProviderInstanceEntry(providers, instanceId);
   if (!entry) return undefined;
-  if (entry.driverKind === "opencode") {
-    // Prefer the free-tier default (Big Pickle, else any `*-free` Zen model)
-    // even when the snapshot carries no `isDefault` (stale cache).
-    const builtInSlugs = entry.models.filter((model) => !model.isCustom).map((model) => model.slug);
-    for (const preferred of PREFERRED_DEFAULT_OPENCODE_MODELS) {
-      if (builtInSlugs.includes(preferred)) {
-        return preferred;
-      }
-    }
-    const free = builtInSlugs.filter((slug) => isOpenCodeFreeModelSlug(slug)).toSorted()[0];
-    return free;
-  }
   return (
     entry.models.find((model) => model.isDefault && !model.isCustom)?.slug ??
     entry.models.find((model) => !model.isCustom)?.slug ??
@@ -262,9 +288,9 @@ const isSelectableProviderInstanceEntry = (entry: ProviderInstanceEntry): boolea
 /**
  * Resolve an exact stored instance when it remains enabled and available.
  * Otherwise choose a deterministic fallback that can plausibly start now:
- * OpenCode first (the default), then ready, then a non-error probe result.
- * An errored provider is retained only when it was explicitly requested; it
- * is never invented as a new-user default.
+ * ready first, then a non-error probe result. An errored provider is retained
+ * only when it was explicitly requested; it is never invented as a new-user
+ * default.
  */
 export function resolveSelectableProviderInstanceEntry(
   entries: ReadonlyArray<ProviderInstanceEntry>,
@@ -276,14 +302,8 @@ export function resolveSelectableProviderInstanceEntry(
       return requested;
     }
   }
-  const isOpenCode = (entry: ProviderInstanceEntry): boolean => entry.driverKind === "opencode";
   return (
-    entries.find((entry) => isOpenCode(entry) && isProviderInstancePickerReady(entry)) ??
     entries.find(isProviderInstancePickerReady) ??
-    entries.find(
-      (entry) =>
-        isOpenCode(entry) && isSelectableProviderInstanceEntry(entry) && entry.status !== "error",
-    ) ??
     entries.find((entry) => isSelectableProviderInstanceEntry(entry) && entry.status !== "error")
   );
 }
@@ -303,74 +323,18 @@ export function resolveSelectableProviderInstance(
 }
 
 /**
- * Built-in free defaults eligible for the missing-default fallback in
- * `resolveDefaultProviderModelSelection` (Big Pickle on the v2 line). Only
- * these slugs ever trigger that fallback; every other missing slug — custom
- * `*-free` models included — is preserved or fail-cleared without switching.
- *
- * This is a conditional guard in case the built-in free default ever
- * disappears from the live catalog. It is not a statement that any of these
- * models is retired: Big Pickle is still present in the live catalog.
- */
-const FALLBACK_BUILTIN_FREE_OPENCODE_MODELS: ReadonlySet<string> = new Set([
-  "opencode/big-pickle",
-  "big-pickle",
-]);
-
-/**
  * Resolve the model selection persisted for a project or new thread. A valid
- * stored selection is preserved byte-for-byte, as is any stored selection
- * whose model may be custom, paid, or from another provider: those are never
- * silently switched. Falling back to another instance also resets the model
- * to that instance's own default, avoiding cross-provider instance/model
- * pairs.
- *
- * Narrow exception: the built-in free default below, when missing
- * from the live catalog, falls back to the instance's available free model
- * (or fail-clears to null when none remains) so a catalog upgrade cannot
- * strand onboarding and new tasks on a dead default.
+ * stored selection is preserved byte-for-byte. Falling back to another
+ * instance also resets the model to that instance's own default, avoiding
+ * cross-provider instance/model pairs.
  */
 export function resolveDefaultProviderModelSelection(
   providers: ReadonlyArray<ServerProvider>,
   selection: ModelSelection | null | undefined,
 ): ModelSelection | null {
-  const exact = selection
-    ? providers.find(
-        (provider) =>
-          provider.instanceId === selection.instanceId &&
-          provider.enabled &&
-          provider.availability !== "unavailable",
-      )
-    : undefined;
-  const instanceId =
-    exact?.instanceId ??
-    providers.find(
-      (provider) =>
-        provider.enabled &&
-        provider.driver === "opencode" &&
-        provider.status !== "error" &&
-        provider.availability !== "unavailable",
-    )?.instanceId;
+  const instanceId = resolveSelectableProviderInstance(providers, selection?.instanceId);
   if (instanceId === undefined) return null;
-  if (selection?.instanceId === instanceId) {
-    // The built-in free default (Big Pickle), when missing from the
-    // live catalog, falls back to the instance's available free model — or
-    // fail-clears to null when none remains, so the wizard cannot submit a
-    // dead default as ready. Anything else is preserved byte-for-byte: a
-    // custom `*-free` slug or a paid/dynamic slug missing from the catalog
-    // is never silently switched (options included), and other providers are
-    // untouched. Options reset with the fallback since variants/agents
-    // belong to the old catalog entry.
-    if (
-      exact?.driver === "opencode" &&
-      FALLBACK_BUILTIN_FREE_OPENCODE_MODELS.has(selection.model) &&
-      !exact.models.some((model) => model.slug === selection.model)
-    ) {
-      const free = getDefaultProviderInstanceModel(providers, instanceId);
-      return free && free !== selection.model ? { instanceId, model: free } : null;
-    }
-    return selection;
-  }
+  if (selection?.instanceId === instanceId) return selection;
   const model = getDefaultProviderInstanceModel(providers, instanceId);
   return model ? { instanceId, model } : null;
 }

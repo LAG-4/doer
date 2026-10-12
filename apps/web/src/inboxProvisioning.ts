@@ -1,5 +1,3 @@
-import { useSyncExternalStore } from "react";
-
 /**
  * Tracks inbox projects with creation still in flight.
  *
@@ -10,44 +8,18 @@ import { useSyncExternalStore } from "react";
  * and never persisted: a reload re-derives everything from the store.
  */
 const pendingProjectIds = new Set<string>();
-const listeners = new Set<() => void>();
-
-function emit() {
-  for (const listener of listeners) {
-    listener();
-  }
-}
 
 export function markInboxProvisioning(projectId: string): void {
   if (!pendingProjectIds.has(projectId)) {
     pendingProjectIds.add(projectId);
-    emit();
   }
 }
 
 export function unmarkInboxProvisioning(projectId: string): void {
-  if (pendingProjectIds.delete(projectId)) {
-    emit();
-  }
+  pendingProjectIds.delete(projectId);
 }
 
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-}
-
-/** Snapshot behind the hook; also the unit-testable core. */
+/** Current provisioning state used by launch recovery. */
 export function readInboxProvisioning(projectId: string | null): boolean {
   return projectId !== null && pendingProjectIds.has(projectId);
-}
-
-/** Whether the given project id is still being provisioned. */
-export function useIsInboxProvisioning(projectId: string | null): boolean {
-  return useSyncExternalStore(
-    subscribe,
-    () => readInboxProvisioning(projectId),
-    () => false,
-  );
 }

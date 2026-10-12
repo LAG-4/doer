@@ -1,3 +1,4 @@
+import { DoerDraftHeroHeadline } from "./DoerDraftHeroHeadline";
 import type { DraftId } from "~/composerDraftStore";
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { resolveEnvironmentMachineKind, type ScopedProjectRef } from "@t3tools/contracts";
@@ -8,8 +9,6 @@ import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
-import { useEnsureInboxProject } from "~/hooks/useEnsureInboxProject";
-import { useHandleNewThread } from "~/hooks/useHandleNewThread";
 import { shortcutLabelForCommand } from "~/keybindings";
 import { projectIconColorClassName } from "~/projectIconColors";
 import { primaryServerKeybindingsAtom } from "~/state/server";
@@ -43,21 +42,19 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { InlineButton } from "../ui/button";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 
-// Menu value for "No Space"; real entries are keyed by logical project key.
+// Menu value for "No project"; real entries are keyed by logical project key.
 const NO_PROJECT_VALUE = "no-project";
 
 interface DraftHeroHeadlineProps {
   readonly draftId: DraftId | null;
   readonly activeProjectRef: ScopedProjectRef | null;
   readonly activeProjectTitle: string | null;
-  readonly isInboxProject: boolean;
 }
 
-export function DraftHeroHeadline({
+function UpstreamDraftHeroHeadline({
   draftId,
   activeProjectRef,
   activeProjectTitle,
-  isInboxProject,
 }: DraftHeroHeadlineProps) {
   const projects = useProjects();
   const threads = useThreadShells();
@@ -72,26 +69,6 @@ export function DraftHeroHeadline({
   const applyStickyState = useComposerDraftStore((store) => store.applyStickyState);
   const setModelSelection = useComposerDraftStore((store) => store.setModelSelection);
   const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
-  const { handleNewThread } = useHandleNewThread();
-  const { prepareInboxProject, settleInboxProject, isInboxCapable, isEnsuring } =
-    useEnsureInboxProject();
-  const startChatting = useCallback(async () => {
-    const prepared = prepareInboxProject();
-    if (prepared === null) {
-      openAddProject();
-      return;
-    }
-    await handleNewThread(prepared.ref, { replace: true }).catch(() => undefined);
-    if (!prepared.isNew) {
-      return;
-    }
-    const finalRef = await settleInboxProject(prepared.projectId);
-    if (finalRef === null) {
-      openAddProject();
-    } else if (finalRef.projectId !== prepared.ref.projectId) {
-      await handleNewThread(finalRef, { replace: true }).catch(() => undefined);
-    }
-  }, [handleNewThread, openAddProject, prepareInboxProject, settleInboxProject]);
   const { scratchEnvironmentId, scratchWorkspaceRootFor, openScratchProject } = useScratchProject();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
 
@@ -169,8 +146,8 @@ export function DraftHeroHeadline({
   const hasResolvedProject = activeProjectTitle !== null;
   const canChooseProject = projectPickerEntries.length > 0;
   const shouldShowProjectMenu = canChooseProject;
-  // The project that hosts threads without a Space appears once, as the
-  // "No Space" item, not as a project row.
+  // The project that hosts threads without a project appears once, as the
+  // "No project" item, not as a project row.
   const menuEntries = projectPickerEntries.filter(
     ({ targetProject }) =>
       !isScratchProject(targetProject, scratchWorkspaceRootFor(targetProject.environmentId)),
@@ -266,7 +243,7 @@ export function DraftHeroHeadline({
           }
         >
           <span className="min-w-0 truncate">
-            {isScratchDraft ? "No Space" : (activeProjectDisplayName ?? "Choose a Space")}
+            {isScratchDraft ? "No project" : (activeProjectDisplayName ?? "Choose a project")}
           </span>
         </TooltipTrigger>
         {activeProjectDisplayName && !isScratchDraft ? (
@@ -298,7 +275,7 @@ export function DraftHeroHeadline({
                 >
                   <MessageSquareDashedIcon className="size-full" />
                 </span>
-                No Space
+                No project
               </span>
             </MenuRadioItem>
           )}
@@ -328,22 +305,17 @@ export function DraftHeroHeadline({
         {projectPickerEntries.length > 0 ? <MenuSeparator /> : null}
         <MenuItem onClick={openAddProject}>
           <FolderPlusIcon />
-          New Space
+          Add project
         </MenuItem>
       </MenuPopup>
     </Menu>
   ) : (
     <button
       type="button"
-      onClick={() => void startChatting()}
-      disabled={isEnsuring}
-      className="pointer-events-auto inline cursor-pointer border-muted-foreground/35 border-b border-dotted text-muted-foreground/60 transition-colors hover:border-muted-foreground/60 hover:text-muted-foreground/80 focus-visible:rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
+      onClick={openAddProject}
+      className="pointer-events-auto inline cursor-pointer border-muted-foreground/35 border-b border-dotted text-muted-foreground/60 transition-colors hover:border-muted-foreground/60 hover:text-muted-foreground/80 focus-visible:rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
     >
-      {isEnsuring
-        ? "Setting up…"
-        : isInboxCapable
-          ? "Start chatting"
-          : (activeProjectTitle ?? "Add a Space")}
+      {activeProjectTitle ?? "Add a project"}
     </button>
   );
 
@@ -351,14 +323,13 @@ export function DraftHeroHeadline({
   // a complete sentence too. The project picker is a control rendered inline
   // in the h1; without an explicit label its widget state bleeds into the
   // announced phrase.
-  const headingLabel =
-    isScratchDraft || isInboxProject
-      ? "What can Doer help you with?"
-      : hasResolvedProject
-        ? `What would you like to do in ${activeProjectDisplayName}?`
-        : canChooseProject
-          ? `${activeProjectDisplayName ?? "Choose a Space"} to start`
-          : "Add a Space to start";
+  const headingLabel = isScratchDraft
+    ? "What should we work on?"
+    : hasResolvedProject
+      ? `What should we build in ${activeProjectDisplayName}?`
+      : canChooseProject
+        ? `${activeProjectDisplayName ?? "Choose a project"} to start`
+        : "Add a project to start";
 
   // One click out of the project, phrased as the alternative to the question
   // above it. Focus moves to the project picker once this line has gone.
@@ -381,7 +352,7 @@ export function DraftHeroHeadline({
             />
           }
         >
-          or start without a Space
+          or start without a project
         </TooltipTrigger>
         {noProjectShortcut ? <TooltipPopup side="bottom">{noProjectShortcut}</TooltipPopup> : null}
       </Tooltip>
@@ -393,14 +364,14 @@ export function DraftHeroHeadline({
         aria-label={headingLabel}
         className="w-full text-center font-normal text-2xl text-foreground tracking-tight sm:text-3xl"
       >
-        {isScratchDraft || isInboxProject ? (
-          <>What can Doer help you with?</>
+        {isScratchDraft ? (
+          <>What should we work on?</>
         ) : hasResolvedProject ? (
-          <>What would you like to do in {projectSelector}?</>
-        ) : canChooseProject || isInboxCapable ? (
+          <>What should we build in {projectSelector}?</>
+        ) : canChooseProject ? (
           <>{projectSelector} to start</>
         ) : (
-          <>Add a Space to start</>
+          <>Add a project to start</>
         )}
       </h1>
       {/* Reserved whenever threads can skip a project, so the heading does not
@@ -412,4 +383,9 @@ export function DraftHeroHeadline({
       )}
     </div>
   );
+}
+
+export function DraftHeroHeadline(props: DraftHeroHeadlineProps) {
+  const simple = useClientSettings((s) => s.simpleModeEnabled);
+  return simple ? <DoerDraftHeroHeadline {...props} /> : <UpstreamDraftHeroHeadline {...props} />;
 }

@@ -1,21 +1,18 @@
 import {
   DEFAULT_SERVER_SETTINGS,
+  EnvironmentAuthorizationError,
   EnvironmentId,
   ProjectId,
   type ServerSettings,
 } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
-import {
-  CONNECTED_TOOL_SETTING_KEYS,
-  resolveProjectSettings,
-  resolveWorktreeCleanup,
-} from "@t3tools/shared/projectSettings";
+import * as Cause from "effect/Cause";
+import { resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
 
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import {
   listProjectOverrides,
-  computerSettingsScope,
   persistScopedSettingsPatch,
   planProjectOverridesClear,
   planScopedSettingsClear,
@@ -153,48 +150,6 @@ describe("scoped settings targets", () => {
 });
 
 describe("scoped settings writes", () => {
-  it.each(CONNECTED_TOOL_SETTING_KEYS)(
-    "keeps chat and Tools settings synchronized for %s",
-    (key) => {
-      const previous = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-        [key]: true,
-        projectSettingsOverrides: { [projectId]: { [key]: true, defaultAutoPull: true } },
-      });
-      const host = environment("Server", { settings: previous });
-      const settingsPlan = planScopedSettingsPatch(
-        computerSettingsScope(checkout),
-        [host, laptop],
-        { [key]: false },
-      );
-      expect(settingsPlan.serverWrites).toHaveLength(1);
-      expect(settingsPlan.serverWrites[0]!.environmentId).toBe(host.environmentId);
-      const off = applyServerSettingsPatch(previous, settingsPlan.serverWrites[0]!.patch);
-      expect(off[key]).toBe(false);
-      expect(resolveProjectSettings(off, projectId).settings[key]).toBe(false);
-      const on = applyServerSettingsPatch(off, { [key]: true });
-      const targets = resolveScopedSettingsTargets(computerSettingsScope(checkout), [
-        environment("Server", { settings: on }),
-      ]);
-      expect(targets[0]!.settings[key]).toBe(true);
-      expect(on.projectSettingsOverrides[projectId]!.defaultAutoPull).toBe(true);
-    },
-  );
-
-  it("keeps unavailable and offline computer selections from broadening plugin writes", () => {
-    const scope = resolveSettingsScope({ machine: offline.environmentId }, [], environments);
-    expect(
-      planScopedSettingsPatch(computerSettingsScope(scope), environments, {
-        enableGmailAccess: false,
-      }).serverWrites,
-    ).toEqual([]);
-    const missing = resolveSettingsScope({ project: "missing" }, [], environments);
-    expect(computerSettingsScope(missing)).toBe(missing);
-    expect(
-      planScopedSettingsPatch(computerSettingsScope(missing), environments, {
-        enableGmailAccess: false,
-      }).serverWrites,
-    ).toEqual([]);
-  });
   it("edits the effective machine policy without changing other machines' rules", () => {
     const custom = environment("Laptop", {
       settings: {
@@ -457,7 +412,15 @@ describe("scoped settings writes", () => {
     const persistServer = vi
       .fn()
       .mockResolvedValueOnce({ _tag: "Success" })
-      .mockResolvedValueOnce({ _tag: "Failure" })
+      .mockResolvedValueOnce({
+        _tag: "Failure",
+        cause: Cause.fail(
+          new EnvironmentAuthorizationError({
+            requiredScope: "settings:write",
+            message: "This connection lacks permission to change settings.",
+          }),
+        ),
+      })
       .mockRejectedValueOnce(new Error("Disconnected during save"))
       .mockResolvedValueOnce({ _tag: "Success" });
     const result = await persistScopedSettingsPatch(
@@ -466,6 +429,14 @@ describe("scoped settings writes", () => {
       vi.fn(),
     );
     expect(result.savedEnvironmentCount).toBe(2);
+    expect(result.savedEnvironments.map(({ label }) => label)).toEqual([
+      laptop.label,
+      fourth.label,
+    ]);
+    expect(result.failedEnvironments.map(({ message }) => message)).toEqual([
+      "This connection lacks permission to change settings.",
+      "Disconnected during save",
+    ]);
     expect(result.failedEnvironments.map(({ label }) => label)).toEqual([
       server.label,
       third.label,

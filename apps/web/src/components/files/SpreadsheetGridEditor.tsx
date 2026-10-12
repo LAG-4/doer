@@ -63,7 +63,7 @@ export function SpreadsheetGridEditor({
           )}
         </div>
       ) : null}
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-auto scrollbar-gutter-both">
         <table className="w-full border-collapse text-sm">
           <thead className="sticky top-0 z-10">
             <tr>

@@ -8,8 +8,8 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
 import * as Path from "effect/Path";
-import { HttpClient, HttpClientResponse } from "effect/unstable/http";
-import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
+import { HttpClient } from "effect/http";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as ServerConfig from "../config.ts";
 import * as DesktopAppUpdate from "../desktopUpdate/DesktopAppUpdate.ts";
@@ -26,27 +26,9 @@ interface HarnessOptions {
   readonly desktopAppUpdate?: DesktopAppUpdate.DesktopAppUpdate["Service"];
 }
 
-// The staged runtime is a release archive: the fake client serves SHA256SUMS
-// and the tarball, and the fake runner stands in for tar before it answers
-// the staged preflight.
-const archiveBytes = new TextEncoder().encode("not really a tarball");
-const releaseHttpClient = (order: string[]) =>
-  HttpClient.make((request) =>
-    Effect.gen(function* () {
-      if (request.url.endsWith("/SHA256SUMS")) {
-        const digest = yield* Effect.promise(() => crypto.subtle.digest("SHA-256", archiveBytes));
-        const hex = Array.from(new Uint8Array(digest), (byte) =>
-          byte.toString(16).padStart(2, "0"),
-        ).join("");
-        return HttpClientResponse.fromWeb(
-          request,
-          new Response(`${hex}  t3-1.1.0-linux-x64.tar.gz\n`),
-        );
-      }
-      order.push("download");
-      return HttpClientResponse.fromWeb(request, new Response(archiveBytes));
-    }),
-  );
+// Installation uses npm; any upstream release-archive fetch is a regression.
+const releaseHttpClient = () =>
+  HttpClient.make(() => Effect.die("Doer runtime installs must use npm"));
 
 const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
   options: HarnessOptions = {},
@@ -60,11 +42,11 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
       Effect.gen(function* () {
         if (input.command === "npm") {
           order.push("install");
-          const prefix = input.args[input.args.indexOf("--prefix") + 1];
-          if (prefix === undefined) return yield* Effect.die("missing npm prefix");
-          const entry = path.join(prefix, "node_modules", "@lag4/doer-cli", "dist", "bin.mjs");
+          const stagingDir = input.args[input.args.indexOf("--prefix") + 1];
+          if (stagingDir === undefined) return yield* Effect.die("missing npm installation prefix");
+          const entry = path.join(stagingDir, "node_modules", "@lag4/doer-cli", "dist", "bin.mjs");
           yield* fs.makeDirectory(path.dirname(entry), { recursive: true }).pipe(Effect.orDie);
-          yield* fs.writeFileString(entry, "export {};\n").pipe(Effect.orDie);
+          yield* fs.writeFileString(entry, "#!/usr/bin/env node\n").pipe(Effect.orDie);
           return {
             stdout: "",
             stderr: "",
@@ -86,7 +68,6 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
                 launcherProtocol: SERVICE_LAUNCHER_PROTOCOL,
               };
         return {
-          // @effect-diagnostics-next-line preferSchemaOverJson:off - fake child-process stdout.
           stdout: JSON.stringify(result),
           stderr: "",
           code: ChildProcessSpawner.ExitCode(0),
@@ -122,7 +103,7 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
         run: () => Effect.die("unexpected desktop app update run"),
       },
     ),
-    Effect.provideService(HttpClient.HttpClient, releaseHttpClient(order)),
+    Effect.provideService(HttpClient.HttpClient, releaseHttpClient()),
     Effect.provideService(HostProcessPlatform, "linux"),
     Effect.provideService(HostProcessArchitecture, "x64"),
     Effect.provide(ServerConfig.layer({ ...config, mode: options.mode ?? "web" })),

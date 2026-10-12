@@ -25,6 +25,7 @@ function WelcomeRouteView() {
       <NoProjectsHero />
       {isWelcomeRoute && !dismissed ? (
         <WelcomeWizard
+          localAvailable
           onDone={() => {
             // The hero behind the wizard is the destination: dismissing
             // reveals "Start chatting" with no navigation, so no

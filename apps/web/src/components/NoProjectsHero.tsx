@@ -1,46 +1,22 @@
+import { useClientSettings } from "~/hooks/useSettings";
+import { DoerNoProjectsHero } from "./DoerNoProjectsHero";
 import { MessageSquareDashedIcon, PlusIcon } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 
 import { openCommandPalette } from "../commandPaletteBus";
-import { useEnsureInboxProject } from "../hooks/useEnsureInboxProject";
-import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { isElectron } from "../env";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { usePrimaryEnvironmentId } from "../state/environments";
-import { isElectron } from "../env";
 import { Button } from "./ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "./ui/empty";
 import { SidebarInset } from "./ui/sidebar";
 import { WorkspacePageHeader } from "./WorkspacePageHeader";
 
-export function NoProjectsHero() {
+function UpstreamNoProjectsHero() {
   const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
-  const { handleNewThread } = useHandleNewThread();
-  const { prepareInboxProject, settleInboxProject, isInboxCapable } = useEnsureInboxProject();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const { scratchEnvironmentId, startScratchThread } = useScratchProject();
   const scratchTargetEnvironmentId = scratchEnvironmentId(primaryEnvironmentId);
-  const [failed, setFailed] = useState(false);
-
-  // Opens the inbox draft instantly; creation settles behind it. A null
-  // draft is not a failure: another navigation already won the race.
-  const startChatting = useCallback(async () => {
-    setFailed(false);
-    const prepared = prepareInboxProject();
-    if (prepared === null) {
-      setFailed(true);
-      return;
-    }
-    await handleNewThread(prepared.ref, { replace: true }).catch(() => undefined);
-    if (!prepared.isNew) {
-      return;
-    }
-    const finalRef = await settleInboxProject(prepared.projectId);
-    if (finalRef === null) {
-      setFailed(true);
-    } else if (finalRef.projectId !== prepared.ref.projectId) {
-      await handleNewThread(finalRef, { replace: true }).catch(() => undefined);
-    }
-  }, [handleNewThread, prepareInboxProject, settleInboxProject]);
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
@@ -51,33 +27,16 @@ export function NoProjectsHero() {
           <div className="w-full max-w-lg px-8 py-12">
             <EmptyHeader className="max-w-none">
               <EmptyTitle>What should we work on?</EmptyTitle>
-              <EmptyDescription className="mt-2">
-                {isInboxCapable
-                  ? "Start chatting right away, or add a folder as a Space first."
-                  : "Add a Space to start your first Task."}
+              <EmptyDescription>
+                {scratchTargetEnvironmentId === null
+                  ? "Add a project to start your first thread."
+                  : "Add a project, or start without one."}
               </EmptyDescription>
-              {failed ? (
-                <p role="alert" className="mt-3 text-sm text-destructive">
-                  Could not set up your space. Try again or add a Space.
-                </p>
-              ) : null}
-              <div className="mt-6 flex flex-wrap justify-center gap-3">
-                {isInboxCapable ? (
-                  <>
-                    <Button size="sm" onClick={() => void startChatting()}>
-                      Start chatting
-                    </Button>
-                    <Button size="sm" variant="ghost-muted" onClick={openAddProject}>
-                      <PlusIcon className="size-4" />
-                      Add Space
-                    </Button>
-                  </>
-                ) : (
-                  <Button size="sm" onClick={openAddProject}>
-                    <PlusIcon className="size-4" />
-                    Add Space
-                  </Button>
-                )}
+              <div className="mt-6 flex justify-center gap-2">
+                <Button size="sm" onClick={openAddProject}>
+                  <PlusIcon className="size-4" />
+                  Add project
+                </Button>
                 {scratchTargetEnvironmentId === null ? null : (
                   <Button
                     size="sm"
@@ -85,7 +44,7 @@ export function NoProjectsHero() {
                     onClick={() => void startScratchThread(scratchTargetEnvironmentId)}
                   >
                     <MessageSquareDashedIcon className="size-4" />
-                    Start without a Space
+                    Start without a project
                   </Button>
                 )}
               </div>
@@ -95,4 +54,9 @@ export function NoProjectsHero() {
       </div>
     </SidebarInset>
   );
+}
+
+export function NoProjectsHero(props: Record<string, never>) {
+  const simple = useClientSettings((s) => s.simpleModeEnabled);
+  return simple ? <DoerNoProjectsHero {...props} /> : <UpstreamNoProjectsHero {...props} />;
 }

@@ -1,7 +1,7 @@
-import { DoerContextEditor } from "./DoerContextEditor";
-import { MemoryManager } from "./MemoryManager";
-import { SPACE_CONTEXT_FILE } from "@t3tools/shared/doerContext";
-import { useClientSettings } from "~/hooks/useSettings";
+import { useComposerMenuState } from "../chat/useComposerMenuState";
+import { useOrchestrationCommand } from "../../state/use-orchestration-command";
+import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
+import { useEnvironmentsWithScope, readEnvironmentScope } from "../../state/session";
 import {
   isAtomCommandInterrupted,
   mapAtomCommandResult,
@@ -10,7 +10,7 @@ import {
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { type EnvironmentId, type ProjectIconOverride } from "@t3tools/contracts";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";
@@ -27,7 +27,6 @@ import {
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import { useThreadShells } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
-import { useAtomCommand } from "../../state/use-atom-command";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
@@ -135,8 +134,8 @@ export function ProjectSettingsPanel({
     return (
       <div className="flex flex-1 items-center justify-center p-8 text-sm text-muted-foreground">
         {groups.length === 0
-          ? "Add a Space from the sidebar to configure it here."
-          : "This Space is no longer available."}
+          ? "Add a project from the sidebar to configure it here."
+          : "This project is no longer available."}
       </div>
     );
   }
@@ -169,20 +168,27 @@ function ProjectDetail({
   hasOtherMembers: boolean;
 }) {
   const navigate = useNavigate({ from: "/settings" });
-  const simple = useClientSettings((settings) => settings.simpleModeEnabled);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const { environments } = useEnvironments();
   const environmentById = useMemo(
     () => new Map(environments.map((environment) => [environment.environmentId, environment])),
     [environments],
   );
+  const editableIds = useEnvironmentsWithScope(group.memberProjects, AuthOrchestrationOperateScope);
+  const canEditGroup = group.memberProjects.every((member) =>
+    editableIds.has(member.environmentId),
+  );
   const representative =
     group.memberProjects.find(
       (member) => environmentById.get(member.environmentId)?.serverConfig != null,
     ) ?? group.memberProjects[0]!;
   const threads = useThreadShells();
-  const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
-  const deleteProject = useAtomCommand(projectEnvironment.delete, { reportFailure: false });
+  const updateProject = useOrchestrationCommand(projectEnvironment.update, {
+    reportFailure: false,
+  });
+  const deleteProject = useOrchestrationCommand(projectEnvironment.delete, {
+    reportFailure: false,
+  });
   const projectNameEditedRef = useRef(false);
 
   const faviconPath = representative.faviconPath ?? null;
@@ -209,6 +215,25 @@ function ProjectDetail({
     );
   }, []);
 
+  const checkProjectAccess = useCallback(
+    (members: ReadonlyArray<SidebarProjectGroupMember>, failureTitle: string) => {
+      const denied = members.find(
+        (member) => !readEnvironmentScope(member.environmentId, AuthOrchestrationOperateScope),
+      );
+      if (!denied) return null;
+      const result = AsyncResult.failure<void, Error>(
+        Cause.fail(
+          new Error(
+            `This connection cannot change projects in ${denied.environmentLabel ?? "this environment"}.`,
+          ),
+        ),
+      );
+      reportFailure(failureTitle, result);
+      return result;
+    },
+    [reportFailure],
+  );
+
   // Group-shared fields live on each physical project record, so a
   // group-level edit fans out to every member.
   const updateAllMembers = useCallback(
@@ -220,6 +245,8 @@ function ProjectDetail({
       }>,
       failureTitle: string,
     ): Promise<AtomCommandResult<void, unknown>> => {
+      const denied = checkProjectAccess(group.memberProjects, failureTitle);
+      if (denied) return denied;
       const unavailable = group.memberProjects.find((member) => {
         const environment = environmentById.get(member.environmentId);
         return environment?.connection.phase !== "connected" || !environment.serverConfig;
@@ -233,6 +260,8 @@ function ProjectDetail({
         return result;
       }
       for (const member of group.memberProjects) {
+        const revoked = checkProjectAccess([member], failureTitle);
+        if (revoked) return revoked;
         const result = mapAtomCommandResult(
           await updateProject({
             environmentId: member.environmentId,
@@ -254,7 +283,7 @@ function ProjectDetail({
       }
       return AsyncResult.success(undefined);
     },
-    [environmentById, group.memberProjects, reportFailure, updateProject],
+    [checkProjectAccess, environmentById, group.memberProjects, reportFailure, updateProject],
   );
 
   const renameGroup = useCallback(
@@ -278,9 +307,9 @@ function ProjectDetail({
     [group.memberProjects, updateAllMembers],
   );
 
-  // ----- Space icon -----
-  const [faviconPickerOpen, setFaviconPickerOpen] = useState(false);
-  const [iconPickerOpen, setIconPickerOpen] = useState(false);
+  // ----- project icon -----
+  const [faviconPickerOpen, setFaviconPickerOpen] = useComposerMenuState(!canEditGroup);
+  const [iconPickerOpen, setIconPickerOpen] = useComposerMenuState(!canEditGroup);
   const [isSavingFavicon, setIsSavingFavicon] = useState(false);
   const savingFaviconRef = useRef(false);
   const setProjectIcon = useCallback(
@@ -289,7 +318,7 @@ function ProjectDetail({
       savingFaviconRef.current = true;
       setIsSavingFavicon(true);
       try {
-        await updateAllMembers(input, "Failed to update Space icon");
+        await updateAllMembers(input, "Failed to update project icon");
       } finally {
         savingFaviconRef.current = false;
         setIsSavingFavicon(false);
@@ -302,6 +331,7 @@ function ProjectDetail({
 
   const removeMembers = useCallback(
     async (members: ReadonlyArray<SidebarProjectGroupMember>) => {
+      if (checkProjectAccess(members, "Failed to remove project")) return;
       const api = readLocalApi();
       if (!api) return;
 
@@ -341,9 +371,11 @@ function ProjectDetail({
         ),
       );
       if (confirmed._tag === "Failure" || !confirmed.value) return;
+      if (checkProjectAccess(members, "Failed to remove project")) return;
 
       const draftStore = useComposerDraftStore.getState();
       for (const member of members) {
+        if (checkProjectAccess([member], "Failed to remove project")) return;
         const memberThreads = projectThreads.filter(
           (thread) =>
             thread.environmentId === member.environmentId && thread.projectId === member.id,
@@ -379,6 +411,7 @@ function ProjectDetail({
       }
     },
     [
+      checkProjectAccess,
       deleteProject,
       group.displayName,
       group.memberProjects.length,
@@ -400,6 +433,7 @@ function ProjectDetail({
             <Button
               size="sm"
               variant="outline"
+              disabled={!editableIds.has(member.environmentId)}
               onClick={() => void removeMembers([member])}
               aria-label={`Remove checkout ${member.workspaceRoot}`}
             >
@@ -417,19 +451,27 @@ function ProjectDetail({
         <Alert variant="info">
           <InfoIcon aria-hidden />
           <AlertDescription>
-            Can't find a setting? Keep this Space selected above and go to any other settings page.
+            Can't find a setting? Keep this project picked above and hop to any other settings page.
           </AlertDescription>
         </Alert>
-        <SettingsSection id="project-overview" title="Space" hideTitle>
+        <SettingsSection id="project-overview" title="Project" hideTitle>
+          {!canEditGroup ? (
+            <p className="px-3 py-2 text-sm text-muted-foreground sm:px-4">
+              {group.memberProjects.length > 1
+                ? "Shared settings require permission to change every checkout in this group."
+                : "This connection cannot change this project."}
+            </p>
+          ) : null}
           <SettingsRow
             title="Name"
-            description="The shared name for this Space in the sidebar and Task lists."
+            description="The shared name for this project group in the sidebar and thread lists."
             control={
               <Input
                 key={`${group.projectKey}:${group.displayName}`}
                 size="sm"
                 className="w-full sm:w-64"
-                aria-label="Space name"
+                aria-label="Project name"
+                disabled={!canEditGroup}
                 defaultValue={group.displayName}
                 onChange={() => {
                   projectNameEditedRef.current = true;
@@ -446,7 +488,7 @@ function ProjectDetail({
             }
           />
           <SettingsRow
-            title="Space icon"
+            title="Project icon"
             description={
               projectIcon?.kind === "lucide"
                 ? `${projectIcon.name} · ${projectIcon.color}`
@@ -461,8 +503,8 @@ function ProjectDetail({
                 (member) => member.faviconPath != null || member.projectIcon != null,
               ) ? (
                 <SettingResetButton
-                  label="Space icon"
-                  disabled={isSavingFavicon}
+                  label="project icon"
+                  disabled={isSavingFavicon || !canEditGroup}
                   onClick={() => void setProjectIcon({ faviconPath: null, projectIcon: null })}
                 />
               ) : null
@@ -474,8 +516,8 @@ function ProjectDetail({
                   size="sm"
                   variant="outline"
                   type="button"
-                  aria-label="Choose a Space icon"
-                  disabled={isSavingFavicon}
+                  aria-label="Choose a project icon"
+                  disabled={isSavingFavicon || !canEditGroup}
                   onClick={() => setIconPickerOpen(true)}
                 >
                   Choose icon
@@ -484,8 +526,8 @@ function ProjectDetail({
                   size="sm"
                   variant="outline"
                   type="button"
-                  aria-label="Choose a Space icon file"
-                  disabled={isSavingFavicon}
+                  aria-label="Choose a project icon file"
+                  disabled={isSavingFavicon || !canEditGroup}
                   onClick={() => setFaviconPickerOpen(true)}
                 >
                   Choose file
@@ -494,32 +536,9 @@ function ProjectDetail({
             }
           />
         </SettingsSection>
-        <DoerContextEditor
-          environmentId={representative.environmentId}
-          cwd={representative.workspaceRoot}
-          relativePath={SPACE_CONTEXT_FILE}
-        />
-        {group.memberProjects.map((member) => (
-          <MemoryManager
-            key={`${member.environmentId}-${String(member.id)}`}
-            environmentId={member.environmentId}
-            scope="space"
-            projectId={String(member.id)}
-            sectionId={`space-memory-${member.environmentId}-${String(member.id)}`}
-            title="What Doer remembers about this Space"
-            description={
-              group.memberProjects.length > 1
-                ? `Used for Tasks in this Space on ${member.environmentLabel ?? "this computer"} (${member.workspaceRoot}), including reminders. You choose what Doer remembers — ask in chat or add it here, and review, correct, or forget it any time.`
-                : "Used for Tasks in this Space, including reminders. You choose what Doer remembers — ask in chat or add it here, and review, correct, or forget it any time."
-            }
-          />
-        ))}
-        <details>
-          <summary className="cursor-pointer text-sm font-medium">Advanced</summary>
-          <ProjectDefaultsSettings category="project" />
-          <ProjectActionsSettings />
-          {!simple && hasMultipleCheckouts ? checkoutChoices : null}
-        </details>
+        <ProjectDefaultsSettings category="project" />
+        <ProjectActionsSettings />
+        {hasMultipleCheckouts ? checkoutChoices : null}
         <SettingsSection title="Danger">
           <SettingsRow
             title={
@@ -527,19 +546,20 @@ function ProjectDetail({
                 ? "Remove checkout"
                 : group.memberProjects.length > 1
                   ? "Remove this project everywhere"
-                  : "Remove Space"
+                  : "Remove project"
             }
             description={
               hasOtherMembers
                 ? "Deletes the selected machine's checkout entries and their threads. Other machines and files on disk are not touched."
                 : group.memberProjects.length > 1
                   ? `Deletes all ${group.memberProjects.length} checkout entries and their threads on every machine. Files on disk are not touched.`
-                  : "Removes this Space and its Tasks. Files on disk are not touched."
+                  : "Deletes the project entry and its threads. Files on disk are not touched."
             }
             control={
               <Button
                 size="sm"
                 variant="destructive-outline"
+                disabled={!canEditGroup}
                 onClick={() => void removeMembers(group.memberProjects)}
               >
                 <Trash2Icon />
@@ -547,7 +567,7 @@ function ProjectDetail({
                   ? "Remove checkout"
                   : group.memberProjects.length > 1
                     ? "Remove all entries"
-                    : "Remove Space"}
+                    : "Remove project"}
               </Button>
             }
           />
@@ -563,10 +583,10 @@ function ProjectDetail({
           ? { onPickExternal: () => pickProjectFavicon(representative.workspaceRoot) }
           : {})}
         onSelect={(path) => void setProjectIcon({ faviconPath: path, projectIcon: null })}
-        open={faviconPickerOpen}
+        open={faviconPickerOpen && canEditGroup}
         projectName={group.displayName}
       />
-      {iconPickerOpen ? (
+      {iconPickerOpen && canEditGroup ? (
         <Suspense fallback={null}>
           <ProjectIconPickerDialog
             current={projectIcon}

@@ -16,7 +16,7 @@ import { clerkFrontendApiHostnameFromPublishableKey } from "@t3tools/shared/rela
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
-import * as DesktopAppIdentity from "./DesktopAppIdentity.ts";
+import * as DesktopUserData from "./DesktopUserData.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 
 declare const __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: string | undefined;
@@ -94,26 +94,10 @@ export const make = Effect.gen(function* () {
   const electronApp = yield* ElectronApp.ElectronApp;
   const shell = yield* ElectronShell.ElectronShell;
 
-  // Electron scopes the single-instance lock to the userData directory and
-  // creates that directory when the lock is acquired. The SDK bridge takes
-  // the lock at creation, so userData must already point at Doer's own
-  // directory here — under the default productName-derived path, acquiring
-  // the lock would create "Doer (Alpha)" instead.
-  const userDataPath = yield* DesktopAppIdentity.resolveUserDataPath;
+  // The SDK bridge acquires Electron's profile-scoped single-instance lock.
+  // Must not yield: the bridge registers a scheme Electron rejects once ready.
+  const userDataPath = yield* DesktopUserData.resolveUserDataPath(environment);
   yield* electronApp.setPath("userData", userDataPath);
-
-  // Clerk manages the lock on Windows/Linux, but assumes macOS launches go
-  // through Launch Services. Dev runners and automation can launch directly.
-  if (environment.platform === "darwin") {
-    const primary = yield* Effect.acquireRelease(
-      electronApp.requestSingleInstanceLock,
-      (acquired) => (acquired ? electronApp.releaseSingleInstanceLock : Effect.void),
-    );
-    if (!primary) {
-      yield* electronApp.quit;
-      return yield* Effect.interrupt;
-    }
-  }
 
   const bridge = yield* Effect.acquireRelease(
     Effect.try({

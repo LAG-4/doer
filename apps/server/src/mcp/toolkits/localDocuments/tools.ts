@@ -1,9 +1,11 @@
+import { OrchestratorMcpFailure } from "@t3tools/contracts";
+import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as Schema from "effect/Schema";
-import { Tool, Toolkit } from "effect/unstable/ai";
+import { Tool, Toolkit } from "effect/ai";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import { ServerSettingsService } from "../../../serverSettings.ts";
-import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { DoerTaskContext as ProjectionSnapshotQuery } from "../../../memory/DoerTaskContext.ts";
 import { WorkspaceFileSystem } from "../../../workspace/WorkspaceFileSystem.ts";
 
 export class LocalDocumentError extends Schema.TaggedError<LocalDocumentError>()(
@@ -12,6 +14,7 @@ export class LocalDocumentError extends Schema.TaggedError<LocalDocumentError>()
 ) {}
 
 const dependencies = [
+  ThreadManagementService.ThreadManagementService,
   McpInvocationContext.McpInvocationContext,
   ServerSettingsService,
   ProjectionSnapshotQuery,
@@ -28,7 +31,7 @@ const inspectSpreadsheet = Tool.make("inspect_spreadsheet", {
     rows: Schema.Array(Schema.Array(Schema.String)),
     sheetNames: Schema.Array(Schema.String),
   }),
-  failure: LocalDocumentError,
+  failure: Schema.Union([LocalDocumentError, OrchestratorMcpFailure]),
   dependencies,
 })
   .annotate(Tool.Title, "Inspect spreadsheet")
@@ -44,7 +47,7 @@ const replaceSpreadsheetCell = Tool.make("replace_spreadsheet_cell", {
     value: Schema.String,
   }),
   success: Schema.Struct({ sha256: Schema.String, backupPath: Schema.String }),
-  failure: LocalDocumentError,
+  failure: Schema.Union([LocalDocumentError, OrchestratorMcpFailure]),
   dependencies,
 })
   .annotate(Tool.Title, "Edit spreadsheet cell")
@@ -64,7 +67,7 @@ const inspectPresentation = Tool.make("inspect_presentation", {
       }),
     ),
   }),
-  failure: LocalDocumentError,
+  failure: Schema.Union([LocalDocumentError, OrchestratorMcpFailure]),
   dependencies,
 })
   .annotate(Tool.Title, "Inspect presentation")
@@ -81,7 +84,7 @@ const replacePresentationText = Tool.make("replace_presentation_text", {
     newText: Schema.String,
   }),
   success: Schema.Struct({ sha256: Schema.String, backupPath: Schema.String }),
-  failure: LocalDocumentError,
+  failure: Schema.Union([LocalDocumentError, OrchestratorMcpFailure]),
   dependencies,
 })
   .annotate(Tool.Title, "Edit presentation text")

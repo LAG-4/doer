@@ -1,7 +1,7 @@
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
 import { runMigrations } from "../Migrations.ts";
@@ -20,7 +20,7 @@ layer("051_ProjectionAutomations", (it) => {
       `;
       assert.deepEqual(before, []);
 
-      yield* runMigrations({ toMigrationInclusive: 51 });
+      yield* migrateAutomations;
 
       const tables = yield* sql<{ readonly name: string }>`
         SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'projection_automation%' ORDER BY name

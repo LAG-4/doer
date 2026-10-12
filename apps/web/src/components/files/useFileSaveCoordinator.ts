@@ -1,11 +1,15 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import { AuthFilesystemWriteScope, type EnvironmentId } from "@t3tools/contracts";
 import { createRef, useEffect, useMemo } from "react";
 
 import { projectEnvironment } from "~/state/projects";
+import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
 
 import { FileSaveCoordinator } from "./fileSaveCoordinator";
-import { confirmProjectFileQueryData } from "./projectFilesQueryState";
+import {
+  confirmProjectFileQueryData,
+  getUnsavedProjectFileQueryData,
+} from "./projectFilesQueryState";
 
 const FILE_SAVE_DEBOUNCE_MS = 500;
 
@@ -14,16 +18,8 @@ interface FileSaveOptions {
   cwd: string;
   relativePath: string;
   onPendingChange: (relativePath: string, pending: boolean) => void;
-  /**
-   * Extra write payload for binary files. When present, saves carry it (for
-   * example base64 spreadsheet bytes) instead of text, with the same pending
-   * and confirmed flow. The text optimistic cache is untouched: binary
-   * payloads must never read as text.
-   */
   binaryEncoding?: "base64";
-  /** Runs after the text optimistic confirm, e.g. to snapshot saved bytes. */
   onSaved?: (contents: string) => void;
-  /** Runs when a save round fails, e.g. to surface a retry toast. */
   onSaveError?: () => void;
 }
 
@@ -36,6 +32,7 @@ export function useFileSaveCoordinator({
   onSaved,
   onSaveError,
 }: FileSaveOptions): Pick<FileSaveCoordinator, "change" | "save"> {
+  const canWriteFiles = useEnvironmentScope(environmentId, AuthFilesystemWriteScope);
   const writeFile = useAtomCommand(projectEnvironment.writeFile);
   const session = useMemo(() => {
     const coordinatorRef = createRef<FileSaveCoordinator>();
@@ -45,9 +42,10 @@ export function useFileSaveCoordinator({
       setup: () => {
         const coordinator = new FileSaveCoordinator({
           debounceMs: FILE_SAVE_DEBOUNCE_MS,
+          canPersist: () => readEnvironmentScope(environmentId, AuthFilesystemWriteScope),
           onPendingChange: (pending) => onPendingChange(relativePath, pending),
-          persist: (nextContents) =>
-            writeFile({
+          persist: async (nextContents) => {
+            const result = await writeFile({
               environmentId,
               input: {
                 cwd,
@@ -55,13 +53,15 @@ export function useFileSaveCoordinator({
                 contents: nextContents,
                 ...(binaryEncoding ? { encoding: binaryEncoding } : {}),
               },
-            }),
-          onConfirmed: (confirmedContents) => {
-            confirmProjectFileQueryData(environmentId, cwd, relativePath, confirmedContents);
-            onSaved?.(confirmedContents);
+            });
+            if (result._tag === "Failure") onSaveError?.();
+            return result;
           },
-          onFailure: () => {
-            onSaveError?.();
+          onConfirmed: (confirmedContents) => {
+            onSaved?.(confirmedContents);
+            return binaryEncoding
+              ? true
+              : confirmProjectFileQueryData(environmentId, cwd, relativePath, confirmedContents);
           },
         });
         coordinatorRef.current = coordinator;
@@ -72,18 +72,31 @@ export function useFileSaveCoordinator({
       },
     };
   }, [
-    binaryEncoding,
     cwd,
     environmentId,
     onPendingChange,
-    onSaved,
-    onSaveError,
     relativePath,
     writeFile,
+    binaryEncoding,
+    onSaved,
+    onSaveError,
   ]);
 
   // StrictMode replays effect setup. Retired file sessions stay inert, while the
   // replay gets a fresh coordinator instead of reusing a disposed one.
   useEffect(session.setup, [session]);
+  useEffect(() => {
+    if (!canWriteFiles) return;
+    let cancelled = false;
+    // Replay must retire the first session before recovery queues a draft to flush.
+    queueMicrotask(() => {
+      if (cancelled) return;
+      const unsaved = getUnsavedProjectFileQueryData(environmentId, cwd, relativePath);
+      if (unsaved) session.change(unsaved.contents);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [canWriteFiles, cwd, environmentId, relativePath, session]);
   return session;
 }

@@ -13,10 +13,9 @@ import {
   AssetWorkspacePathValidationError,
   AssetWorkspaceResolutionError,
   AssetWorkspaceRootNormalizationError,
-  EventId,
-  PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   ThreadId,
   ToolActivityNativeAppReference,
+  TurnItemId,
 } from "@t3tools/contracts";
 import {
   audioMimeTypeFromExtension,
@@ -33,11 +32,11 @@ import {
 } from "@t3tools/shared/imageDimensions";
 import { githubMediaFetchUrl, githubMediaFileName } from "@t3tools/shared/githubMedia";
 import { PROJECT_FAVICON_FALLBACK_MARKER } from "@t3tools/shared/projectFavicon";
-import { toolOutputImages } from "@t3tools/shared/toolOutput";
+import { MAX_TOOL_OUTPUT_IMAGE_BASE64_LENGTH, toolOutputImages } from "@t3tools/shared/toolOutput";
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
+import * as Hex from "effect/encoding/Hex";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
@@ -53,7 +52,8 @@ import {
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { parseAttachmentFileExtension, resolveAttachmentPathById } from "../attachmentStore.ts";
 import * as ServerConfig from "../config.ts";
-import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
+import { expandHomePathWith } from "@t3tools/provider-core/server/pathExpansion";
 import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as NativeAppIconResolver from "./NativeAppIconResolver.ts";
@@ -75,7 +75,6 @@ const INLINE_PREVIEW_MIME_TYPES: Record<string, string> = {
 };
 const inlinePreviewMimeTypeForExtension = (extension: string) =>
   INLINE_PREVIEW_MIME_TYPES[extension] ?? audioMimeTypeFromExtension(`.${extension}`) ?? undefined;
-const OUTPUT_DOWNLOAD_EXTENSIONS = new Set([".docx", ".xlsx", ".pptx", ".csv", ".txt", ".md"]);
 const PREVIEW_ASSET_EXTENSIONS = new Set([
   ...WORKSPACE_BROWSER_PREVIEW_EXTENSIONS,
   ...WORKSPACE_IMAGE_PREVIEW_EXTENSIONS,
@@ -147,7 +146,7 @@ const AssetClaimsSchema = Schema.Union([
     version: Schema.Literal(1),
     kind: Schema.Literal("tool-output-image"),
     threadId: ThreadId,
-    activityId: EventId,
+    itemId: TurnItemId,
     index: Schema.Number,
     expiresAt: Schema.Number,
   }),
@@ -216,35 +215,19 @@ const optionOnNotFound = <A, R>(
     }),
   );
 
-// The largest image a provider turn accepts, as base64 (4 characters per 3 bytes).
-const MAX_TOOL_OUTPUT_IMAGE_BASE64_LENGTH = Math.ceil(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES / 3) * 4;
-
-function asStoredRecord(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
 /**
- * Decodes one image a tool returned inline from the activity's full stored
- * payload; null when the stored activity has no such image, or it is larger
- * than a provider turn accepts. Uses the same order as the projection's
- * markers: the stored `item.result` wins when present, otherwise the stored
- * `data.result`.
+ * Decodes one image a tool returned inline; null when the stored item has no
+ * such image, or it is larger than a provider turn accepts.
  */
 const readToolOutputImage = Effect.fn("AssetAccess.readToolOutputImage")(function* (input: {
   readonly threadId: ThreadId;
-  readonly activityId: EventId;
+  readonly itemId: TurnItemId;
   readonly index: number;
 }) {
-  const snapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
-  const payload = yield* snapshotQuery.getThreadActivityPayload(input);
-  if (Option.isNone(payload)) return null;
-  const data = asStoredRecord(asStoredRecord(payload.value)?.data);
-  if (!data) return null;
-  const item = asStoredRecord(data.item);
-  const result = item ? item.result : data.result;
-  const image = toolOutputImages(result)[input.index];
+  const orchestrator = yield* Orchestrator.OrchestratorV2;
+  const item = yield* orchestrator.getTurnItem(input);
+  const image =
+    item?.type === "dynamic_tool" ? toolOutputImages(item.output)[input.index] : undefined;
   return image?.data === undefined || image.data.length > MAX_TOOL_OUTPUT_IMAGE_BASE64_LENGTH
     ? null
     : { mimeType: image.mimeType, bytes: Buffer.from(image.data, "base64") };
@@ -410,10 +393,7 @@ const finalizeWorkspaceFileAsset = Effect.fn("AssetAccess.finalizeWorkspaceFileA
             }),
         ),
       );
-    const isOutput = OUTPUT_DOWNLOAD_EXTENSIONS.has(
-      path.extname(resolved.relativePath).toLowerCase(),
-    );
-    if (!isWorkspacePreviewEntryPath(resolved.relativePath) && !isOutput) {
+    if (!isWorkspacePreviewEntryPath(resolved.relativePath)) {
       return yield* new AssetPreviewTypeValidationError({
         resource: input.resource,
       });
@@ -450,22 +430,21 @@ const finalizeWorkspaceFileAsset = Effect.fn("AssetAccess.finalizeWorkspaceFileA
       ? yield* readImageDimensionsFromHeader(canonicalFile)
       : null;
     return {
-      claims:
-        isOutput || isWorkspaceImagePreviewPath(resolved.relativePath)
-          ? {
-              version: 1 as const,
-              kind: "workspace-file-exact" as const,
-              workspaceRoot: canonicalWorkspaceRoot,
-              relativePath: resolved.relativePath,
-              expiresAt: input.expiresAt,
-            }
-          : {
-              version: 1 as const,
-              kind: "workspace-file" as const,
-              workspaceRoot: canonicalWorkspaceRoot,
-              baseRelativePath: path.dirname(resolved.relativePath),
-              expiresAt: input.expiresAt,
-            },
+      claims: isWorkspaceImagePreviewPath(resolved.relativePath)
+        ? {
+            version: 1 as const,
+            kind: "workspace-file-exact" as const,
+            workspaceRoot: canonicalWorkspaceRoot,
+            relativePath: resolved.relativePath,
+            expiresAt: input.expiresAt,
+          }
+        : {
+            version: 1 as const,
+            kind: "workspace-file" as const,
+            workspaceRoot: canonicalWorkspaceRoot,
+            baseRelativePath: path.dirname(resolved.relativePath),
+            expiresAt: input.expiresAt,
+          },
       fileName: path.basename(resolved.relativePath),
       imageDimensions,
     };
@@ -490,7 +469,7 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
 
   switch (input.resource._tag) {
     case "media-file": {
-      let requestedPath = input.resource.path;
+      let requestedPath = expandHomePathWith(input.resource.path, path);
       if (!path.isAbsolute(requestedPath)) {
         if (!input.workspaceRoot) {
           return yield* new AssetWorkspaceContextNotFoundError({ resource: input.resource });
@@ -713,7 +692,7 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
           ),
         );
         const revision = yield* crypto.digest("SHA-256", faviconBytes).pipe(
-          Effect.map(Encoding.encodeHex),
+          Effect.map(Hex.encode),
           Effect.mapError(
             (cause) =>
               new AssetProjectFaviconInspectionError({
@@ -741,7 +720,7 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
         version: 1,
         kind: "tool-output-image",
         threadId: input.resource.threadId,
-        activityId: input.resource.activityId,
+        itemId: input.resource.itemId,
         index: input.resource.index,
         expiresAt,
       };
@@ -889,7 +868,7 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
       Effect.tapError((cause) =>
         Effect.logError("Failed to read tool output image.", {
           threadId: claims.threadId,
-          activityId: claims.activityId,
+          itemId: claims.itemId,
           cause,
         }),
       ),
@@ -938,17 +917,7 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
       relativePath: claims.relativePath,
     });
     return exactWorkspaceFile
-      ? ({
-          kind: "file",
-          path: exactWorkspaceFile,
-          ...(OUTPUT_DOWNLOAD_EXTENSIONS.has(path.extname(exactWorkspaceFile).toLowerCase())
-            ? {
-                download: true,
-                fileName: path.basename(exactWorkspaceFile),
-                mimeType: "application/octet-stream",
-              }
-            : {}),
-        } satisfies ResolvedAsset)
+      ? ({ kind: "file", path: exactWorkspaceFile } satisfies ResolvedAsset)
       : null;
   }
   const segments = decodedPath.split(/[\\/]/);

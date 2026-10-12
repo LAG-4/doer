@@ -1,4 +1,9 @@
-import type { EnvironmentId, ServerConfig, ServerSelfUpdateCapability } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  ServerConfig,
+  ServerInstallation,
+  ServerSelfUpdateCapability,
+} from "@t3tools/contracts";
 import type { ServerUpdateState } from "@t3tools/client-runtime/state/server";
 import { compareSemverVersions, parseSemver } from "@t3tools/shared/semver";
 import * as Schema from "effect/Schema";
@@ -43,7 +48,7 @@ function versionCore(version: string): string {
 }
 
 /**
- * The skew a user can act on: the connected server runs an older Doer than
+ * The skew a user can act on: the connected server runs an older T3 Code than
  * this client, so the server is the side that needs updating.
  *
  * Two nightly builds compare their full versions, including the date and run.
@@ -80,7 +85,7 @@ export function resolveVersionMismatch(
   return {
     clientVersion: normalizedClientVersion,
     serverVersion: normalizedServerVersion,
-    hint: "Version mismatch. Try syncing the client and server to the same Doer version.",
+    hint: "Version mismatch. Try syncing the client and server to the same T3 Code version.",
   };
 }
 
@@ -115,8 +120,17 @@ export function supportsServerUpdateThreadContinuation(
 }
 
 /** The command to hand users whose server cannot update itself. */
-export function manualServerUpdateCommand(targetVersion: string): string {
-  return `npx @lag4/doer-cli@${targetVersion}`;
+export function manualServerUpdateCommand(
+  targetVersion: string,
+  installation?: ServerInstallation,
+): string {
+  if (installation?.kind === "npm-global") {
+    const prefix = `'${installation.prefix.replaceAll("'", "'\\''")}'`;
+    return `npm install --global --prefix ${prefix} t3@${targetVersion}`;
+  }
+  const runner =
+    installation?.kind === "pnpm-dlx" ? "pnpm dlx" : installation?.kind === "bunx" ? "bunx" : "npx";
+  return `${runner} t3@${targetVersion}`;
 }
 
 export function serverUpdateGuidance(capability: ServerSelfUpdateCapability): string {
@@ -174,4 +188,18 @@ export function dismissVersionMismatch(dismissalKey: string | null | undefined):
   writeVersionMismatchDismissals({
     keys: [...document.keys, dismissalKey],
   });
+}
+
+export function appendVersionMismatchHint(
+  message: string | null | undefined,
+  mismatch: VersionMismatch | null | undefined,
+): string | null {
+  const normalizedMessage = normalizeVersion(message);
+  if (!normalizedMessage) {
+    return mismatch?.hint ?? null;
+  }
+  if (!mismatch) {
+    return normalizedMessage;
+  }
+  return `${normalizedMessage} Hint: ${mismatch.hint}`;
 }

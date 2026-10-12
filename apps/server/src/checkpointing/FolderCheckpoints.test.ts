@@ -1,12 +1,13 @@
 import { CheckpointRef } from "@t3tools/contracts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { it } from "@effect/vitest";
+import { it, assert } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import { expect } from "vite-plus/test";
 import * as FolderCheckpoints from "./FolderCheckpoints.ts";
+import * as LegacyFolderCheckpoints from "./LegacyFolderCheckpoints.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 const TestLayer = VcsProcess.layer.pipe(Layer.provideMerge(NodeServices.layer));
 it.layer(TestLayer)("ordinary folder History", (it) => {
@@ -126,6 +127,31 @@ it.layer(TestLayer)("ordinary folder History", (it) => {
           checkpointRef: CheckpointRef.make("refs/doer/empty"),
         }),
       ).toBe(false);
+    }),
+  );
+  it.effect("keeps existing private Git History readable without rewriting it", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const root = yield* fs.makeTempDirectoryScoped();
+      const state = yield* fs.makeTempDirectoryScoped();
+      const before = CheckpointRef.make("refs/doer/legacy/before");
+      const after = CheckpointRef.make("refs/doer/legacy/after");
+      const legacy = yield* LegacyFolderCheckpoints.make(state);
+      yield* fs.writeFileString(`${root}/notes.txt`, "before");
+      yield* legacy.captureCheckpoint({ cwd: root, checkpointRef: before });
+      const history = yield* FolderCheckpoints.make(state);
+      assert.isTrue(yield* history.hasCheckpointRef({ cwd: root, checkpointRef: before }));
+      yield* fs.writeFileString(`${root}/notes.txt`, "after");
+      yield* history.captureCheckpoint({ cwd: root, checkpointRef: after });
+      assert.isTrue(
+        yield* history.restoreCheckpoint({
+          cwd: root,
+          checkpointRef: before,
+          expectedPaths: [{ path: "notes.txt", checkpointRef: after }],
+        }),
+      );
+      assert.equal(yield* fs.readFileString(`${root}/notes.txt`), "before");
+      assert.isFalse(yield* fs.exists(`${root}/.git`));
     }),
   );
 });

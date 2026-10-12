@@ -17,6 +17,16 @@ const { listBrowserImportSources } = vi.hoisted(() => ({
   listBrowserImportSources: vi.fn().mockResolvedValue([]),
 }));
 
+vi.mock("../ui/tooltip", () => ({
+  Tooltip: ({ children }: { children: ReactNode }) => children,
+  TooltipTrigger: ({ render, children }: { render: ReactNode; children: ReactNode }) => (
+    <>
+      {render}
+      {children}
+    </>
+  ),
+  TooltipPopup: () => null,
+}));
 vi.mock("../preview/previewBridge", () => ({
   previewBridge: { listBrowserImportSources },
 }));
@@ -24,14 +34,18 @@ vi.mock("../../env", () => ({ isElectron: true }));
 vi.mock("../../state/environments", () => ({
   useEnvironments: () => ({ environments: [], isReady: true }),
   usePrimaryEnvironment: () => null,
-  useEnvironment: () => null,
+  // Settings rows resolve the primary grant before rendering server controls.
+  usePrimaryEnvironmentId: () => null,
   useEnvironmentHttpBaseUrl: () => null,
+  useEnvironment: () => null,
 }));
 vi.mock("../../hooks/useSettings", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../hooks/useSettings")>()),
   PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE: "Connect to an environment",
   useClientSettings: (selector?: (settings: typeof DEFAULT_CLIENT_SETTINGS) => unknown) =>
-    selector ? selector(DEFAULT_CLIENT_SETTINGS) : DEFAULT_CLIENT_SETTINGS,
+    selector
+      ? selector({ ...DEFAULT_CLIENT_SETTINGS, simpleModeEnabled: false })
+      : { ...DEFAULT_CLIENT_SETTINGS, simpleModeEnabled: false },
   useClientSettingsHydrated: () => true,
   usePrimarySettingsAvailable: () => true,
   usePrimarySettings: () => DEFAULT_UNIFIED_SETTINGS,
@@ -45,6 +59,7 @@ vi.mock("./settingsLayout", async (importOriginal) => ({
 // this test covers the device-local browser sections only.
 vi.mock("./ProjectDefaultsSettings", () => ({ ProjectDefaultsSettings: () => null }));
 vi.mock("./SettingsScopeContext", () => ({
+  ComputerSettingsScope: ({ children }: { children: ReactNode }) => children,
   useSettingsScope: () => ({
     scope: { kind: "all", environmentIds: [] },
     search: {},
@@ -55,7 +70,6 @@ vi.mock("./SettingsScopeContext", () => ({
     targets: [],
   }),
   useOptionalSettingsScope: () => null,
-  ComputerSettingsScope: ({ children }: { children: ReactNode }) => children,
 }));
 
 import { IntegrationsSettingsPanel } from "./IntegrationsSettings";

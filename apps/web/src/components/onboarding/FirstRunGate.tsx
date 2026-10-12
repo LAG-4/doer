@@ -1,7 +1,7 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { useAtomValue } from "@effect/atom-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 import { useEffect, useState } from "react";
 
 import {
@@ -82,6 +82,7 @@ export function FirstRunGate({
   const navigate = useNavigate();
   const pathname = useLocation({ select: (location) => location.pathname });
   const hydrationStatus = useClientSettingsHydrationStatus();
+  const simpleMode = useClientSettings((s) => s.simpleModeEnabled);
   const hydrated = hydrationStatus === "ready";
   const completeOnboarding = useCompleteOnboarding();
   const onboardingCompletedAt = useClientSettings((settings) => settings.onboardingCompletedAt);
@@ -128,9 +129,9 @@ export function FirstRunGate({
       : threads.filter(
           (thread) =>
             thread.projectId !== inboxProjectId ||
-            thread.latestTurn !== null ||
+            thread.latestRun !== null ||
             thread.latestUserMessageAt !== null ||
-            thread.session !== null,
+            thread.runtime !== null,
         ).length;
   const workspaceFresh = isFreshFirstRunWorkspace({
     primaryEnvironmentId,
@@ -171,7 +172,7 @@ export function FirstRunGate({
       });
 
   useEffect(() => {
-    if (decision === "wizard" || !hydrated) return;
+    if ((simpleMode && decision === "wizard") || !hydrated) return;
 
     if (persistCompletion && onboardingCompletedAt === null) {
       void completeOnboarding().catch(() => undefined);
@@ -202,11 +203,12 @@ export function FirstRunGate({
   }, [decision, enabled, hydrated]);
 
   useEffect(() => {
-    if (decision === "wizard" && pathname !== "/welcome") {
+    if (simpleMode && decision === "wizard" && pathname !== "/welcome") {
       void navigate({ to: "/welcome", replace: true });
     }
-  }, [decision, navigate, pathname]);
+  }, [decision, navigate, pathname, simpleMode]);
 
+  if (!simpleMode) return children;
   if (settingsReadFailed) {
     return <FirstRunRecovery reason="settings" retrying={hydrationStatus === "retrying"} />;
   }

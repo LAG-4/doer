@@ -1,3 +1,5 @@
+// @effect-diagnostics nodeBuiltinImport:off
+import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as NodeCrypto from "node:crypto";
 import {
   base64ToBytes,
@@ -13,7 +15,7 @@ import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as ExperimentalConnections from "../../../integrations/ExperimentalConnections.ts";
 import { EXPERIMENTAL_CONNECTIONS_COPY } from "@t3tools/shared/experimentalConnections";
 import { ServerSettingsService } from "../../../serverSettings.ts";
-import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { DoerTaskContext as ProjectionSnapshotQuery } from "../../../memory/DoerTaskContext.ts";
 import { WorkspaceFileSystem } from "../../../workspace/WorkspaceFileSystem.ts";
 import { replaceLocalDocument } from "../../../integrations/localDocumentWrite.ts";
 import { withWorkspaceLease } from "../../../workspace/workspaceLease.ts";
@@ -31,7 +33,7 @@ const make = Effect.gen(function* () {
 
   const workspace = (kind: Kind) =>
     Effect.gen(function* () {
-      const scope = yield* McpInvocationContext.requireMcpCapability(kind).pipe(
+      const scope = yield* McpInvocationContext.requireDoerCapability(kind).pipe(
         Effect.mapError(() =>
           failure("This local file tool is off. Enable it in Settings → Tools."),
         ),
@@ -43,10 +45,7 @@ const make = Effect.gen(function* () {
         .getThreadShellById(scope.threadId)
         .pipe(Effect.orElseSucceed(() => Option.none()));
       if (Option.isNone(thread)) return yield* failure("Task was not found.");
-      if (
-        thread.value.archivedAt !== null ||
-        ["stopped", "interrupted", "error"].includes(thread.value.session?.status ?? "")
-      ) {
+      if (thread.value.archivedAt !== null || thread.value.deletedAt !== null) {
         return yield* failure("Task is no longer active. Inspect it again from the current task.");
       }
       const settings = yield* settingsService.getSettings.pipe(
@@ -155,3 +154,15 @@ const make = Effect.gen(function* () {
 });
 
 export const LocalDocumentsToolkitHandlersLive = LocalDocumentsToolkit.toLayer(make);
+
+export const layer = McpToolAccess.toLayer(
+  LocalDocumentsToolkit,
+  make.pipe(
+    Effect.map((handlers) => ({
+      inspect_spreadsheet: McpToolAccess.actsAsCaller(handlers.inspect_spreadsheet),
+      replace_spreadsheet_cell: McpToolAccess.actsAsCaller(handlers.replace_spreadsheet_cell),
+      inspect_presentation: McpToolAccess.actsAsCaller(handlers.inspect_presentation),
+      replace_presentation_text: McpToolAccess.actsAsCaller(handlers.replace_presentation_text),
+    })),
+  ),
+);

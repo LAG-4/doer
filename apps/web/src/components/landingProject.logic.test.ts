@@ -1,9 +1,10 @@
+import { makeThreadFixture } from "../test-fixtures";
 import { describe, expect, it } from "vite-plus/test";
 import type {
   EnvironmentProject,
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
-import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 
 import { resolveLandingProject } from "./landingProject.logic";
 
@@ -29,33 +30,11 @@ function makeProject(
 function makeThread(
   overrides: Omit<Partial<EnvironmentThreadShell>, "projectId"> & { readonly projectId: string },
 ): EnvironmentThreadShell {
-  return {
+  return makeThreadFixture({
     environmentId,
-    id: ThreadId.make("thread-1"),
-    title: "Thread",
-    modelSelection: {
-      instanceId: ProviderInstanceId.make("codex"),
-      model: "gpt-5.4" as EnvironmentThreadShell["modelSelection"]["model"],
-    },
-    runtimeMode: "full-access",
-    interactionMode: "default",
-    branch: null,
-    worktreePath: null,
-    pullRequests: [],
-    latestTurn: null,
-    createdAt: "2026-03-09T10:00:00.000Z",
-    updatedAt: "2026-03-09T10:02:00.000Z",
-    archivedAt: null,
-    settledOverride: null,
-    settledAt: null,
-    session: null,
-    latestUserMessageAt: null,
-    hasPendingApprovals: false,
-    hasPendingUserInput: false,
-    hasActionableProposedPlan: false,
     ...overrides,
     projectId: ProjectId.make(overrides.projectId),
-  };
+  });
 }
 
 describe("resolveLandingProject", () => {
@@ -91,7 +70,7 @@ describe("resolveLandingProject", () => {
       makeProject({ id: "inbox", title: "My Stuff" }),
       makeProject({ id: "server", title: "server", updatedAt: "2026-03-09T11:00:00.000Z" }),
     ];
-    const threads = [makeThread({ projectId: "server" })];
+    const threads = [makeThread({ projectId: "server", updatedAt: "2026-03-09T11:00:00.000Z" })];
     expect(
       resolveLandingProject({
         bootstrapped: true,

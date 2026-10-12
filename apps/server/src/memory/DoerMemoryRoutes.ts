@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off
 /**
  * DoerMemoryRoutes - Authenticated Settings UI routes for saved memories.
  *
@@ -39,10 +40,10 @@ import {
   HttpServerRequest,
   HttpServerRespondable,
   HttpServerResponse,
-} from "effect/unstable/http";
+} from "effect/http";
 
 import { authenticateRawRouteWithScope } from "../http.ts";
-import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as ProjectionSnapshotQuery from "./DoerTaskContext.ts";
 import { DoerMemoryStore } from "../persistence/Services/DoerMemoryStore.ts";
 
 export const DOER_MEMORY_ROUTE_PATH = "/api/doer-memory";
@@ -94,7 +95,7 @@ const resolveSpace = Effect.fn("DoerMemoryRoutes.resolveSpace")(function* (
   projectId: string | null,
 ) {
   if (projectId === null) return null;
-  const snapshots = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
+  const snapshots = yield* ProjectionSnapshotQuery.DoerTaskContext;
   const project = yield* snapshots
     .getProjectShellById(ProjectId.make(projectId))
     .pipe(Effect.orElseSucceed(() => Option.none()));

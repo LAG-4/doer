@@ -26,13 +26,9 @@ export interface MakeDesktopEnvironmentInput {
   readonly appVersion: string;
   readonly appPath: string;
   readonly isPackaged: boolean;
+  readonly isWindowsStore?: boolean;
   readonly resourcesPath: string;
   readonly runningUnderArm64Translation: boolean;
-  // True only inside the installed Microsoft Store package (AppX/MSIX), read
-  // from process.windowsStore in main. The Store owns updates there, so the
-  // self-update pipeline stays off. Optional so existing callers keep
-  // compiling; absent means a direct-download (non-Store) build.
-  readonly isWindowsStore?: boolean;
 }
 
 export class DesktopEnvironment extends Context.Service<
@@ -43,11 +39,11 @@ export class DesktopEnvironment extends Context.Service<
     readonly platform: NodeJS.Platform;
     readonly processArch: string;
     readonly isPackaged: boolean;
+    readonly isWindowsStore: boolean;
     readonly isDevelopment: boolean;
     readonly appVersion: string;
     readonly appPath: string;
     readonly resourcesPath: string;
-    readonly isWindowsStore: boolean;
     readonly homeDirectory: string;
     readonly appDataDirectory: string;
     readonly baseDir: string;
@@ -92,7 +88,6 @@ export class DesktopEnvironment extends Context.Service<
     readonly linuxWmClass: string;
     readonly linuxApplicationsDir: string;
     readonly appImagePath: Option.Option<string>;
-    readonly userDataDirName: string;
     readonly defaultDesktopSettings: DesktopAppSettings.DesktopSettings;
     readonly runtimeInfo: DesktopRuntimeInfo;
     readonly resolvePickFolderDefaultPath: (rawOptions: unknown) => Option.Option<string>;
@@ -171,14 +166,10 @@ const make = Effect.fn("desktop.environment.make")(function* (
       : input.platform === "darwin"
         ? path.join(homeDirectory, "Library", "Application Support")
         : Option.getOrElse(config.xdgConfigHome, () => path.join(homeDirectory, ".config"));
-  // DOER_HOME wins; T3CODE_HOME is honored as a fallback so an explicit
-  // `T3CODE_HOME=~/.t3` (or --base-dir ~/.t3) can still point Doer at a
-  // T3 Code install for one-off imports. The default is ~/.doer.
-  const configuredHome = Option.orElse(config.doerHome, () => config.t3Home);
   const baseDir = resolveDesktopBaseDir({
     homeDirectory,
     joinPath: path.join,
-    t3Home: configuredHome,
+    t3Home: Option.orElse(config.doerHome, () => config.t3Home),
   });
   const rootDir = path.resolve(input.dirname, "../../..");
   const appRoot = input.isPackaged ? input.appPath : rootDir;
@@ -195,9 +186,8 @@ const make = Effect.fn("desktop.environment.make")(function* (
     baseDir,
     isDevelopment,
     joinPath: path.join,
-    t3Home: configuredHome,
+    t3Home: Option.orElse(config.doerHome, () => config.t3Home),
   });
-  const userDataDirName = isDevelopment ? "doer-dev" : "doer";
   const linuxApplicationsDir = path.join(
     Option.getOrElse(config.xdgDataHome, () => path.join(homeDirectory, ".local", "share")),
     "applications",
@@ -255,7 +245,6 @@ const make = Effect.fn("desktop.environment.make")(function* (
     linuxWmClass: isDevelopment ? "doer-dev" : "doer",
     linuxApplicationsDir,
     appImagePath: config.appImagePath,
-    userDataDirName,
     defaultDesktopSettings: DesktopAppSettings.resolveDefaultDesktopSettings(input.appVersion),
     runtimeInfo: resolveDesktopRuntimeInfo({
       platform: input.platform,

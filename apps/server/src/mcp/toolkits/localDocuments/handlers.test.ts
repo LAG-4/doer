@@ -1,3 +1,5 @@
+import * as DateTime from "effect/DateTime";
+import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import {
   DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
@@ -5,7 +7,6 @@ import {
   ProviderInstanceId,
   ThreadId,
   type OrchestrationProjectShell,
-  type OrchestrationThreadShell,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -13,7 +14,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import { bytesToBase64, createSpreadsheet } from "@t3tools/shared/spreadsheetWorkbook";
-import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { DoerTaskContext as ProjectionSnapshotQuery } from "../../../memory/DoerTaskContext.ts";
 import { ServerSettingsService } from "../../../serverSettings.ts";
 import { WorkspaceFileSystem } from "../../../workspace/WorkspaceFileSystem.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -23,7 +24,7 @@ import { LocalDocumentsToolkit } from "./tools.ts";
 
 const threadId = ThreadId.make("sheet-task");
 const projectId = ProjectId.make("space");
-const thread: OrchestrationThreadShell = {
+const thread = {
   id: threadId,
   projectId,
   title: "Sheet",
@@ -36,7 +37,8 @@ const thread: OrchestrationThreadShell = {
   latestTurn: null,
   createdAt: "2026-10-04T00:00:00.000Z",
   updatedAt: "2026-10-04T00:00:00.000Z",
-  archivedAt: null,
+  archivedAt: null as DateTime.Utc | null,
+  deletedAt: null as DateTime.Utc | null,
   settledOverride: null,
   settledAt: null,
   session: null,
@@ -67,24 +69,14 @@ function scenario(
     let enabled = !options.startDisabled;
     let threadRow = thread;
     if (options.stopBeforeCall) {
-      threadRow = {
-        ...thread,
-        session: {
-          threadId,
-          status: "stopped",
-          providerName: "opencode",
-          runtimeMode: "full-access",
-          activeTurnId: null,
-          lastError: null,
-          updatedAt: "2026-10-04T00:00:00.000Z",
-        },
-      };
+      threadRow = { ...thread, deletedAt: DateTime.makeUnsafe("2026-10-05T00:00:00.000Z") };
     }
     if (options.archiveBeforeCall) {
-      threadRow = { ...threadRow, archivedAt: "2026-10-05T00:00:00.000Z" };
+      threadRow = { ...threadRow, archivedAt: DateTime.makeUnsafe("2026-10-05T00:00:00.000Z") };
     }
     const workbook = bytesToBase64(yield* Effect.promise(() => createSpreadsheet([["Hello"]])));
     const dependencies = Layer.mergeAll(
+      Layer.mock(ThreadManagementService.ThreadManagementService)({}),
       ExperimentalConnections.layerTest(options.experimental ?? true),
       Layer.mock(ProjectionSnapshotQuery)({
         getThreadShellById: () => Effect.sync(() => Option.some(threadRow)),
@@ -118,9 +110,13 @@ function scenario(
       Effect.result,
       Effect.provideService(McpInvocationContext.McpInvocationContext, {
         environmentId: EnvironmentId.make("host"),
-        threadId,
-        providerSessionId: "session",
-        providerInstanceId: ProviderInstanceId.make("opencode-custom"),
+        requestNamespace: "test",
+        client: undefined,
+        thread: {
+          threadId,
+          providerSessionId: "session",
+          providerInstanceId: ProviderInstanceId.make("opencode-custom"),
+        },
         capabilities: new Set<McpInvocationContext.McpCapability>(
           options.capability === false ? [] : ["local-spreadsheets"],
         ),

@@ -100,10 +100,7 @@ async function renderMermaid(
     const message = error instanceof Error ? error.message : "The diagram could not be rendered.";
     return { status: "error", message, retryable: CHUNK_LOAD_ERROR.test(message) };
   } finally {
-    // Mermaid mounts layout nodes while rendering; browsers always have a
-    // document here, while server-side renderers must not throw past the
-    // error result above.
-    if (typeof document !== "undefined") document.getElementById(`d${id}`)?.remove();
+    document.getElementById(`d${id}`)?.remove();
   }
 }
 
@@ -195,7 +192,11 @@ export function MermaidDiagram({
             </Button>
           ) : null}
         </div>
-        <pre className="mt-2 mb-0 overflow-auto font-mono text-xs whitespace-pre-wrap">
+        {/* Find matches the source through the hidden copy beside the diagram. */}
+        <pre
+          data-thread-find-ignore
+          className="mt-2 mb-0 overflow-auto font-mono text-xs whitespace-pre-wrap"
+        >
           {source}
         </pre>
       </div>

@@ -7,7 +7,10 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
-import { makeSqlitePersistenceLive, SqlitePersistenceMemory } from "./Sqlite.ts";
+import {
+  layerFromPath as makeSqlitePersistenceLive,
+  layerMemory as SqlitePersistenceMemory,
+} from "../Sqlite.ts";
 import { DoerMemoryStoreLive } from "./DoerMemoryStore.ts";
 import { DoerMemoryStore, DoerMemoryValidationError } from "../Services/DoerMemoryStore.ts";
 

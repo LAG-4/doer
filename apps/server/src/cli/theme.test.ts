@@ -10,9 +10,9 @@ import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as TestConsole from "effect/testing/TestConsole";
-import { Command } from "effect/unstable/cli";
+import { Command } from "effect/cli";
 
-import { cli } from "../bin.ts";
+import { cli } from "../binCli.ts";
 import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 
@@ -47,7 +47,7 @@ const writeSettings = (baseDir: string, settings: Record<string, unknown>) => {
   NodeFS.writeFileSync(settingsPathFor(baseDir), `${JSON.stringify(settings, null, 2)}\n`);
 };
 
-describe("doer theme", () => {
+describe("t3 theme", () => {
   it.effect("writes a default theme when no settings file exists yet", () =>
     Effect.gen(function* () {
       const baseDir = makeBaseDir();
@@ -352,22 +352,6 @@ describe("doer theme", () => {
         ),
       );
       assert.equal(readSettings(baseDir).defaultTheme, "ocean");
-    }),
-  );
-
-  it.effect("prefers DOER_HOME over T3CODE_HOME", () =>
-    Effect.gen(function* () {
-      const doerDir = makeBaseDir();
-      const t3Dir = makeBaseDir();
-      yield* runCli(["theme", "set", "ocean"]).pipe(
-        Effect.provide(
-          ConfigProvider.layer(
-            ConfigProvider.fromEnv({ env: { DOER_HOME: doerDir, T3CODE_HOME: t3Dir } }),
-          ),
-        ),
-      );
-      assert.equal(readSettings(doerDir).defaultTheme, "ocean");
-      assert.equal(NodeFS.existsSync(settingsPathFor(t3Dir)), false);
     }),
   );
 

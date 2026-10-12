@@ -6,19 +6,13 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import {
-  HttpMiddleware,
-  HttpRouter,
-  HttpServerRequest,
-  HttpServerResponse,
-} from "effect/unstable/http";
-import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
+import { HttpMiddleware, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
+import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 
 import { annotateEnvironmentRequest, requireEnvironmentScope } from "../auth/http.ts";
 import { isEnabled as isExperimentalEnabled } from "./ExperimentalConnections.ts";
 import { EXPERIMENTAL_CONNECTIONS_COPY } from "@t3tools/shared/experimentalConnections";
 import { GmailConnection } from "./GmailConnection.ts";
-import { GmailSendApproval } from "./GmailSendApproval.ts";
 
 export const integrationsHttpApiLayer = HttpApiBuilder.group(
   EnvironmentHttpApi,
@@ -58,8 +52,6 @@ export const integrationsHttpApiLayer = HttpApiBuilder.group(
         Effect.fn("integrations.gmailDisconnect")(function* (args) {
           yield* annotateEnvironmentRequest(args.endpoint.name);
           yield* requireEnvironmentScope(AuthAccessWriteScope);
-          const reviews = yield* GmailSendApproval;
-          yield* reviews.cancelAll;
           return yield* gmail.disconnect.pipe(
             Effect.as({ disconnected: true }),
             Effect.mapError(

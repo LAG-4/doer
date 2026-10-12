@@ -11,7 +11,6 @@
  */
 
 export const SAMPLE_REPORT_FILENAME = "sample-sales-report.md";
-export const SAMPLE_REPORT_MIME = "text/markdown";
 export const SAMPLE_REPORT_LABEL = "Sample report — fictional data.";
 
 export const SAMPLE_SALES_REPORT = `# Monthly Sales Report — September 2026

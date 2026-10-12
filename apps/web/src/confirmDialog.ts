@@ -172,3 +172,7 @@ export function resetConfirmDialogForTests(): void {
   publish(idleState);
   listeners.clear();
 }
+
+export function isConfirmDialogActive(): boolean {
+  return state.status !== "idle";
+}

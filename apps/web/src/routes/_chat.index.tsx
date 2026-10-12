@@ -1,27 +1,26 @@
+import { DoerIndexDraftLanding } from "../components/DoerIndexDraftLanding";
+import { useClientSettings } from "~/hooks/useSettings";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { useAtomValue } from "@effect/atom-react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { LinkIcon, PlusIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
 import { isElectron } from "../env";
-import { resolveLandingProject } from "../components/landingProject.logic";
 import { NoProjectsHero } from "../components/NoProjectsHero";
+import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
 import { Button } from "../components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
 import { SidebarInset } from "../components/ui/sidebar";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
-import { useEnsureInboxProject } from "../hooks/useEnsureInboxProject";
 import {
   useAllEnvironmentShellsBootstrapped,
   useProjects,
   useThreadShells,
 } from "../state/entities";
 import { useEnvironments } from "../state/environments";
-import { primaryServerWelcomeAtom } from "../state/server";
 import { APP_DISPLAY_NAME } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 
@@ -42,21 +41,21 @@ function ChatIndexRouteView() {
  * recently active project, so the first screen is a prompt instead of a dead
  * end. Falls back to an add-project hero when no project exists yet.
  */
-function IndexDraftLanding() {
+function UpstreamIndexDraftLanding() {
   const projects = useProjects();
   const threads = useThreadShells();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const handleNewThread = useNewThreadHandler();
-  const serverWelcome = useAtomValue(primaryServerWelcomeAtom);
-  const inboxProjectId = serverWelcome?.inboxProjectId;
   const startingRef = useRef(false);
   const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
-  const { prepareInboxProject, settleInboxProject, isInboxCapable } = useEnsureInboxProject();
-  const preparedRef = useRef(false);
 
-  const mostRecentProject = useMemo(() => {
-    return resolveLandingProject({ bootstrapped, inboxProjectId, projects, threads });
-  }, [bootstrapped, inboxProjectId, projects, threads]);
+  const mostRecentProject = useMemo(
+    () =>
+      bootstrapped
+        ? (sortScopedProjectsForSidebar(projects, threads, "updated_at")[0] ?? null)
+        : null,
+    [bootstrapped, projects, threads],
+  );
 
   useEffect(() => {
     if (mostRecentProject === null || startingRef.current) {
@@ -70,37 +69,6 @@ function IndexDraftLanding() {
       setStartState((state) => ({ ...state, failed: true }));
     });
   }, [handleNewThread, mostRecentProject, startState.retryRequest]);
-
-  // Zero projects is a broken state, not a destination: open the inbox
-  // draft instantly with a locally minted id while creation settles behind
-  // it. The draft shows a setup state until the row lands; a lost creation
-  // race just remaps to the winning project when it arrives.
-  useEffect(() => {
-    if (!bootstrapped || projects.length > 0 || !isInboxCapable || preparedRef.current) {
-      return;
-    }
-    const prepared = prepareInboxProject();
-    if (prepared === null) {
-      return;
-    }
-    preparedRef.current = true;
-    void handleNewThread(prepared.ref, { replace: true }).catch(() => undefined);
-    if (!prepared.isNew) {
-      return;
-    }
-    void settleInboxProject(prepared.projectId).then((finalRef) => {
-      if (finalRef !== null && finalRef.projectId !== prepared.ref.projectId) {
-        void handleNewThread(finalRef, { replace: true }).catch(() => undefined);
-      }
-    });
-  }, [
-    bootstrapped,
-    handleNewThread,
-    isInboxCapable,
-    prepareInboxProject,
-    projects.length,
-    settleInboxProject,
-  ]);
 
   if (!bootstrapped) {
     return null;
@@ -174,9 +142,9 @@ function HostedStaticOnboardingState() {
               <div className="mx-auto mb-5 flex size-11 items-center justify-center rounded-xl border border-border/70 bg-background/70 text-muted-foreground">
                 <LinkIcon className="size-5" />
               </div>
-              <EmptyTitle>Connect to a computer running Doer</EmptyTitle>
-              <EmptyDescription className="mt-2">
-                This app connects to Doer running on your computer or a server. Start the Doer
+              <EmptyTitle>Connect to a computer running T3 Code</EmptyTitle>
+              <EmptyDescription>
+                This app connects to T3 Code running on your computer or a server. Start the T3 Code
                 desktop app or command-line server on that machine and keep it running.
               </EmptyDescription>
               <EmptyDescription>{description}</EmptyDescription>
@@ -192,4 +160,9 @@ function HostedStaticOnboardingState() {
       </div>
     </SidebarInset>
   );
+}
+
+function IndexDraftLanding() {
+  const simple = useClientSettings((s) => s.simpleModeEnabled);
+  return simple ? <DoerIndexDraftLanding /> : <UpstreamIndexDraftLanding />;
 }

@@ -1,59 +1,79 @@
 /**
- * PostHog product telemetry service.
+ * Anonymous PostHog telemetry service.
  *
  * Persists an installation-scoped anonymous identifier, buffers events in
- * memory, and flushes batches over Effect's HTTP client to the Doer PostHog
- * Cloud project. The project key and ingest host below are public by design
- * (they also ship in client bundles) and can be overridden with
- * T3CODE_POSTHOG_KEY / T3CODE_POSTHOG_HOST.
+ * memory, and flushes batches over Effect's HTTP client. A failed batch is
+ * retried with backoff and dropped after a few tries. Each event carries a
+ * uuid, so PostHog can tell a retried copy from a new event.
  *
  * @module AnalyticsService
  */
 import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import type { ClientOs } from "@t3tools/contracts";
+import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Random from "effect/Random";
 import * as Ref from "effect/Ref";
-import * as HttpClient from "effect/unstable/http/HttpClient";
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
-import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
+import * as Result from "effect/Result";
+import * as Semaphore from "effect/Semaphore";
+import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientRequest from "effect/http/HttpClientRequest";
+import * as HttpClientResponse from "effect/http/HttpClientResponse";
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as ServerConfig from "../config.ts";
 import { getTelemetryIdentifier } from "./Identify.ts";
 
 interface BufferedAnalyticsEvent {
+  readonly uuid: string;
   readonly event: string;
   readonly properties?: Readonly<Record<string, unknown>>;
   readonly capturedAt: string;
 }
 
+interface DeliveryState {
+  /** Batch that failed last. It is sent again before newer events. */
+  readonly failedBatch: ReadonlyArray<BufferedAnalyticsEvent>;
+  /** Failed sends of `failedBatch`. */
+  readonly batchAttempts: number;
+  /** Failed sends since the last success. Sets the backoff delay. */
+  readonly failures: number;
+  /** The background flush does not send before this time (epoch ms). */
+  readonly retryAt: number;
+}
+
+const FLUSH_INTERVAL_MS = 1_000;
+// A hung send would hold the flush lock, and with it the shutdown flush.
+const SEND_TIMEOUT = "10 seconds";
+const MAX_BATCH_ATTEMPTS = 5;
+const RETRY_BASE_DELAY_MS = 2_000;
+const RETRY_MAX_DELAY_MS = 300_000;
+
 /**
- * TelemetryPublicConfig - The subset of telemetry settings that is safe to
- * share with browsers: the feature flag plus the PostHog project key and
- * host, both of which are public by design (they ship in client bundles).
- * The browser SDK reads them from GET /api/telemetry/config at runtime so no
- * ingest URL is ever baked into a build.
+ * Delay before the next send after `failures` consecutive failed sends. The
+ * ceiling doubles from 2s up to 5 minutes, and the delay is a random point in
+ * its upper half. `random` is in [0, 1).
  */
-export const TelemetryPublicConfig = Config.all({
+export function retryDelayMs(failures: number, random: number): number {
+  const ceiling = Math.min(RETRY_MAX_DELAY_MS, RETRY_BASE_DELAY_MS * 2 ** (failures - 1));
+  return Math.round(ceiling / 2 + (ceiling / 2) * random);
+}
+
+const TelemetryEnvConfig = Config.all({
   posthogKey: Config.String("T3CODE_POSTHOG_KEY").pipe(
-    Config.withDefault("phc_tZ8tQXasmJMxeE4HtdGgZy5jxaCxLTLBbGCR5utaKNVx"),
+    Config.withDefault("phc_XOWci4oZP4VvLiEyrFqkFjP4CZn55mjYYBMREK5Wd6m"),
   ),
   posthogHost: Config.String("T3CODE_POSTHOG_HOST").pipe(
     Config.withDefault("https://us.i.posthog.com"),
   ),
   enabled: Config.Boolean("T3CODE_TELEMETRY_ENABLED").pipe(Config.withDefault(true)),
-});
-
-const TelemetryEnvConfig = Config.all({
-  public: TelemetryPublicConfig,
-  processPersonProfile: Config.Boolean("T3CODE_POSTHOG_PERSON_PROFILES").pipe(
-    Config.withDefault(true),
-  ),
   flushBatchSize: Config.Number("T3CODE_TELEMETRY_FLUSH_BATCH_SIZE").pipe(Config.withDefault(20)),
   maxBufferedEvents: Config.Number("T3CODE_TELEMETRY_MAX_BUFFERED_EVENTS").pipe(
     Config.withDefault(1_000),
@@ -70,15 +90,6 @@ export class AnalyticsService extends Context.Service<
       properties?: Readonly<Record<string, unknown>>,
     ) => Effect.Effect<void>;
 
-    /**
-     * Record an exception for PostHog error tracking as a `$exception`
-     * event. Never throws; delivery is best-effort like any other event.
-     */
-    readonly captureException: (
-      error: unknown,
-      properties?: Readonly<Record<string, unknown>>,
-    ) => Effect.Effect<void>;
-
     /** Flush all currently queued telemetry events. */
     readonly flush: Effect.Effect<void>;
   }
@@ -88,7 +99,6 @@ export class AnalyticsService extends Context.Service<
     AnalyticsService,
     AnalyticsService.of({
       record: () => Effect.void,
-      captureException: () => Effect.void,
       flush: Effect.void,
     }),
   );
@@ -115,17 +125,31 @@ export const make = Effect.gen(function* () {
   const httpClient = yield* HttpClient.HttpClient;
   const serverConfig = yield* ServerConfig.ServerConfig;
   const identifier = yield* getTelemetryIdentifier;
+  const crypto = yield* Crypto.Crypto;
   const bufferRef = yield* Ref.make<ReadonlyArray<BufferedAnalyticsEvent>>([]);
+  const deliveryRef = yield* Ref.make<DeliveryState>({
+    failedBatch: [],
+    batchAttempts: 0,
+    failures: 0,
+    retryAt: 0,
+  });
+  // The background flush and the shutdown flush must not send the same batch at once.
+  const flushLock = yield* Semaphore.make(1);
   const clientType = serverConfig.mode === "desktop" ? "desktop-app" : "cli-web-client";
   const hostPlatform = yield* HostProcessPlatform;
   const hostArchitecture = yield* HostProcessArchitecture;
 
-  const enqueueBufferedEvent = (event: string, properties?: Readonly<Record<string, unknown>>) =>
+  const enqueueBufferedEvent = (
+    uuid: string,
+    event: string,
+    properties?: Readonly<Record<string, unknown>>,
+  ) =>
     Effect.flatMap(DateTime.now, (now) =>
       Ref.modify(bufferRef, (current) => {
         const appended = [
           ...current,
           {
+            uuid,
             event,
             ...(properties ? { properties } : {}),
             capturedAt: DateTime.formatIso(now),
@@ -150,21 +174,17 @@ export const make = Effect.gen(function* () {
   const sendBatch = Effect.fn("AnalyticsService.sendBatch")(function* (
     events: ReadonlyArray<BufferedAnalyticsEvent>,
   ) {
-    const apiKey = telemetryConfig.public.posthogKey.trim();
-    const apiHost = telemetryConfig.public.posthogHost.trim().replace(/\/+$/, "");
-    // An unconfigured project key means the operator has not pointed this
-    // build at their own PostHog instance yet: drop silently instead of
-    // sending anywhere.
-    if (!telemetryConfig.public.enabled || !identifier || apiKey === "" || apiHost === "") return;
+    if (!telemetryConfig.enabled || !identifier) return;
 
     const payload = {
-      api_key: apiKey,
+      api_key: telemetryConfig.posthogKey,
       batch: events.map((event) => ({
+        uuid: event.uuid,
         event: event.event,
         distinct_id: identifier,
         properties: {
           ...event.properties,
-          $process_person_profile: telemetryConfig.processPersonProfile,
+          $process_person_profile: false,
           platform: hostPlatform,
           wsl: Option.getOrUndefined(telemetryConfig.wslDistroName),
           arch: hostArchitecture,
@@ -180,43 +200,73 @@ export const make = Effect.gen(function* () {
       })),
     };
 
-    yield* HttpClientRequest.post(`${apiHost}/batch/`).pipe(
+    yield* HttpClientRequest.post(`${telemetryConfig.posthogHost}/batch/`).pipe(
       HttpClientRequest.bodyJson(payload),
       Effect.flatMap(httpClient.execute),
       Effect.flatMap(HttpClientResponse.filterStatusOk),
+      Effect.timeout(SEND_TIMEOUT),
     );
   });
 
+  const takeBatch = Ref.modify(bufferRef, (current) => {
+    const nextBatch = current.slice(0, telemetryConfig.flushBatchSize);
+    return [nextBatch, current.slice(nextBatch.length)] as const;
+  });
+
+  // Sends batches until the buffer is empty or a send fails. A failed batch is
+  // kept for the next flush, and dropped after MAX_BATCH_ATTEMPTS failed sends.
   const flush: AnalyticsService["Service"]["flush"] = Effect.gen(function* () {
     while (true) {
-      const batch = yield* Ref.modify(bufferRef, (current) => {
-        if (current.length === 0) {
-          return [[] as ReadonlyArray<BufferedAnalyticsEvent>, current] as const;
-        }
-        const nextBatch = current.slice(0, telemetryConfig.flushBatchSize);
-        const remaining = current.slice(nextBatch.length);
-        return [nextBatch, remaining] as const;
-      });
-
+      const delivery = yield* Ref.get(deliveryRef);
+      const batch = delivery.failedBatch.length > 0 ? delivery.failedBatch : yield* takeBatch;
       if (batch.length === 0) {
         return;
       }
 
-      yield* sendBatch(batch).pipe(
-        Effect.catch((error) =>
-          Ref.update(bufferRef, (current) => [...batch, ...current]).pipe(
-            Effect.flatMap(() => Effect.fail(error)),
-          ),
-        ),
-      );
+      const sent = yield* Effect.result(sendBatch(batch));
+      if (Result.isSuccess(sent)) {
+        yield* Ref.set(deliveryRef, { failedBatch: [], batchAttempts: 0, failures: 0, retryAt: 0 });
+        continue;
+      }
+
+      const failures = delivery.failures + 1;
+      const batchAttempts = delivery.batchAttempts + 1;
+      const retryAt = (yield* Clock.currentTimeMillis) + retryDelayMs(failures, yield* Random.next);
+      if (batchAttempts < MAX_BATCH_ATTEMPTS) {
+        yield* Ref.set(deliveryRef, { failedBatch: batch, batchAttempts, failures, retryAt });
+        yield* Effect.logDebug("Failed to send telemetry batch; will retry", {
+          attempt: batchAttempts,
+          cause: sent.failure,
+        });
+        return;
+      }
+      yield* Ref.set(deliveryRef, { failedBatch: [], batchAttempts: 0, failures, retryAt });
+      yield* Effect.logWarning("Dropped telemetry batch after repeated send failures", {
+        events: batch.length,
+        attempts: batchAttempts,
+        cause: sent.failure,
+      });
+      return;
     }
-  }).pipe(Effect.catch((cause) => Effect.logError("Failed to flush telemetry", { cause })));
+  }).pipe(flushLock.withPermit);
+
+  const flushWhenDue = Effect.gen(function* () {
+    const { retryAt } = yield* Ref.get(deliveryRef);
+    if ((yield* Clock.currentTimeMillis) >= retryAt) {
+      yield* flush;
+    }
+  });
 
   const record: AnalyticsService["Service"]["record"] = Effect.fn("AnalyticsService.record")(
     function* (event, properties) {
-      if (!telemetryConfig.public.enabled || !identifier) return;
+      if (!telemetryConfig.enabled || !identifier) return;
 
-      const enqueueResult = yield* enqueueBufferedEvent(event, properties);
+      // Telemetry is best effort: an event without a uuid is not sent. The
+      // Node implementation throws (a defect) rather than failing, so catch both.
+      const uuid = yield* Effect.exit(crypto.randomUUIDv7);
+      if (Exit.isFailure(uuid)) return;
+
+      const enqueueResult = yield* enqueueBufferedEvent(uuid.value, event, properties);
       if (enqueueResult.dropped) {
         yield* Effect.logDebug("analytics buffer full; dropping oldest event", {
           size: enqueueResult.size,
@@ -226,30 +276,15 @@ export const make = Effect.gen(function* () {
     },
   );
 
-  const captureException: AnalyticsService["Service"]["captureException"] = Effect.fn(
-    "AnalyticsService.captureException",
-  )(function* (error, properties) {
-    if (!telemetryConfig.public.enabled || !identifier) return;
-
-    const message = error instanceof Error ? error.message : String(error);
-    const type = error instanceof Error ? error.name : typeof error;
-    yield* record("$exception", {
-      $exception_message: message.slice(0, 2_000),
-      $exception_type: type,
-      $exception_fingerprint: `${type}:${message}`.slice(0, 2_000),
-      ...properties,
-    });
-  });
-
-  yield* Effect.forever(Effect.sleep(1000).pipe(Effect.flatMap(() => flush)), {
+  yield* Effect.forever(Effect.sleep(FLUSH_INTERVAL_MS).pipe(Effect.flatMap(() => flushWhenDue)), {
     disableYield: true,
   }).pipe(Effect.forkScoped);
 
   yield* Effect.addFinalizer(() => flush);
 
-  return AnalyticsService.of({ record, captureException, flush });
+  return AnalyticsService.of({ record, flush });
 });
 
 export const layer = Layer.effect(AnalyticsService, make);
 
-export const layerTest = AnalyticsService.layerTest;
+const layerTest = AnalyticsService.layerTest;

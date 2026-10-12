@@ -2,11 +2,6 @@ import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3
 import { describe, expect, it } from "vite-plus/test";
 
 import { getProviderSummary, getProviderVersionAdvisoryPresentation } from "./providerStatus";
-import {
-  isTechnicalHealthErrorText,
-  stripAnsiErrorText,
-  TECHNICAL_HEALTH_FRIENDLY_DETAIL,
-} from "./providerStatus";
 
 const provider: ServerProvider = {
   instanceId: ProviderInstanceId.make("codex"),
@@ -72,71 +67,6 @@ describe("getProviderSummary", () => {
 
   it("treats a disabled provider status as disabled even before its enabled flag updates", () => {
     expect(getProviderSummary({ ...provider, status: "disabled" }).headline).toBe("Disabled");
-  });
-});
-
-describe("isTechnicalHealthErrorText", () => {
-  const rawDbFailure =
-    "OpenCode server exited before startup completed code 1. stderr Database is not empty and has no session table";
-  const ansiDbFailure = `[91m${rawDbFailure}[0m`;
-
-  it("classifies the raw startup/database failure as technical", () => {
-    expect(isTechnicalHealthErrorText(rawDbFailure)).toBe(true);
-    expect(TECHNICAL_HEALTH_FRIENDLY_DETAIL.length).toBeGreaterThan(0);
-  });
-
-  it("classifies ANSI-wrapped startup failures as technical", () => {
-    expect(isTechnicalHealthErrorText(ansiDbFailure)).toBe(true);
-  });
-
-  it("classifies CLI health-check and version-probe timeouts as technical", () => {
-    expect(
-      isTechnicalHealthErrorText(
-        "Failed to execute OpenCode CLI health check: OpenCode CLI version probe timed out after 4 seconds.",
-      ),
-    ).toBe(true);
-  });
-
-  it("stays deterministic across repeated calls despite the shared global pattern", () => {
-    expect(isTechnicalHealthErrorText(ansiDbFailure)).toBe(true);
-    expect(isTechnicalHealthErrorText(ansiDbFailure)).toBe(true);
-    expect(isTechnicalHealthErrorText(rawDbFailure)).toBe(true);
-    expect(stripAnsiErrorText(ansiDbFailure)).toBe(rawDbFailure);
-    expect(isTechnicalHealthErrorText(ansiDbFailure)).toBe(true);
-  });
-
-  it("preserves sign-in copy even wrapped in ANSI", () => {
-    expect(isTechnicalHealthErrorText("[91mRun codex login to sign in.[0m")).toBe(false);
-  });
-
-  it("preserves install, not-found, quota, and rate-limit copy next to stderr", () => {
-    expect(
-      isTechnicalHealthErrorText("CLI not detected on PATH. Install it, then check stderr."),
-    ).toBe(false);
-    expect(
-      isTechnicalHealthErrorText(
-        "API key missing: add one in settings. stderr: quota check skipped.",
-      ),
-    ).toBe(false);
-    expect(
-      isTechnicalHealthErrorText("Rate limit reached: out of credits, retry later. See stderr."),
-    ).toBe(false);
-  });
-
-  it("leaves ordinary copy and empty input alone", () => {
-    expect(isTechnicalHealthErrorText("The provider failed its startup checks.")).toBe(false);
-    expect(isTechnicalHealthErrorText(null)).toBe(false);
-    expect(isTechnicalHealthErrorText("")).toBe(false);
-  });
-});
-
-describe("stripAnsiErrorText", () => {
-  it("removes color escapes while keeping the words", () => {
-    expect(stripAnsiErrorText("[91mFailed.[0m Plain.")).toBe("Failed. Plain.");
-  });
-
-  it("leaves plain copy untouched", () => {
-    expect(stripAnsiErrorText("Run codex login.")).toBe("Run codex login.");
   });
 });
 
@@ -207,5 +137,22 @@ it("shows compatibility in the version popover even when the installed version i
     updateCommand: null,
     emphasis: "normal",
     targetVersion: null,
+  });
+});
+
+describe("provider status copy", () => {
+  it("surfaces an ACP-advertised authentication method", () => {
+    const provider = {
+      enabled: true,
+      installed: true,
+      status: "error",
+      auth: { status: "unauthenticated", type: "agent", label: "Company login" },
+      message: "Complete this authentication method on the server.",
+    } as ServerProvider;
+
+    expect(getProviderSummary(provider)).toEqual({
+      headline: "Not authenticated · Company login",
+      detail: "Complete this authentication method on the server.",
+    });
   });
 });

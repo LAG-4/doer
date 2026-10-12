@@ -21,7 +21,7 @@ const requestMicrosoft = createEnvironmentCommand(connectionAtomRuntime, {
   label: "connected-apps:microsoft",
   execute: (action: typeof MicrosoftAction.Type) =>
     Effect.gen(function* () {
-      const supervisor = yield* EnvironmentSupervisor;
+      const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
       const prepared = Option.getOrNull(yield* SubscriptionRef.get(supervisor.prepared));
       if (!prepared)
         return {

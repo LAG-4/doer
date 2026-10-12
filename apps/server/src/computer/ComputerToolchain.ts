@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off
 /**
  * Pinned install of the external tool computer use is built on.
  *
@@ -32,7 +33,7 @@ import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import { HttpClient, HttpClientRequest } from "effect/unstable/http";
+import { HttpClient, HttpClientRequest } from "effect/http";
 
 import * as ProcessRunner from "../processRunner.ts";
 
@@ -345,15 +346,16 @@ const installViaTarball = Effect.fn("ComputerToolchain.installViaTarball")(funct
 
   const compressed = yield* fetcher.pipe(
     Effect.timeout(INSTALL_TIMEOUT),
-    Effect.catchTag("TimeoutError", (cause) =>
-      Effect.fail(
-        new ComputerToolchainInstallError({
-          tool: COMPUTER_USE_PACKAGE,
-          step: "downloading the helper",
-          cause,
-        }),
-      ),
-    ),
+    Effect.catchTags({
+      TimeoutError: (cause) =>
+        Effect.fail(
+          new ComputerToolchainInstallError({
+            tool: COMPUTER_USE_PACKAGE,
+            step: "downloading the helper",
+            cause,
+          }),
+        ),
+    }),
   );
   const tarBytes = yield* Effect.try({
     try: () => NodeZlib.gunzipSync(compressed),

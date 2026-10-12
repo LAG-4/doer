@@ -1,3 +1,4 @@
+import * as McpToolAccess from "../../McpToolAccess.ts";
 import {
   DOER_MEMORY_MAX_COUNT_PER_SCOPE,
   DOER_MEMORY_MAX_RECALL_ENTRIES,
@@ -13,7 +14,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import * as DoerMemoryStore from "../../../persistence/Services/DoerMemoryStore.ts";
-import * as ProjectionSnapshotQuery from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as ProjectionSnapshotQuery from "../../../memory/DoerTaskContext.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import {
   MemoriesToolkit,
@@ -41,7 +42,7 @@ const dispatchFailure =
 
 const make = Effect.gen(function* () {
   const store = yield* DoerMemoryStore.DoerMemoryStore;
-  const snapshots = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
+  const snapshots = yield* ProjectionSnapshotQuery.DoerTaskContext;
   const crypto = yield* Crypto.Crypto;
 
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
@@ -54,7 +55,7 @@ const make = Effect.gen(function* () {
   const requireScopeThread = Effect.fn("MemoriesToolkit.requireScopeThread")(function* (
     Failure: MemoryFailure,
   ) {
-    const scope = yield* McpInvocationContext.McpInvocationContext;
+    const scope = yield* McpInvocationContext.requireDoerThreadScope;
     const thread = yield* snapshots
       .getThreadShellById(scope.threadId)
       .pipe(Effect.mapError((cause) => new Failure({ cause })));
@@ -237,3 +238,16 @@ const make = Effect.gen(function* () {
 });
 
 export const MemoriesToolkitHandlersLive = MemoriesToolkit.toLayer(make);
+
+export const layer = McpToolAccess.toLayer(
+  MemoriesToolkit,
+  make.pipe(
+    Effect.map((handlers) => ({
+      remember_memory: McpToolAccess.actsAsCaller(handlers.remember_memory),
+      list_memories: McpToolAccess.actsAsCaller(handlers.list_memories),
+      search_memories: McpToolAccess.actsAsCaller(handlers.search_memories),
+      update_memory: McpToolAccess.actsAsCaller(handlers.update_memory),
+      forget_memory: McpToolAccess.actsAsCaller(handlers.forget_memory),
+    })),
+  ),
+);

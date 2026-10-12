@@ -7,7 +7,6 @@ import {
   getDesktopUpdateActionError,
   getDesktopUpdateButtonTooltip,
   getDesktopUpdateInstallConfirmationMessage,
-  getDesktopUpdateManualDownloadHint,
   getDesktopUpdateReleaseHistoryUrl,
   getDesktopUpdateReleaseUrl,
   isDesktopUpdateButtonDisabled,
@@ -200,12 +199,6 @@ describe("desktop update UI helpers", () => {
 
   it("builds the release history URL", () => {
     expect(getDesktopUpdateReleaseHistoryUrl()).toBe("https://github.com/LAG-4/doer/releases");
-  });
-
-  it("points manual-download recovery guidance at the fork releases", () => {
-    const hint = getDesktopUpdateManualDownloadHint();
-    expect(hint).toContain("https://github.com/LAG-4/doer/releases");
-    expect(hint).not.toContain("pingdotgg");
   });
 
   it("toasts only for actionable updater errors", () => {

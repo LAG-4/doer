@@ -1,56 +1,41 @@
 import type { ProviderInteractionMode } from "@t3tools/contracts";
 import type { V2TurnStartParams__AdditionalContextEntry } from "effect-codex-app-server/schema";
-import { buildRuntimeInstructions } from "./RuntimeInstructions.ts";
+import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
 
-const T3_CODE_BROWSER_TOOL_INSTRUCTIONS = `
+import {
+  T3_CODE_BROWSER_TOOL_INSTRUCTIONS,
+  T3_CODE_ORCHESTRATION_INSTRUCTIONS,
+} from "@t3tools/provider-core/server/orchestrationInstructions";
 
-## Doer collaborative browser
+const T3_CODE_DEVICE_TOOL_INSTRUCTIONS = `## T3 Code devices
 
-You are running inside Doer. The \`t3-code\` MCP server is the product-native collaborative browser shared with the user. When it exposes \`preview_*\` tools, prefer those tools for browser navigation, inspection, interaction, screenshots, and recordings.
-
-For browser work, first call \`preview_status\`. If no automation-capable preview is attached, call \`preview_open\` before concluding that the browser is unavailable. Then use \`preview_navigate\`, \`preview_snapshot\`, and the focused interaction tools. Prefer snapshot-provided locators over coordinates. The user watches this browser, so show, don't just tell: fast internal search is fine for research, but user-facing web results must end up visible via \`preview_open\`/\`preview_navigate\` (reuse the tab, open the 1-3 best pages, narrate briefly in plain words). Users never say "browser use" -- treat plain verbs like search, find, look up, check, compare, open, show me, buy, book, or apply as visible-browsing intent when the answer lives on the web. In user-facing chat say "browser", never tool names. Be proactive: when a plain request has an obvious better visible version (compare options, check for deals, walk through top listings), say so in one short sentence and just do the low-risk visible part on public read-only pages.
-
-Do not switch to global browser skills, Chrome, Node REPL browser automation, standalone Playwright, or agent-browser merely because the preview is initially closed or a first call fails. Use an alternative browser system only when the T3 preview tools are absent, the user explicitly requests another browser, or \`preview_open\` returns an explicit unsupported/unavailable error. A failed T3 preview tool call should be inspected and retried with corrected arguments when the error is actionable. When the task needs the real desktop, another app, or the preview keeps failing, switch to computer use if its tools are present and say so.
-`;
-
-const T3_CODE_DEVICE_TOOL_INSTRUCTIONS = `## Doer devices
-
-The \`t3-code\` MCP server also exposes \`device_*\` tools for iOS Simulators and Android Emulators on this environment. For mobile verification, call \`device_list\`, then \`device_open\` so the user can watch the device in their Device panel; its result explains how to drive the device. Driving happens through the \`agent-device\` CLI, which is on PATH. Keep the host config and session flags returned by \`device_open\` on every command so concurrent devices stay independent: prefer \`agent-device snapshot -i\` refs over coordinates, and use \`device_screenshot\` when you need to see the screen. Prefer these tools and \`agent-device\` for opening and driving devices. Platform tools such as \`xcrun simctl\` and \`adb\` remain available for anything they do not cover, such as builds, logs, or port forwarding. If \`device_list\` reports a platform as unavailable, say so.`;
-
-const T3_CODE_COMPUTER_TOOL_INSTRUCTIONS = `
-
-## Doer computer use
-
-The \`t3-code\` MCP server also exposes \`computer_*\` tools: you can see the user's desktop and operate real GUI apps (testing a desktop app you built, driving a browser, reproducing a GUI-only bug, changing app settings). First call \`computer_status\`, then \`computer_start\` with the app you want to operate; its result explains how to drive the desktop. Driving happens through the \`computer-use\` CLI, which is on PATH: call \`get_app_state\` once per turn before acting, prefer element indexes over coordinates, and use \`computer_observe\` when you need to see the screen. Never operate an app the user did not approve: \`computer_start\` refuses unapproved apps — ask the user in chat, and when they agree call \`computer_allow\` before touching the app. Treat the desktop as the user's real session and ask before sending, deleting, purchasing, approving, or uploading anything. On Windows computer use takes over the foreground while it runs.
-Offer computer use proactively when the task involves a desktop app, a browser flow, or anything on screen that files and commands cannot show: name the app, say what you would do with it, and ask for approval. When you start driving, announce it briefly so the user knows to hand over the desktop.
-Choosing between the browser and computer use: the shared preview browser comes first for local web apps being built (faster, no approvals, nothing moves on screen). Reach for computer use for real desktop apps, system settings, cross-app flows, GUI-only bugs, and anything the preview cannot show — and escalate to it when the preview or another integration keeps failing after a retry or two. Say which route you are taking and why; do not grind on a failing route silently.
-`;
+The \`t3-code\` MCP server also exposes \`device_*\` tools for iOS Simulators and Android Emulators on this environment. For mobile verification, call \`device_list\`, then \`device_open\` so the user can watch the device in their Device panel; its result explains how to drive the device. Driving happens through the \`agent-device\` CLI, using the exact launcher path returned by \`device_open\`. Keep the host config and session flags returned by \`device_open\` on every command so concurrent devices stay independent: prefer \`agent-device snapshot -i\` refs over coordinates, and use \`device_screenshot\` when you need to see the screen. Prefer these tools and \`agent-device\` for opening and driving devices. Platform tools such as \`xcrun simctl\` and \`adb\` remain available for anything they do not cover, such as builds, logs, or port forwarding. If \`device_list\` reports a platform as unavailable, say so.`;
 
 export interface T3CodeToolAvailability {
   readonly browser: boolean;
   readonly device: boolean;
-  readonly computer: boolean;
 }
 
 const normalizeAvailability = (
   availability: boolean | T3CodeToolAvailability,
 ): T3CodeToolAvailability =>
-  typeof availability === "boolean"
-    ? { browser: availability, device: false, computer: false }
-    : availability;
+  typeof availability === "boolean" ? { browser: availability, device: false } : availability;
 
 /**
  * Each block is omitted entirely when its tools aren't attached. Describing
- * `preview_*`, `device_*`, or `computer_*` tools that aren't in the turn's tool list would be
+ * `preview_*` or `device_*` tools that aren't in the turn's tool list would be
  * worse than saying nothing: the instructions actively steer the model away
  * from Playwright, agent-browser, and raw simctl/adb, so leaving them in would
  * talk it out of the only automation it still has.
  */
 const toolInstructions = (availability: boolean | T3CodeToolAvailability): string => {
   const tools = normalizeAvailability(availability);
-  return `${tools.browser ? T3_CODE_BROWSER_TOOL_INSTRUCTIONS : ""}${
-    tools.device ? T3_CODE_DEVICE_TOOL_INSTRUCTIONS : ""
-  }${tools.computer ? T3_CODE_COMPUTER_TOOL_INSTRUCTIONS : ""}`;
+  return [
+    tools.browser ? T3_CODE_BROWSER_TOOL_INSTRUCTIONS : "",
+    tools.device ? T3_CODE_DEVICE_TOOL_INSTRUCTIONS : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 };
 
 const CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS = `<collaboration_mode># Plan Mode (Conversational)
@@ -227,26 +212,14 @@ export function buildCodexAdditionalContext(
    */
   toolsAvailable: boolean | T3CodeToolAvailability = true,
 ): Record<string, V2TurnStartParams__AdditionalContextEntry> {
-  const availability = normalizeAvailability(toolsAvailable);
-  const tools = toolInstructions({ ...availability, computer: false });
-  const computer = availability.computer ? T3_CODE_COMPUTER_TOOL_INSTRUCTIONS.trim() : "";
-  let runtimeInstructions = buildRuntimeInstructions({ harness: "Codex", ...runtime });
-  // Doer's assistant instructions must survive Codex's per-entry token cap.
-  const assistantContext: Record<string, V2TurnStartParams__AdditionalContextEntry> = {};
-  for (const tag of ["scheduled_tasks", "saved_memories", "doer_everyday_assistant"]) {
-    const block = runtimeInstructions.match(new RegExp(`<${tag}>[\\s\\S]*?</${tag}>`))?.[0];
-    if (block !== undefined) {
-      assistantContext[tag] = { kind: "application", value: block };
-      runtimeInstructions = runtimeInstructions.replace(block, "");
-    }
-  }
+  const tools = toolInstructions(toolsAvailable);
+  // Separate keys keep each value under Codex's per-entry token cap.
   return {
+    t3_code_orchestration: { kind: "application", value: T3_CODE_ORCHESTRATION_INSTRUCTIONS },
     t3_code_runtime: {
       kind: "application",
-      value: runtimeInstructions.trim(),
+      value: buildRuntimeInstructions({ harness: "Codex", ...runtime }),
     },
-    ...assistantContext,
     ...(tools ? { t3_code_tools: { kind: "application", value: tools } } : {}),
-    ...(computer ? { t3_code_computer: { kind: "application", value: computer } } : {}),
   };
 }
