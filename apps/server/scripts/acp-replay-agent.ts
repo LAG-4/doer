@@ -58,7 +58,7 @@ const pendingAgentRequestMethods = new Map<string, string>();
 
 function writeStatus(failure?: unknown): void {
   NodeFS.writeFileSync(
-    replayStatusPath,
+    `${replayStatusPath}.tmp`,
     JSON.stringify({
       scenario: transcript.scenario,
       cursor,
@@ -67,6 +67,7 @@ function writeStatus(failure?: unknown): void {
     }),
     "utf8",
   );
+  NodeFS.renameSync(`${replayStatusPath}.tmp`, replayStatusPath);
 }
 
 function stableStringify(value: unknown): string {
@@ -143,7 +144,13 @@ function advance(): void {
   writeStatus();
 }
 
+let deferredMessages: JsonRpcMessage[] | null = null;
+
 function send(message: JsonRpcMessage): void {
+  if (deferredMessages !== null) {
+    deferredMessages.push(message);
+    return;
+  }
   process.stdout.write(`${JSON.stringify(message)}\n`);
 }
 
@@ -225,30 +232,39 @@ function emitInbound(recorded: LogicalFrame): void {
 }
 
 function flushInbound(): void {
-  while (!stopped) {
-    const entry = transcript.entries[cursor];
-    if (entry === undefined || entry.type === "expect_outbound") return;
-    if (entry.type === "runtime_exit") {
-      if (entry.status !== "success" && entry.status !== "cancelled") {
-        stopWithFailure(`Recorded runtime exit was ${entry.status ?? "unknown"}`, entry.error);
+  // Publish status (including a trailing runtime_exit) before the client can
+  // observe an answer and close the replay agent's process scope.
+  deferredMessages = [];
+  try {
+    while (!stopped) {
+      const entry = transcript.entries[cursor];
+      if (entry === undefined || entry.type === "expect_outbound") return;
+      if (entry.type === "runtime_exit") {
+        if (entry.status !== "success" && entry.status !== "cancelled") {
+          stopWithFailure(`Recorded runtime exit was ${entry.status ?? "unknown"}`, entry.error);
+          return;
+        }
+        advance();
+        continue;
+      }
+      const frame = entry.frame as LogicalFrame;
+      if (
+        typeof frame !== "object" ||
+        frame === null ||
+        !["notification", "request", "response"].includes(frame.kind) ||
+        typeof frame.method !== "string"
+      ) {
+        stopWithFailure("Invalid emit_inbound logical ACP frame", entry.frame);
         return;
       }
+      emitInbound(frame);
+      if (stopped) return;
       advance();
-      continue;
     }
-    const frame = entry.frame as LogicalFrame;
-    if (
-      typeof frame !== "object" ||
-      frame === null ||
-      !["notification", "request", "response"].includes(frame.kind) ||
-      typeof frame.method !== "string"
-    ) {
-      stopWithFailure("Invalid emit_inbound logical ACP frame", entry.frame);
-      return;
-    }
-    emitInbound(frame);
-    if (stopped) return;
-    advance();
+  } finally {
+    const messages = deferredMessages;
+    deferredMessages = null;
+    for (const message of messages) send(message);
   }
 }
 
