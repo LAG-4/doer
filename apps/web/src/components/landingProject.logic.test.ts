@@ -4,7 +4,7 @@ import type {
   EnvironmentProject,
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
-import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 
 import { resolveLandingProject } from "./landingProject.logic";
 
@@ -70,7 +70,7 @@ describe("resolveLandingProject", () => {
       makeProject({ id: "inbox", title: "My Stuff" }),
       makeProject({ id: "server", title: "server", updatedAt: "2026-03-09T11:00:00.000Z" }),
     ];
-    const threads = [makeThread({ projectId: "server" })];
+    const threads = [makeThread({ projectId: "server", updatedAt: "2026-03-09T11:00:00.000Z" })];
     expect(
       resolveLandingProject({
         bootstrapped: true,

@@ -34,8 +34,8 @@ it("reports the installed service version and host paths", () => {
   assert.equal(
     formatServiceStatus(status, "0.0.29"),
     [
-      "T3 Code service",
-      "  Status: installed · t3@0.0.29",
+      "Doer service",
+      "  Status: installed · @lag4/doer-cli@0.0.29",
       "  Unit: /home/me/.config/systemd/user/t3code.service",
       "  Logs: /home/me/.t3/userdata/logs/boot-service.log",
     ].join("\n"),
@@ -45,7 +45,7 @@ it("reports the installed service version and host paths", () => {
 it("gives a direct repair command for a stale service", () => {
   assert.include(
     formatServiceStatus({ ...status, current: false }, "0.0.29"),
-    "Next: Run `t3 service install` to repair it.",
+    "Next: Run `npx @lag4/doer-cli@0.0.29 service update`.",
   );
 });
 
@@ -64,17 +64,17 @@ it("explains an incomplete nightly installation and keeps repair on its installe
   expect(output).toContain("last login session ends");
   expect(output).toContain('sudo loginctl enable-linger "$(id -un)"');
   expect(output).toContain("[service-stopped]");
-  expect(output).toContain("Run `t3 service install` to repair it.");
-  expect(output).not.toContain("npx");
+  expect(output).toContain("Run `npx @lag4/doer-cli@0.0.32-nightly.1 service update`.");
+  expect(output).not.toContain("npx t3");
 });
 
-it("points an older service at a repair, never at npx", () => {
+it("repairs an older service with the current CLI package", () => {
   const output = formatServiceStatus(
     { ...status, current: false, installedVersion: "0.0.28" },
     "0.0.29",
   );
-  expect(output).toContain("Run `t3 service install` to repair it.");
-  expect(output).not.toContain("npx");
+  expect(output).toContain("Run `npx @lag4/doer-cli@0.0.29 service update`.");
+  expect(output).not.toContain("npx t3");
 });
 
 it("explains where the service is supported", () => {
@@ -90,9 +90,12 @@ it("reports a newer installed service and tells the CLI to catch up to it", () =
     "0.0.31",
   );
 
-  assert.include(output, "t3@0.0.32-nightly.1 (newer than this t3@0.0.31 CLI)");
-  assert.include(output, "Run `t3 update 0.0.32-nightly.1` to match it");
-  assert.notInclude(output, "npx");
+  assert.include(
+    output,
+    "@lag4/doer-cli@0.0.32-nightly.1 (newer than this @lag4/doer-cli@0.0.31 CLI)",
+  );
+  assert.include(output, "npx @lag4/doer-cli@0.0.32-nightly.1 service update");
+  assert.notInclude(output, "npx t3");
 });
 
 const newerServiceStatus = { ...status, current: false, installedVersion: "999.0.0" };

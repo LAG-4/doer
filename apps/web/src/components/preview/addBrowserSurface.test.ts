@@ -54,6 +54,7 @@ describe("addBrowserSurface", () => {
     expect(openPreview).toHaveBeenCalledWith({
       threadId: "thread-1",
       viewport: FILL_PREVIEW_VIEWPORT,
+      url: "https://www.google.com",
       profileId: "profile-work",
     });
   });
@@ -70,6 +71,7 @@ describe("addBrowserSurface", () => {
     expect(openPreview).toHaveBeenCalledWith({
       threadId: "thread-1",
       viewport: FILL_PREVIEW_VIEWPORT,
+      url: "https://www.google.com",
       profileId: DEFAULT_BROWSER_PROFILE_ID,
     });
     expect(Object.keys(readThreadPreviewState(threadRef).sessions)).toEqual(["tab-1", "tab-2"]);

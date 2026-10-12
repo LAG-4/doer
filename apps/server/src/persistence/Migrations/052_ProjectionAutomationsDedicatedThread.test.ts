@@ -5,6 +5,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
 import { runMigrations } from "../Migrations.ts";
+import migrateAutomations from "./051_ProjectionAutomations.ts";
 import migrateDedicatedThread from "./052_ProjectionAutomationsDedicatedThread.ts";
 
 const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layer({ filename: ":memory:" })));
@@ -13,7 +14,8 @@ layer("052_ProjectionAutomationsDedicatedThread", (it) => {
   it.effect("adds the dedicated flag defaulting existing rows to dedicated", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      yield* runMigrations({ toMigrationInclusive: 51 });
+      yield* runMigrations({ toMigrationInclusive: 50 });
+      yield* migrateAutomations;
 
       yield* sql`
         INSERT INTO projection_automations (
@@ -28,7 +30,7 @@ layer("052_ProjectionAutomationsDedicatedThread", (it) => {
         )
       `;
 
-      yield* runMigrations({ toMigrationInclusive: 52 });
+      yield* migrateDedicatedThread;
 
       const rows = yield* sql<{ readonly dedicatedThread: number }>`
         SELECT dedicated_thread AS "dedicatedThread" FROM projection_automations

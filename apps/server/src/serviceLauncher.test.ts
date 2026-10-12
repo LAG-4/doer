@@ -76,9 +76,8 @@ it("rejects contradictory service state", () => {
   );
 });
 
-// A pinned runtime is an executable at <versionDir>/t3. The tests stand one up
-// as a Node shebang script so the launcher spawns it the way it spawns the
-// real single-executable, IPC channel included.
+// The pinned npm package exposes dist/bin.mjs. Use a Node shebang script
+// at that path so the launcher exercises its normal IPC and rollback paths.
 const writeFakeRuntime = (
   fs: FileSystem.FileSystem,
   path: Path.Path,
@@ -86,8 +85,8 @@ const writeFakeRuntime = (
   childSource: string,
 ) =>
   Effect.gen(function* () {
-    const entryPath = path.join(versionDir, "t3");
-    yield* fs.makeDirectory(versionDir, { recursive: true });
+    const entryPath = path.join(versionDir, "node_modules", "@lag4/doer-cli", "dist", "bin.mjs");
+    yield* fs.makeDirectory(path.dirname(entryPath), { recursive: true });
     yield* fs.writeFileString(entryPath, `#!${process.execPath}\n${childSource}`);
     yield* fs.chmod(entryPath, 0o755);
     yield* fs.writeFileString(

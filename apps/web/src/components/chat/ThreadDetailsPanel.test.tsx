@@ -3,6 +3,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { PopoverCreateHandle } from "../ui/popover";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+vi.mock("../../hooks/useSettings", () => ({
+  useClientSettings: (selector: (settings: { simpleModeEnabled: boolean }) => unknown) =>
+    selector({ simpleModeEnabled: false }),
+}));
+
 const testState = vi.hoisted(() => ({
   useT3ProjectFileScripts: vi.fn(),
   projectScriptsControl: vi.fn(),

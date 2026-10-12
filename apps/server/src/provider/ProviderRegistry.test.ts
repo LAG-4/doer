@@ -79,8 +79,8 @@ const disabledDefaultSlots = (
     ]),
   );
 
-const defaultClaudeSettings: ClaudeSettings = Schema.decodeSync(ClaudeSettings)({});
-const defaultCodexSettings: CodexSettings = Schema.decodeSync(CodexSettings)({});
+const defaultClaudeSettings: ClaudeSettings = Schema.decodeSync(ClaudeSettings)({ enabled: true });
+const defaultCodexSettings: CodexSettings = Schema.decodeSync(CodexSettings)({ enabled: true });
 const decodeCodexSettings = Schema.decodeSync(CodexSettings);
 const disabledCodexSettings: CodexSettings = Schema.decodeSync(CodexSettings)({
   enabled: false,
@@ -473,7 +473,10 @@ it.layer(
     it.effect("passes configured launch args to the Codex provider probe", () =>
       Effect.gen(function* () {
         let observedLaunchArgs: string | undefined;
-        const settings = decodeCodexSettings({ launchArgs: "--strict-config --enable foo" });
+        const settings = decodeCodexSettings({
+          enabled: true,
+          launchArgs: "--strict-config --enable foo",
+        });
 
         const status = yield* checkCodexProviderStatus(settings, (input) => {
           observedLaunchArgs = input.launchArgs;
@@ -3111,7 +3114,7 @@ it.layer(
         assert.strictEqual(status.enabled, false);
         assert.strictEqual(status.status, "disabled");
         assert.strictEqual(status.installed, false);
-        assert.strictEqual(status.message, "Codex is disabled in T3 Code settings.");
+        assert.strictEqual(status.message, "Codex is disabled in Doer settings.");
       }),
     );
   });
