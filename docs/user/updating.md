@@ -1,9 +1,28 @@
-# Updating T3 Code
+# Updating Doer
 
 The app you use and the server running your agents can be on different machines.
 When a server is behind your web or desktop app, an update notice appears in the
 conversation and **Settings → Connections**. Update the machine named in that
 notice.
+
+## Update everything at once
+
+The update button at the bottom of the sidebar updates every connected machine
+in one step. It updates outdated providers, then servers that are behind, then
+the desktop app you are using, which restarts last. Servers move to the
+version your desktop app is installing, or to your web app's version. A
+background service stays on its current release channel. A remote desktop app
+installs the latest release from its own channel. Hover the button to see what
+it will update.
+
+Server updates appear only after that version is published to npm. Remote
+desktop apps do not wait for npm. Servers that need
+a manual update are not included. Use the notice or **Settings → Connections**
+for those.
+
+The confirmation counts the running threads that the restarts will interrupt,
+and how many can resume afterwards. See **Continue threads after restarts**
+below.
 
 ## Before you update
 
@@ -15,14 +34,14 @@ Enable it to resume supported active threads after an update, crash, or machine
 restart. Changes are saved to connected environments that support this setting;
 update older servers first. If a supported environment was offline or has a
 different value, use **Apply to all** in Settings after it connects.
-T3 Code must start again on that machine;
+Doer must start again on that machine;
 the setting does not enable automatic startup. Terminal commands may still be
 interrupted, and threads without saved provider resume state need a new message.
 If you previously enabled continuation for updates, enable this setting once
 to allow recovery without a connected client.
 
 Updates from the previous orchestration system preserve conversation transcripts but cannot carry
-every kind of runtime history forward. Read [Threads from older T3 Code versions](./thread-migration.md)
+every kind of runtime history forward. Read [Threads from older Doer versions](./thread-migration.md)
 before continuing an important older thread.
 
 ## When versions don't match
@@ -31,7 +50,7 @@ A client and server must speak the same orchestration protocol. If they do not, 
 refused rather than running half-upgraded:
 
 - An app newer than the server is blocked before connecting, with a notice telling you to update
-  T3 Code on the machine named in the notice.
+  Doer on the machine named in the notice.
 - A server newer than your app refuses the connection with an update message.
 
 Update the side the notice names, then reconnect.
