@@ -12,7 +12,7 @@
  */
 
 import { CommandId, ProjectId } from "@t3tools/contracts";
-import { HostProcessHomeDirectory } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -26,10 +26,9 @@ import { ServerConfig } from "../config.ts";
 
 export const resolveInboxWelcomeTargets = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
-  const randomUUID = crypto.randomUUIDv4;
   const path = yield* Path.Path;
   const fileSystem = yield* FileSystem.FileSystem;
-  const homeDir = yield* HostProcessHomeDirectory;
+  const homeDir = yield* HostProcess.HomeDirectory;
   const projects = yield* ProjectService.ProjectService;
 
   const config = yield* Effect.serviceOption(ServerConfig);
@@ -51,8 +50,8 @@ export const resolveInboxWelcomeTargets = Effect.gen(function* () {
   }
 
   const { project, created } = yield* projects.bootstrap({
-    commandId: CommandId.make(yield* randomUUID),
-    projectId: ProjectId.make(yield* randomUUID),
+    commandId: CommandId.make(yield* crypto.randomUUIDv4()),
+    projectId: ProjectId.make(yield* crypto.randomUUIDv4()),
     workspaceRoot: inboxRoot,
     title: INBOX_PROJECT_TITLE,
     createWorkspaceRootIfMissing: true,

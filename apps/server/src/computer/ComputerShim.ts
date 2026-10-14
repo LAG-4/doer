@@ -18,7 +18,7 @@
  * agent-driven action keeps the Codex default: the real pointer never moves,
  * and macOS automation keeps running under the helper app's identity.
  */
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -35,7 +35,7 @@ export const ensureComputerShim = Effect.fn("ComputerShim.ensure")(function* (in
   const { entryPath, allowlistPath } = input;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const platform = yield* HostProcessPlatform;
+  const platform = yield* HostProcess.Platform;
   const shimDir = path.join(input.stateDir, SHIM_DIR);
   yield* fs.makeDirectory(shimDir, { recursive: true });
   const node = process.execPath;

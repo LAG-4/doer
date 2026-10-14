@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
     clear?: ReturnType<typeof vi.fn>;
     openLiveUpdateSettings?: ReturnType<typeof vi.fn>;
   } | null,
-  config: { scheme: ["t3code-preview"], extra: { iosPersonalTeamBuild: false } },
+  config: { scheme: ["doer-preview", "t3code-preview"], extra: { iosPersonalTeamBuild: false } },
   requireModule: vi.fn(),
 }));
 
@@ -34,6 +34,7 @@ beforeEach(() => {
   mocks.openSettings.mockReset().mockResolvedValue(undefined);
   mocks.native = { configure: vi.fn(), clear: vi.fn() };
   mocks.config.extra.iosPersonalTeamBuild = false;
+  mocks.config.scheme = ["doer-preview", "t3code-preview"];
   mocks.requireModule.mockReset().mockImplementation(() => mocks.native);
 });
 
@@ -71,9 +72,16 @@ describe("Android native notification capability", () => {
     mocks.config.extra.iosPersonalTeamBuild = true;
     expect(supportsAgentAwarenessPush()).toBe(true);
     configureAndroidAgentNotifications("device", "user", false);
-    expect(mocks.native?.configure).toHaveBeenCalledWith("device", "user", "t3code-preview", false);
+    expect(mocks.native?.configure).toHaveBeenCalledWith("device", "user", "doer-preview", false);
     clearAndroidAgentNotifications();
     expect(mocks.native?.clear).toHaveBeenCalledOnce();
+  });
+
+  it("uses the Doer scheme when build metadata is unavailable", async () => {
+    mocks.config.scheme = [];
+    const { configureAndroidAgentNotifications } = await import("./androidNotifications");
+    configureAndroidAgentNotifications("device", "user", true);
+    expect(mocks.native?.configure).toHaveBeenCalledWith("device", "user", "doer", true);
   });
 
   it.each([null, { clear: vi.fn() }, { configure: vi.fn() }])(

@@ -159,6 +159,7 @@ it.effect("surfaces the approval failure when the app is not approved", () => {
         Layer.provideMerge(McpServer.McpServer.layer),
         Layer.provide(unapproved),
         Layer.provide(McpToolAccessTestkit.liveThreadsLayer),
+        Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-computer-toolkit-test-" })),
         Layer.provide(NodeServices.layer),
       ),
     ),

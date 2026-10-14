@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off - exercises the real launcher subprocess.
 // @effect-diagnostics preferSchemaOverJson:off - asserts on raw launcher JSON passthrough.
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeUtil from "node:util";
@@ -19,7 +19,7 @@ describe("computer-use launcher", () => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const platform = yield* HostProcessPlatform;
+      const platform = yield* HostProcess.Platform;
       const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-computer-shim-" });
       const entryPath = path.join(dir, "ocu-stub.mjs");
       yield* fs.writeFileString(

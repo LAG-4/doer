@@ -46,7 +46,7 @@ const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
 
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
-  const newMemoryId = crypto.randomUUIDv4.pipe(
+  const newMemoryId = crypto.randomUUIDv4().pipe(
     Effect.orDie,
     Effect.map((uuid) => `mem_${uuid}`),
   );

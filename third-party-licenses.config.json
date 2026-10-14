@@ -62,7 +62,6 @@
       "license": "MIT",
       "name": "agent-device",
       "sourceUrl": "https://github.com/callstack/agent-device",
-      "version": "0.21.7",
       "generatedNotices": [
         {
           "licenseId": "MIT",
@@ -76,7 +75,6 @@
       "license": "MIT AND Apache-2.0 AND BSD-3-Clause",
       "name": "expo-device-hub",
       "sourceUrl": "https://github.com/expo/expo-device-hub",
-      "version": "0.10.1",
       "generatedNotices": [
         {
           "licenseId": "MIT",
@@ -91,20 +89,6 @@
         {
           "licenseId": "BSD-3-Clause",
           "copyrights": ["Copyright (c) 2011, The WebRTC project authors. All rights reserved."]
-        }
-      ]
-    },
-    {
-      "bundles": ["device-tools"],
-      "includeInBundles": ["mobile", "web"],
-      "license": "MIT",
-      "name": "open-computer-use",
-      "sourceUrl": "https://github.com/iFurySt/open-codex-computer-use",
-      "version": "0.3.5",
-      "generatedNotices": [
-        {
-          "licenseId": "MIT",
-          "copyrights": ["Copyright (c) 2026 Leo"]
         }
       ]
     },
@@ -153,7 +137,7 @@
       "bundles": ["mobile"],
       "license": "MIT",
       "name": "react-native-uitextview",
-      "noticeFile": "apps/mobile/modules/t3-markdown-text/LICENSE",
+      "noticeFile": "apps/mobile/modules/t3-source-text/LICENSE",
       "sourceUrl": "https://github.com/bluesky-social/react-native-uitextview",
       "version": "2.2.0"
     },
@@ -163,25 +147,51 @@
       "name": "Expo text editor implementation",
       "noticeFile": "apps/mobile/modules/t3-composer-editor/LICENSE",
       "sourceUrl": "https://github.com/expo/expo"
+    },
+    {
+      "bundles": ["device-tools"],
+      "includeInBundles": ["mobile", "web"],
+      "license": "MIT",
+      "name": "open-computer-use",
+      "sourceUrl": "https://github.com/iFurySt/open-codex-computer-use",
+      "version": "0.3.5",
+      "generatedNotices": [
+        {
+          "licenseId": "MIT",
+          "copyrights": ["Copyright (c) 2026 Leo"]
+        }
+      ]
     }
   ],
   "packageOverrides": [
     {
-      "name": "hash.js",
-      "sourceUrl": "https://github.com/indutny/hash.js/tree/v1.1.7",
+      "name": "@bufbuild/protobuf",
+      "version": "1.10.0",
+      "generatedNotices": [
+        {
+          "licenseId": "Apache-2.0",
+          "copyrights": ["Copyright 2021-2024 Buf Technologies, Inc."]
+        },
+        {
+          "licenseId": "BSD-3-Clause",
+          "copyrights": ["Copyright 2008 Google Inc. All rights reserved."]
+        }
+      ]
+    },
+    {
+      "name": "@connectrpc/connect",
+      "version": "1.7.0",
       "generatedNotice": {
-        "licenseId": "MIT",
-        "copyrights": ["Copyright Fedor Indutny, 2014."]
+        "licenseId": "Apache-2.0",
+        "copyrights": ["Copyright 2021-2024 The Connect Authors"]
       }
     },
     {
-      "name": "https",
+      "name": "@connectrpc/connect-web",
+      "version": "1.7.0",
       "generatedNotice": {
-        "licenseId": "ISC",
-        "copyrights": ["Copyright (c) hardus van der berg"],
-        "preamble": [
-          "https@1.0.0 is an empty compatibility package by hardus van der berg, published under ISC."
-        ]
+        "licenseId": "Apache-2.0",
+        "copyrights": ["Copyright 2021-2024 The Connect Authors"]
       }
     },
     {
@@ -271,6 +281,27 @@
         "licenseId": "MIT",
         "copyrights": ["Copyright (c) 2025 Stephen Crowe"]
       }
+    },
+    {
+      "license": "MIT",
+      "repositoryUrl": "https://github.com/iamEvanYT/electron-webauthn",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) 2026 iamEvan"]
+      }
+    },
+    {
+      "license": "MIT",
+      "name": "@electron-webauthn/types",
+      "sourceUrl": "https://github.com/iamEvanYT/electron-webauthn",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) 2026 iamEvan"]
+      }
+    },
+    {
+      "license": "MIT",
+      "name": "objc-js"
     },
     {
       "license": "MIT",
@@ -507,24 +538,7 @@
       }
     },
     {
-      "name": "@opencode/client",
-      "sourceUrl": "https://github.com/anomalyco/opencode/tree/dev/packages/client",
-      "generatedNotice": {
-        "licenseId": "MIT",
-        "copyrights": ["Copyright (c) 2025 opencode"]
-      }
-    },
-    {
-      "name": "@opencode/protocol",
-      "sourceUrl": "https://github.com/anomalyco/opencode/tree/dev/packages/protocol",
-      "generatedNotice": {
-        "licenseId": "MIT",
-        "copyrights": ["Copyright (c) 2025 opencode"]
-      }
-    },
-    {
-      "name": "@opencode/schema",
-      "sourceUrl": "https://github.com/anomalyco/opencode/tree/dev/packages/schema",
+      "repositoryUrl": "https://github.com/anomalyco/opencode",
       "generatedNotice": {
         "licenseId": "MIT",
         "copyrights": ["Copyright (c) 2025 opencode"]
@@ -639,25 +653,45 @@
       }
     },
     {
-      "name": "@bufbuild/protobuf",
-      "version": "1.10.0",
-      "generatedNotices": [
-        {
-          "licenseId": "Apache-2.0",
-          "copyrights": ["Copyright 2021-2024 Buf Technologies, Inc."]
-        },
-        {
-          "licenseId": "BSD-3-Clause",
-          "copyrights": ["Copyright 2008 Google Inc. All rights reserved."]
-        }
-      ]
+      "name": "hash.js",
+      "sourceUrl": "https://github.com/indutny/hash.js/tree/v1.1.7",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright Fedor Indutny, 2014."]
+      }
     },
     {
-      "name": "@connectrpc/connect",
-      "version": "1.7.0",
+      "name": "https",
       "generatedNotice": {
-        "licenseId": "Apache-2.0",
-        "copyrights": ["Copyright 2021-2024 The Connect Authors"]
+        "licenseId": "ISC",
+        "copyrights": ["Copyright (c) hardus van der berg"],
+        "preamble": [
+          "https@1.0.0 is an empty compatibility package by hardus van der berg, published under ISC."
+        ]
+      }
+    },
+    {
+      "name": "@opencode/client",
+      "sourceUrl": "https://github.com/anomalyco/opencode/tree/dev/packages/client",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) 2025 opencode"]
+      }
+    },
+    {
+      "name": "@opencode/protocol",
+      "sourceUrl": "https://github.com/anomalyco/opencode/tree/dev/packages/protocol",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) 2025 opencode"]
+      }
+    },
+    {
+      "name": "@opencode/schema",
+      "sourceUrl": "https://github.com/anomalyco/opencode/tree/dev/packages/schema",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) 2025 opencode"]
       }
     },
     {
@@ -666,21 +700,6 @@
       "generatedNotice": {
         "licenseId": "Apache-2.0",
         "copyrights": ["Copyright 2021-2024 The Connect Authors"]
-      }
-    },
-    {
-      "name": "@connectrpc/connect-web",
-      "version": "1.7.0",
-      "generatedNotice": {
-        "licenseId": "Apache-2.0",
-        "copyrights": ["Copyright 2021-2024 The Connect Authors"]
-      }
-    },
-    {
-      "repositoryUrl": "https://github.com/anomalyco/opencode",
-      "generatedNotice": {
-        "licenseId": "MIT",
-        "copyrights": ["Copyright (c) 2025 opencode"]
       }
     }
   ]

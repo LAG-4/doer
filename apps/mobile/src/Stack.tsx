@@ -1,3 +1,6 @@
+import { PullRequestGuideStopScreen } from "./features/pull-requests/guide/PullRequestGuideScreen";
+import { PullRequestInlineCommentScreen } from "./features/pull-requests/PullRequestInlineCommentScreen";
+import { PullRequestDiscussionScreen } from "./features/pull-requests/PullRequestDiscussionScreen";
 import {
   createV5StackNavigator as createNativeStackNavigator,
   createV5SheetStackNavigator,
@@ -27,6 +30,16 @@ import { useResolveClassNames } from "uniwind";
 
 import { AppText as Text } from "./components/AppText";
 import { getCompactBrandHeaderOptions } from "./components/CompactBrandTitle";
+import { withAdvancedMode } from "./features/workspace/AdvancedModeRoute";
+import { WorkspaceRootScreen } from "./features/workspace/WorkspaceRootScreen";
+import { AndroidWorkspaceTabsProvider } from "./features/workspace/AndroidWorkspaceTabsProvider";
+import {
+  PullRequestRouteScreen,
+  PullRequestFileRouteScreen,
+  PullRequestFilesRouteScreen,
+} from "./features/pull-requests/PullRequestRouteScreen";
+import { PullRequestReviewSheet } from "./features/pull-requests/PullRequestReviewSheet";
+import { PullRequestReviewersScreen } from "./features/pull-requests/PullRequestReviewersScreen";
 import {
   RenderErrorBoundary,
   RenderFailureView,
@@ -39,6 +52,7 @@ import { useConnectOnboardingNavigation } from "./features/cloud/connectOnboardi
 import { AttachmentFileScreen } from "./features/files/AttachmentFileScreen";
 import { ThreadFilesTreeScreen, ThreadFileScreen } from "./features/files/ThreadFilesRouteScreen";
 import { AdaptiveWorkspaceLayout } from "./features/layout/AdaptiveWorkspaceLayout";
+import { selectedPullRequestKey } from "./features/pull-requests/pullRequestSelection";
 import {
   HardwareKeyboardCommandOverlay,
   HardwareKeyboardCommandProvider,
@@ -58,7 +72,6 @@ import { ThreadRouteScreen } from "./features/threads/ThreadRouteScreen";
 import { McpAppFullscreenScreen } from "./features/threads/McpAppFullscreenScreen";
 import { ConnectionsRouteScreen } from "./features/connection/ConnectionsRouteScreen";
 import { ConnectionsNewRouteScreen } from "./features/connection/ConnectionsNewRouteScreen";
-import { HomeRouteScreen } from "./features/home/HomeRouteScreen";
 import { AddProjectDestinationRoute } from "./features/projects/AddProjectDestinationRoute";
 import { AddProjectLocalRoute } from "./features/projects/AddProjectLocalRoute";
 import { AddProjectNewRoute } from "./features/projects/AddProjectNewRoute";
@@ -103,6 +116,7 @@ import { ScheduledTaskEditorProvider } from "./features/settings/scheduled-task-
 import { SettingsKeyboardRouteScreen } from "./features/settings/SettingsKeyboardRouteScreen";
 import { SettingsMemoriesRouteScreen } from "./features/settings/SettingsMemoriesRouteScreen";
 import { SettingsLegalRouteScreen } from "./features/settings/SettingsLegalRouteScreen";
+import { SettingsMicrophoneRouteScreen } from "./features/settings/SettingsMicrophoneRouteScreen";
 import {
   SettingsOpenSourceLicenseRouteScreen,
   SettingsOpenSourceLicensesRouteScreen,
@@ -129,6 +143,7 @@ import {
 } from "./features/sharing/incoming-share-presentation";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "./native/native-glass";
 import { deriveLayout } from "./lib/layout";
+import { useNativeLayoutMetrics } from "./native/native-layout-metrics";
 import { nativeHeaderScrollEdgeEffects } from "./native/StackHeader";
 import { FORM_SHEET_PRESENTATION_OPTIONS } from "./native/sheet-surface";
 import { useThreadOutboxDrain } from "./state/use-thread-outbox-drain";
@@ -157,6 +172,12 @@ const GLASS_HEADER_OPTIONS: AppScreenOptions = {
   headerTransparent: NATIVE_LIQUID_GLASS_SUPPORTED,
   scrollEdgeEffects: NATIVE_LIQUID_GLASS_SUPPORTED ? HEADER_SCROLL_EDGE_EFFECTS : undefined,
   unstable_navigationItemStyle: NATIVE_LIQUID_GLASS_SUPPORTED ? "editor" : undefined,
+};
+
+// Android PR screens render their own Material toolbar.
+const PULL_REQUEST_HEADER_OPTIONS: AppScreenOptions = {
+  ...GLASS_HEADER_OPTIONS,
+  headerShown: Platform.OS !== "android",
 };
 
 // SOLID: opaque sheet-colored header for surfaces that manage their own viewport.
@@ -192,6 +213,9 @@ const LEGAL_DOCUMENT_HEADER_OPTIONS: AppScreenOptions = {
   headerRight: () => <SettingsLegalDocumentExternalHeaderButton />,
   presentation: "fullScreenModal",
 };
+
+// A navigator container leaves horizontal safe-area handling to its leaf screens.
+const NESTED_NAVIGATOR_OPTIONS = { nativeContentInsetHorizontally: false, headerShown: false };
 
 const SettingsContentStack = createV5SheetStackNavigator({
   initialRouteName: "Settings",
@@ -312,6 +336,13 @@ const SettingsContentStack = createV5SheetStackNavigator({
         title: "Keyboard",
       },
     }),
+    SettingsMicrophone: createNativeStackScreen({
+      screen: SettingsMicrophoneRouteScreen,
+      linking: "microphone",
+      options: {
+        title: "Microphone",
+      },
+    }),
     SettingsFollowUp: createNativeStackScreen({
       screen: SettingsFollowUpRouteScreen,
       linking: "follow-ups",
@@ -416,6 +447,7 @@ const SettingsSheetStack = createV5SheetStackNavigator({
   screens: {
     SettingsContent: createNativeStackScreen({
       screen: SettingsContentStack,
+      options: NESTED_NAVIGATOR_OPTIONS,
       linking: "",
       layout: ({ children }) => (
         <SettingsEnvironmentFilterProvider>
@@ -545,6 +577,8 @@ const NewTaskSheetStack = createNativeStackNavigator({
 // influence the adaptive workspace layout: opening Settings over Home should
 // not flip the sidebar in or change the active thread.
 const WORKSPACE_OVERLAY_ROUTES = new Set([
+  "PullRequestReview",
+  "PullRequestInlineComment",
   "ConnectOnboarding",
   "Connections",
   "ConnectionsNew",
@@ -628,13 +662,16 @@ function RootStackLayout(props: {
       <ThreadOutboxDrainWorker />
       <ShowcaseCaptureCoordinator pathname={pathname} />
       <ExistingThreadSettingsRouteProvider>
-        <AdaptiveWorkspaceLayout
-          pathname={workspaceLocation.pathname}
-          workspaceRouteKey={workspaceLocation.routeKey}
-        >
-          {props.children}
-          <HardwareKeyboardCommandOverlay />
-        </AdaptiveWorkspaceLayout>
+        <AndroidWorkspaceTabsProvider>
+          <AdaptiveWorkspaceLayout
+            pathname={workspaceLocation.pathname}
+            workspaceRouteKey={workspaceLocation.routeKey}
+            selectedPullRequestKey={selectedPullRequestKey(props.state)}
+          >
+            {props.children}
+            <HardwareKeyboardCommandOverlay />
+          </AdaptiveWorkspaceLayout>
+        </AndroidWorkspaceTabsProvider>
       </ExistingThreadSettingsRouteProvider>
     </HardwareKeyboardCommandProvider>
   );
@@ -687,13 +724,72 @@ const RootStackConfig = createWorkspaceStackNavigator({
   },
   screens: {
     Home: createNativeStackScreen({
-      screen: HomeRouteScreen,
+      screen: WorkspaceRootScreen,
       linking: "",
       options: {
         ...GLASS_HEADER_OPTIONS,
         contentStyle: { backgroundColor: "transparent" },
         headerBackVisible: false,
         ...getCompactBrandHeaderOptions(),
+      },
+    }),
+    PullRequest: createNativeStackScreen({
+      screen: withAdvancedMode(PullRequestRouteScreen),
+      linking: {
+        path: "pull-requests/:environmentId/:projectId/:repository/:number",
+        parse: { number: Number },
+      },
+      options: PULL_REQUEST_HEADER_OPTIONS,
+    }),
+    PullRequestGuideStop: createNativeStackScreen({
+      screen: withAdvancedMode(PullRequestGuideStopScreen),
+      options: PULL_REQUEST_HEADER_OPTIONS,
+    }),
+    PullRequestFile: createNativeStackScreen({
+      screen: withAdvancedMode(PullRequestFileRouteScreen),
+      options: PULL_REQUEST_HEADER_OPTIONS,
+    }),
+    PullRequestFiles: createNativeStackScreen({
+      screen: withAdvancedMode(PullRequestFilesRouteScreen),
+      options: {
+        ...FORM_SHEET_PRESENTATION_OPTIONS,
+        sheetAllowedDetents: [0.6, 0.92],
+        sheetGrabberVisible: true,
+        headerShown: false,
+      },
+    }),
+    PullRequestReviewers: createNativeStackScreen({
+      screen: withAdvancedMode(PullRequestReviewersScreen),
+      options: {
+        ...PULL_REQUEST_HEADER_OPTIONS,
+        ...FORM_SHEET_PRESENTATION_OPTIONS,
+        sheetAllowedDetents: [0.75, 0.92],
+        sheetGrabberVisible: true,
+        headerBackVisible: false,
+      },
+    }),
+    PullRequestDiscussion: createNativeStackScreen({
+      screen: withAdvancedMode(PullRequestDiscussionScreen),
+      options: PULL_REQUEST_HEADER_OPTIONS,
+    }),
+    PullRequestInlineComment: createNativeStackScreen({
+      screen: withAdvancedMode(PullRequestInlineCommentScreen),
+      options: {
+        ...(Platform.OS === "android"
+          ? { presentation: "fullScreenModal" as const }
+          : FORM_SHEET_PRESENTATION_OPTIONS),
+        sheetAllowedDetents: Platform.OS === "android" ? undefined : [0.75, 0.92],
+        sheetGrabberVisible: Platform.OS !== "android",
+        headerShown: false,
+      },
+    }),
+    PullRequestReview: createNativeStackScreen({
+      screen: withAdvancedMode(PullRequestReviewSheet),
+      options: {
+        ...FORM_SHEET_PRESENTATION_OPTIONS,
+        sheetAllowedDetents: [0.75, 0.92],
+        sheetGrabberVisible: true,
+        headerShown: false,
       },
     }),
     Thread: createNativeStackScreen({
@@ -851,6 +947,7 @@ const RootStackConfig = createWorkspaceStackNavigator({
       screen: SettingsSheetStack,
       linking: "settings",
       options: {
+        ...NESTED_NAVIGATOR_OPTIONS,
         gestureEnabled: true,
         headerShown: false,
       },
@@ -897,6 +994,10 @@ const RootStackConfig = createWorkspaceStackNavigator({
       screen: ConnectionsNewRouteScreen,
       linking: "connections/new",
       options: {
+        // Keep the iOS header visible from the first render so the sheet's
+        // native header stack mounts without remounting the pairing form.
+        ...(Platform.OS === "ios" ? SHEET_GLASS_HEADER_OPTIONS : undefined),
+        title: "Add Environment",
         ...FORM_SHEET_PRESENTATION_OPTIONS,
         sheetAllowedDetents: [0.55, 0.7],
         sheetGrabberVisible: true,
@@ -917,6 +1018,7 @@ const RootStackConfig = createWorkspaceStackNavigator({
         </GuardedScreenLayout>
       ),
       options: {
+        ...NESTED_NAVIGATOR_OPTIONS,
         gestureEnabled: true,
         headerShown: false,
       },
@@ -957,8 +1059,9 @@ function ScreenRenderFallback(props: RenderFailureProps & { readonly routeName: 
 
 export const RootStack = RootStackConfig.with(function AdaptiveRootStack({ Navigator }) {
   const { width, height } = useWindowDimensions();
+  const nativeMetrics = useNativeLayoutMetrics();
   const usesWorkspaceFlowScreens =
-    Platform.OS === "android" || deriveLayout({ width, height }).usesSplitView;
+    Platform.OS === "android" || deriveLayout({ width, height, nativeMetrics }).usesSplitView;
 
   return (
     <Navigator
