@@ -98,13 +98,22 @@ describe("resolveProjectSettings", () => {
   });
 
   it("honours the aggregate's own fields only until the server has folded them", () => {
+    const settings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      providerInstances: {
+        [ProviderInstanceId.make("codex")]: {
+          driver: ProviderDriverKind.make("codex"),
+          enabled: true,
+        },
+      },
+    };
     const aggregateModel = createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.5");
     const project = {
       defaultModelSelection: aggregateModel,
       defaultThreadEnvMode: "local" as const,
     };
     const unfolded = resolveProjectSettings(
-      { ...DEFAULT_SERVER_SETTINGS, projectSettingsFolded: false },
+      { ...settings, projectSettingsFolded: false },
       projectId,
       project,
     );
@@ -114,7 +123,7 @@ describe("resolveProjectSettings", () => {
     // A stored override still beats the aggregate before the fold.
     const overridden = resolveProjectSettings(
       {
-        ...DEFAULT_SERVER_SETTINGS,
+        ...settings,
         projectSettingsFolded: false,
         projectSettingsOverrides: { [projectId]: { defaultThreadEnvMode: "worktree" } },
       },
@@ -124,7 +133,7 @@ describe("resolveProjectSettings", () => {
     expect(overridden.settings.defaultThreadEnvMode).toBe("worktree");
     // After the fold a reset in the record wins over the stale aggregate.
     const folded = resolveProjectSettings(
-      { ...DEFAULT_SERVER_SETTINGS, projectSettingsFolded: true },
+      { ...settings, projectSettingsFolded: true },
       projectId,
       project,
     );
@@ -159,7 +168,7 @@ describe("resolveProjectSettings", () => {
     };
     expect(
       resolveProjectSettings(settings, projectId).settings.textGenerationModelSelection.instanceId,
-    ).toBe(ProviderInstanceId.make("claudeAgent"));
+    ).toBe(ProviderInstanceId.make("opencode"));
     expect(
       resolveProjectSettings(settings, otherProjectId).settings.textGenerationModelSelection,
     ).toEqual(settings.textGenerationModelSelection);
@@ -171,12 +180,15 @@ describe("resolveProjectSettings", () => {
     const settings = {
       ...DEFAULT_SERVER_SETTINGS,
       textGenerationModelSelection: createModelSelection(codex, "gpt-5"),
-      providerInstances: { [codexWork]: { driver: ProviderDriverKind.make("codex"), config: {} } },
+      providerInstances: {
+        [codexWork]: { driver: ProviderDriverKind.make("codex"), enabled: true, config: {} },
+      },
       projectSettingsOverrides: {
         [projectId]: {
           providerInstances: {
             [codex]: { enabled: false },
             [ProviderInstanceId.make("claudeAgent")]: { enabled: false },
+            [ProviderInstanceId.make("opencode")]: { enabled: false },
           },
         },
       },
