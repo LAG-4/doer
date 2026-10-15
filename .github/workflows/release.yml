@@ -472,6 +472,10 @@ jobs:
             Select-Object -Unique
           "PSModulePath=$($modulePathEntries -join ';')" >> $env:GITHUB_ENV
 
+      - name: Verify Mac update-signing behavior
+        if: matrix.platform == 'mac'
+        run: vp test run scripts/sign-macos-update-bundle.test.mjs
+
       - name: Build desktop artifact
         shell: bash
         env:

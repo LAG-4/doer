@@ -148,7 +148,7 @@ async function signMacosUpdateBundleAfterPack(
       keychain,
     ]);
     const imported = run("security", ["find-certificate", "-a", "-Z", keychain]);
-    if (!imported.includes(configuration.fingerprint)) {
+    if (!imported.toUpperCase().includes(configuration.fingerprint.toUpperCase())) {
       throw new Error("The Mac update-signing secret does not match the pinned certificate.");
     }
     const sign = (target, requirement) =>

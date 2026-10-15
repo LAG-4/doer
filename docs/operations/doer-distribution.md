@@ -54,6 +54,12 @@ Local builds without the update identity retain ad-hoc seals; stable release
 jobs require the identity. Developer ID builds continue to use the separate
 Apple signing path.
 
+The pinned certificate expires in 2046. If its private key is lost, compromised,
+or replaced, publish a new pinned identity and tell Mac users to replace the app
+manually once; old installations cannot authenticate a new leaf certificate.
+Restore the existing backed-up identity when recovering CI rather than rotating
+it during an ordinary release.
+
 ## Keeping the website Doer (not T3)
 
 The repo source on `lite` is Doer, but the live domain is owned by Vercel
