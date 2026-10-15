@@ -3025,20 +3025,14 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     const path = yield* Path.Path;
     const repoRoot = yield* RepoRoot;
     if (!signed) {
-      // Unsigned mac builds ship ad-hoc sealed (see
-      // scripts/adhoc-sign-macos-bundle.cjs): Electron's prebuilt binaries
-      // carry linker ad-hoc signatures but no bundle seal, and
-      // electron-builder adds files without sealing. Apple Silicon reads that
-      // half-sealed state as tampering ("damaged", no Open Anyway recourse),
-      // while fully unsigned is worse: recent macOS denies execution of
-      // unsigned code entirely, even after Open Anyway. Sealing ad-hoc yields
-      // the standard unidentified-developer warning with a working Open
-      // Anyway path instead. afterPack runs before the dmg/zip targets are
-      // created (and unsigned builds skip electron-builder's own signing, so
-      // the seal survives to the final artifact).
-      buildConfig.afterPack = path.join(repoRoot, "scripts/adhoc-sign-macos-bundle.cjs");
+      // The free release signer pins one persistent identity for Squirrel
+      // update continuity. Local builds without that identity remain ad-hoc
+      // sealed so Apple Silicon can offer the per-app Open Anyway exception.
+      // Sign before archives and their update checksums are generated.
+      buildConfig.afterPack = path.join(repoRoot, "scripts/sign-macos-update-bundle.cjs");
     }
     buildConfig.mac = {
+      ...(!signed ? { identity: null } : {}),
       target: target === "dmg" ? [target, "zip"] : [target],
       icon: "icon.icns",
       category: "public.app-category.developer-tools",

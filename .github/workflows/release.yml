@@ -36,6 +36,25 @@ jobs:
       is_prerelease: ${{ steps.release_meta.outputs.is_prerelease }}
       make_latest: ${{ steps.release_meta.outputs.make_latest }}
     steps:
+      - name: Validate macOS update-signing configuration
+        shell: bash
+        env:
+          UPDATE_IDENTITY: ${{ secrets.DOER_MACOS_UPDATE_SIGNING_P12 }}
+          UPDATE_PASSWORD: ${{ secrets.DOER_MACOS_UPDATE_SIGNING_PASSWORD }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          if [[ -n "$CSC_LINK" && -n "$CSC_KEY_PASSWORD" && -n "$APPLE_API_KEY" && -n "$APPLE_API_KEY_ID" && -n "$APPLE_API_ISSUER" ]]; then
+            exit 0
+          fi
+          if [[ -z "$UPDATE_IDENTITY" || -z "$UPDATE_PASSWORD" ]]; then
+            echo "Mac releases require the persistent Doer update-signing identity and password." >&2
+            exit 1
+          fi
+
       - name: Validate public Gmail configuration
         if: vars.DOER_GMAIL_PUBLIC_READY == 'true'
         shell: bash
@@ -466,6 +485,9 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
           MACOS_PROVISIONING_PROFILE: ${{ secrets.MACOS_PROVISIONING_PROFILE }}
+          DOER_MACOS_UPDATE_SIGNING_P12: ${{ secrets.DOER_MACOS_UPDATE_SIGNING_P12 }}
+          DOER_MACOS_UPDATE_SIGNING_PASSWORD: ${{ secrets.DOER_MACOS_UPDATE_SIGNING_PASSWORD }}
+          DOER_REQUIRE_MACOS_UPDATE_SIGNING: "true"
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
@@ -511,7 +533,11 @@ jobs:
               echo "macOS signing enabled."
               args+=(--signed)
             else
-              echo "macOS signing disabled (missing one or more Apple signing secrets)."
+              if ! has_all "$DOER_MACOS_UPDATE_SIGNING_P12" "$DOER_MACOS_UPDATE_SIGNING_PASSWORD"; then
+                echo "The persistent Doer macOS update-signing identity is missing." >&2
+                exit 1
+              fi
+              echo "macOS uses free persistent update signing; this is not Apple notarization."
             fi
           elif [[ "${{ matrix.platform }}" == "win" ]]; then
             # Embed the Linux CLI archive built by the Linux x64 matrix entry

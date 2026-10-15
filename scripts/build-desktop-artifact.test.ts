@@ -1988,7 +1988,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 
-  it.effect("ad-hoc seals only unsigned macOS builds", () =>
+  it.effect("uses the free update-signing hook only outside Developer ID builds", () =>
     Effect.gen(function* () {
       const unsignedMac = yield* createBuildConfig(
         "mac",
@@ -1999,7 +1999,11 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         undefined,
         undefined,
       );
-      assert.match(String(unsignedMac.afterPack), /[\\/]scripts[\\/]adhoc-sign-macos-bundle\.cjs$/);
+      assert.match(
+        String(unsignedMac.afterPack),
+        /[\\/]scripts[\\/]sign-macos-update-bundle\.cjs$/,
+      );
+      assert.propertyVal(unsignedMac.mac, "identity", null);
 
       const signedMac = yield* createBuildConfig("mac", "dmg", "1.2.3", true, false, undefined, {
         entitlementsPath: "/tmp/entitlements.mac.plist",

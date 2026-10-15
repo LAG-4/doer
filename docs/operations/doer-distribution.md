@@ -5,9 +5,11 @@ How Doer ships to users, for free. Agent-oriented rules live in
 
 ## What users get
 
-- **Desktop app** (Windows x64, Linux x64, macOS arm64 + x64, unsigned) from
+- **Desktop app** (Windows x64, Linux x64, macOS arm64 + x64) from
   [GitHub Releases](https://github.com/LAG-4/doer/releases), with in-app
-  auto-update.
+  auto-update. Mac releases use a persistent self-signed update identity;
+  this authenticates future updates but is not Apple notarization. Windows
+  direct downloads remain unsigned unless a trusted signing service is configured.
 - **Terminal**: `npx @lag4/doer-cli@latest`. The package also installs a short
   `doer` command. Same backend, no desktop app needed.
 - **Website**: https://doer.lagaryan.click/download always shows the newest
@@ -28,9 +30,29 @@ How Doer ships to users, for free. Agent-oriented rules live in
    `DOER_GMAIL_PUBLIC_READY` unset or false until Google approves public access
    and the packaged app has been checked. Other tools can ship while Gmail is
    unavailable in the default release.
+4. **Mac update identity**: configure `DOER_MACOS_UPDATE_SIGNING_P12` (base64
+   PKCS#12) and `DOER_MACOS_UPDATE_SIGNING_PASSWORD` in GitHub Actions. The
+   certificate must match `scripts/resources/macos-update-signing.pem`.
+   Back up the encrypted identity and its password outside the repository.
+   Never generate a replacement identity in a release job: installed Macs
+   trust the existing certificate. Preflight and packaging reject a missing
+   or mismatched identity rather than publishing another ad-hoc update.
 
 No Apple, Azure, Clerk, Cloudflare Workers, Expo, or Discord accounts are needed.
 Runners are free GitHub-hosted ones.
+
+## Mac update migration
+
+Older ad-hoc installations cannot validate releases signed by the persistent
+update identity. Those users must download a release with the new signer and
+replace the application once. Keep the app ID and data locations unchanged;
+subsequent releases can use in-app updates with the same certificate.
+
+First launch still uses Apple's per-app **System Settings → Privacy & Security →
+Open Anyway** exception. Do not describe these builds as Apple-verified.
+Local builds without the update identity retain ad-hoc seals; stable release
+jobs require the identity. Developer ID builds continue to use the separate
+Apple signing path.
 
 ## Keeping the website Doer (not T3)
 
@@ -77,7 +99,7 @@ the live domain served a fresh upstream build (canonical `t3.codes`,
 
 ## Later, when it matters
 
-- **Signed builds**: add Apple (`CSC_LINK`, `CSC_KEY_PASSWORD`,
+- **OS-trusted builds**: add Apple (`CSC_LINK`, `CSC_KEY_PASSWORD`,
   `APPLE_API_KEY`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, `APPLE_TEAM_ID`,
   `MACOS_PROVISIONING_PROFILE`) or Azure (`AZURE_*`) secrets — the workflow
   signs automatically when they exist. No code change.
@@ -86,9 +108,9 @@ the live domain served a fresh upstream build (canonical `t3.codes`,
 
 ## Microsoft Store (AppX, free signing)
 
-Two routes address the 10.2.9 unsigned-package rejection; pick one per release.
-Only that stated failure requires signing — no broader policy claim is made
-here, and a green build never guarantees certification.
+The two submission formats have different signing requirements. Policy 10.2.9
+applies to the EXE/MSI installer-link route; it is not a diagnosis of an account
+verification failure. A green build never guarantees certification.
 
 - **Signed EXE (existing Win32 listing).** Add the `AZURE_*` Trusted Signing
   secrets and the release workflow signs the NSIS installer in place. No code
@@ -97,8 +119,8 @@ here, and a green build never guarantees certification.
   installer AND every shipped PE binary (all DLLs, node.exe, helpers) carry
   valid signatures.
 - **Store AppX (free, separate packaged submission).** Build the unsigned
-  `.appx` with Actions → Store AppX → Run workflow (default app version
-  `0.0.56`, mapped to Store package `1.0.56` / manifest `1.0.56.0`; always a
+  `.appx` with Actions → Store AppX → Run workflow (choose an explicit app version,
+  for example `0.0.58`, mapped to Store package `1.0.58` / manifest `1.0.58.0`; always a
   new version, never reuse a rejected one), upload it to Partner Center, and
   Microsoft signs it after certification. No Apple/Azure certificate needed.
   The `.appx` stays in CI artifacts: it is never attached to a GitHub Release
