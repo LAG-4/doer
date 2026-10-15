@@ -196,7 +196,7 @@ export function DraftHeroSuggestions({
                   setError(null);
                   setSelected({ targetKey, task: suggestion });
                 }}
-                className="rounded-2xl border border-border/50 bg-card px-4 py-3.5 text-left transition-colors hover:border-border hover:bg-accent/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+                className="rounded-2xl border border-border/50 bg-card px-4 py-3.5 text-left transition-colors hover:border-border hover:bg-accent/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               >
                 <span className="block text-starter font-medium text-foreground">
                   {suggestion.title}
