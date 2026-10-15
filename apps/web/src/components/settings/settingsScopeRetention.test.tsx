@@ -46,6 +46,10 @@ vi.mock("./SettingsScopeContext", async () => {
     },
   };
 });
+vi.mock("../../hooks/useSettings", () => ({
+  useClientSettings: (selector: (settings: { simpleModeEnabled: boolean }) => unknown) =>
+    selector({ simpleModeEnabled: false }),
+}));
 vi.mock("../../state/environments", () => ({ useEnvironments: () => ({ environments: [] }) }));
 vi.mock("../ui/sidebar", () => ({
   SidebarInset: ({ children }: { children: ReactNode }) => <div>{children}</div>,

@@ -239,9 +239,9 @@ describe("EnvironmentProviderSettings routing", () => {
       .mockResolvedValue({ _tag: "Success", value: { accepted: true } });
   });
 
-  it("shows Codex and Claude while hiding untouched disabled provider slots", () => {
+  it("shows default provider choices while hiding untouched disabled provider slots", () => {
     const panel = renderPanel();
-    for (const driver of ["codex", "claudeAgent"] as const) {
+    for (const driver of ["codex", "claudeAgent", "opencode"] as const) {
       expect(
         visitElements(
           panel,
@@ -249,7 +249,7 @@ describe("EnvironmentProviderSettings routing", () => {
         ),
       ).not.toBeNull();
     }
-    for (const driver of ["cursor", "grok", "pi", "opencode", "antigravity"] as const) {
+    for (const driver of ["cursor", "grok", "pi", "antigravity"] as const) {
       expect(
         visitElements(
           panel,
