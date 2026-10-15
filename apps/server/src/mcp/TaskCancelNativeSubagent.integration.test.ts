@@ -49,6 +49,9 @@ const layerOrchestratorService = OrchestratorMcpService.layer.pipe(
 const driver = ProviderDriverKind.make("claudeAgent");
 const instanceId = ProviderInstanceId.make("claudeAgent");
 const modelSelection = { instanceId, model: "claude-test" };
+const layerEnabledProvider = ServerSettings.layerTest({
+  providerInstances: { [instanceId]: { driver, enabled: true } },
+});
 
 // A delegated Claude child ends its turn while a background native subagent it
 // started keeps running (#17154). Cancelling the task stops the child, which
@@ -144,7 +147,7 @@ it.effect("task_cancel ends a delegated child's background native subagent", () 
         layerOrchestrator,
         ThreadManagementService.layer.pipe(
           Layer.provide(layerOrchestrator),
-          Layer.provide(ServerSettings.layerTest()),
+          Layer.provide(layerEnabledProvider),
           Layer.provide(
             CommandReceiptStore.layer.pipe(Layer.provide(SqlitePersistence.layerMemory)),
           ),
@@ -158,7 +161,7 @@ it.effect("task_cancel ends a delegated child's background native subagent", () 
             Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
             Layer.mock(ProjectService.ProjectService)({}),
             Layer.mock(SecretRequests.SecretRequests)({}),
-            ServerSettings.layerTest(),
+            layerEnabledProvider,
             Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
             NodeServices.layer,
           ),

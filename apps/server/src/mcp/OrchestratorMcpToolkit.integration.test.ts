@@ -130,6 +130,15 @@ const claudeSelection = {
   model: claudeModel,
 } satisfies ModelSelection;
 
+// These tests opt into their provider fixtures independently of Doer's
+// fresh-install defaults. The live catalog and settings must agree.
+const layerEnabledProviders = ServerSettings.layerTest({
+  providerInstances: {
+    [codexInstanceId]: { driver: ProviderDriverKind.make("codex"), enabled: true },
+    [claudeInstanceId]: { driver: ProviderDriverKind.make("claudeAgent"), enabled: true },
+  },
+});
+
 const delegatedTaskStatusTranscriptFile = new URL(
   "../orchestration-v2/testkit/fixtures/delegated_task_status/codex_transcript.ndjson",
   import.meta.url,
@@ -623,7 +632,7 @@ describe("orchestrator MCP toolkit", () => {
             layerOrchestrator,
             ThreadManagementService.layer.pipe(
               Layer.provide(layerOrchestrator),
-              Layer.provide(ServerSettings.layerTest()),
+              Layer.provide(layerEnabledProviders),
               Layer.provide(
                 CommandReceiptStore.layer.pipe(Layer.provide(SqlitePersistence.layerMemory)),
               ),
@@ -696,7 +705,7 @@ describe("orchestrator MCP toolkit", () => {
             Layer.provideMerge(layerOrchestration),
             Layer.provide(layerRegistry),
             Layer.provide(layerProviderRegistry),
-            Layer.provide(ServerSettings.layerTest()),
+            Layer.provide(layerEnabledProviders),
             Layer.provide(layerScheduledTaskStub),
             Layer.provide(Layer.mock(ThreadSearch.ThreadSearch)({})),
             Layer.provide(
@@ -3832,7 +3841,7 @@ describe("orchestrator MCP toolkit", () => {
           layerOrchestrator,
           ThreadManagementService.layer.pipe(
             Layer.provide(layerOrchestrator),
-            Layer.provide(ServerSettings.layerTest()),
+            Layer.provide(layerEnabledProviders),
             Layer.provide(
               CommandReceiptStore.layer.pipe(Layer.provide(SqlitePersistence.layerMemory)),
             ),
@@ -3854,7 +3863,7 @@ describe("orchestrator MCP toolkit", () => {
             ),
           ),
           Layer.provide(layerProviderRegistry),
-          Layer.provide(ServerSettings.layerTest()),
+          Layer.provide(layerEnabledProviders),
           Layer.provide(layerUnusedScheduledTaskStub),
           Layer.provide(Layer.mock(ProjectService.ProjectService)({})),
           Layer.provideMerge(
