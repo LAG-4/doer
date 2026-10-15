@@ -45,7 +45,11 @@ const ADVANCED_TABS = ["threads", "pullRequests"] as const;
 /** The tab controller and its list screens share state across native container changes. */
 export function WorkspaceTabsProvider(props: { readonly children: ReactNode }) {
   const simple = useSimpleModeEnabled();
-  const [storedState, reduce] = useReducer(workspaceTabsReducer, undefined, initialWorkspaceTabsState);
+  const [storedState, reduce] = useReducer(
+    workspaceTabsReducer,
+    undefined,
+    initialWorkspaceTabsState,
+  );
   const state = useMemo(
     () =>
       simple && storedState.selectedTab !== "threads"

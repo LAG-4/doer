@@ -12,12 +12,9 @@ describe("shouldHandleAppLink", () => {
     "t3code:///",
     "t3code-dev://",
     "t3code-preview://",
-  ])(
-    "ignores scheme-only URL %s",
-    (url) => {
-      expect(shouldHandleAppLink(url)).toBe(false);
-    },
-  );
+  ])("ignores scheme-only URL %s", (url) => {
+    expect(shouldHandleAppLink(url)).toBe(false);
+  });
 
   it.each([
     "doer://threads/env-1/thread-1",
@@ -35,10 +32,7 @@ describe("shouldHandleAppLink", () => {
     "doer://expo-sharing/anything",
     "t3code://expo-development-client/?url=x",
     "t3code://expo-sharing/anything",
-  ])(
-    "ignores lifecycle URL %s",
-    (url) => {
-      expect(shouldHandleAppLink(url)).toBe(false);
-    },
-  );
+  ])("ignores lifecycle URL %s", (url) => {
+    expect(shouldHandleAppLink(url)).toBe(false);
+  });
 });

@@ -41,9 +41,7 @@ function WorkspaceRootTitle(props: {
   return (
     <View style={{ width: props.maxWidth, minHeight: 32, justifyContent: "center" }}>
       <WorkspaceConnectionTitle
-        brand={
-          <CompactBrandTitle accessibilityLabel={`Doer, ${TAB_TITLES[state.selectedTab]}`} />
-        }
+        brand={<CompactBrandTitle accessibilityLabel={`Doer, ${TAB_TITLES[state.selectedTab]}`} />}
         maxWidth={props.maxWidth}
         onPress={props.onOpenEnvironments}
       />
