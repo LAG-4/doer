@@ -47,7 +47,11 @@ import {
   type Thread,
   type TurnDiffSummary,
 } from "../types";
-import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
+import {
+  deriveEffectiveComposerModelState,
+  type ComposerImageAttachment,
+  type DraftThreadState,
+} from "../composerDraftStore";
 import * as Schema from "effect/Schema";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentThreadShells, environmentThreadDetails } from "../state/threads";
@@ -517,7 +521,7 @@ export function buildLocalDraftThread(
   return presentThreadShell(draftThread.environmentId, {
     id: threadId,
     projectId: draftThread.projectId,
-    title: "New thread",
+    title: "New Task",
     providerInstanceId: fallbackModelSelection.instanceId,
     modelSelection: fallbackModelSelection,
     runtimeMode: draftThread.runtimeMode,
@@ -620,6 +624,24 @@ export function resolveComposerProviderSelection(input: {
     lockedContinuationGroupKey,
     unavailableProviderInstanceId,
   };
+}
+
+/** Handoff previews follow the enabled provider and model the composer will send. */
+export function resolveComposerHandoffTarget(input: {
+  providerSelection: Parameters<typeof resolveComposerProviderSelection>[0];
+  modelState: Omit<
+    Parameters<typeof deriveEffectiveComposerModelState>[0],
+    "selectedProvider" | "selectedInstanceId"
+  >;
+}): ModelSelection | null {
+  const entry = resolveComposerProviderSelection(input.providerSelection).selectedProviderEntry;
+  if (entry === undefined) return null;
+  const { selectedModel } = deriveEffectiveComposerModelState({
+    ...input.modelState,
+    selectedProvider: entry.driverKind,
+    selectedInstanceId: entry.instanceId,
+  });
+  return selectedModel.length === 0 ? null : { instanceId: entry.instanceId, model: selectedModel };
 }
 
 /** Keep restored drafts and every plan control on the selected instance's supported mode. */

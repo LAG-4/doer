@@ -13,7 +13,7 @@
  * for CLI-direct calls. Wrapping every upstream tool here would only lag
  * behind its releases — the same call the `device_*` tools made.
  */
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -211,7 +211,7 @@ const extractObservation = (
 export const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const platform = yield* HostProcessPlatform;
+  const platform = yield* HostProcess.Platform;
   const runner = yield* ProcessRunner.ProcessRunner;
   const httpClient = yield* HttpClient.HttpClient;
   const config = yield* ServerConfig;
@@ -346,7 +346,7 @@ export const make = Effect.gen(function* () {
       Effect.provideService(ProcessRunner.ProcessRunner, runner),
       // The toolchain install needs no user-installed tools, but it does
       // need the ambient platform and HTTP client to fetch the helper itself.
-      Effect.provideService(HostProcessPlatform, platform),
+      Effect.provideService(HostProcess.Platform, platform),
       Effect.provideService(HttpClient.HttpClient, httpClient),
     );
     return paths.entryPath;

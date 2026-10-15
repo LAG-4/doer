@@ -1,12 +1,10 @@
 ---
 import LegalPage from "../components/LegalPage.astro";
-const sections = [["operator", "Who operates Doer"], ["local", "Tasks and local files"], ["google", "Google and Gmail"], ["providers", "AI providers and sharing"], ["retention", "Retention and deletion"], ["website", "Website and support"], ["choices", "Your choices"], ["updates", "Changes and contact"]] as const;
+const sections = [["analytics", "Analytics"], ["operator", "Who operates Doer"], ["local", "Tasks and local files"], ["google", "Google and Gmail"], ["providers", "AI providers and sharing"], ["retention", "Retention and deletion"], ["website", "Website and support"], ["choices", "Your choices"], ["updates", "Changes and contact"]] as const;
 ---
-<LegalPage title="Privacy Policy - Doer" description="How Doer handles tasks, local files, Gmail connections, and your privacy choices." heading="Doer Privacy Policy" lede="Doer runs tasks on your computer using the AI providers and tools you choose. This policy explains where your information goes and how to disconnect connected tools." effectiveDate="2026-10-04" lastUpdated="2026-10-06" sections={sections}>
-  <section id="operator">
-    <h2>Who operates Doer</h2>
-    <p>Doer and <a href="https://doer.lagaryan.click">doer.lagaryan.click</a> are operated by Aryan Gupta. Contact <a href="mailto:aryangupta4feb@gmail.com">aryangupta4feb@gmail.com</a> for privacy and support requests. Doer is an independent open-source product built on MIT-licensed T3 Code. T3 Tools, Inc. is the upstream copyright holder, not the operator of Doer.</p>
-  </section>
+<LegalPage title="Privacy Policy - Doer" description="How Doer handles tasks, local files, Gmail connections, and your privacy choices." heading="Doer Privacy Policy" lede="Doer runs tasks on your computer using the AI providers and tools you choose. This policy explains where your information goes and how to disconnect connected tools." effectiveDate="2026-10-04" lastUpdated="2026-10-16" sections={sections}>
+  <section id="operator"><h2>Operator</h2><p>Doer and <a href="https://doer.lagaryan.click">doer.lagaryan.click</a> are operated by Aryan Gupta and Aditya Mayank Sinha in India. The Microsoft Store publisher display name is Baandra. Privacy and support requests: <a href="mailto:aryan@lagaryan.click">aryan@lagaryan.click</a>. Doer is an independent fork of MIT-licensed T3 Code. T3 Tools, Inc. is the upstream copyright holder, not Doer's operator.</p></section>
+<section id="analytics"><h2>Analytics</h2><p>Doer enables product analytics by default using PostHog's US cloud service. Events include feature usage, provider and model, app version, platform, architecture, turn status and duration, token totals and error reports. An installation or browser identifier associates events with the same installation. Analytics event code does not intentionally include prompts, AI responses, file contents or authentication tokens.</p><p>The browser SDK also records interactions, page views, errors and session recordings. Form inputs are masked and query strings and fragments are removed from recorded page URLs. Other rendered content, including task or file content visible on screen, can appear in recordings. Recordings are not limited to anonymous aggregate statistics.</p><p>Set <code>T3CODE_TELEMETRY_ENABLED=false</code> in the host's environment before starting Doer to disable server and browser analytics. The browser SDK also honors Do Not Track. Hosts may configure a different PostHog service and are responsible for that configuration. Analytics is used to understand usage and investigate problems, not to sell information or target advertising.</p></section>
   <section id="local">
     <h2>Tasks and local files</h2>
     <p>Task messages, attachments, settings, history, and connected-tool results are stored on the computer running your Doer server. A remote device connects to that computer; it does not move the task into a Doer-operated cloud account. People and devices you pair with your server may access its tasks and enabled tools, so pair only devices you trust.</p>
@@ -27,6 +25,7 @@ const sections = [["operator", "Who operates Doer"], ["local", "Tasks and local 
   </section>
   <section id="retention">
     <h2>Retention and deletion</h2>
+    <p>PostHog events and recordings follow the analytics project's configured retention settings. Contact us for applicable retention details or to request deletion of information associated with your installation. Disabling analytics stops future collection; it does not delete existing events or recordings. Support information is kept as needed to handle the request and legal obligations.</p>
     <p>Gmail credentials remain on the host until you disconnect or remove them. Disconnect attempts to revoke Google access before deleting the local credentials. If revocation fails, Doer reports the failure and keeps the credentials so you can retry. You can also revoke access directly in <a href="https://myaccount.google.com/connections">your Google account's third-party connections</a>.</p>
     <p>Disconnecting Gmail does not delete task history, email review records, document backups, or mail already delivered to Gmail or recipients. Local history and backups remain until you delete them; operating-system backups may retain copies. Provider and recipient copies follow their own retention rules. Uninstalling the app may leave local application data.</p>
   </section>
@@ -41,6 +40,6 @@ const sections = [["operator", "Who operates Doer"], ["local", "Tasks and local 
   </section>
   <section id="updates">
     <h2>Changes and contact</h2>
-    <p>We will update this policy when data practices change and change the date above. New uses of Google data require updated disclosure and consent before use. Questions can be sent to <a href="mailto:aryangupta4feb@gmail.com">aryangupta4feb@gmail.com</a>.</p>
+    <p>We will update this policy when data practices change and change the date above. New uses of Google data require updated disclosure and consent before use. Questions can be sent to <a href="mailto:aryan@lagaryan.click">aryan@lagaryan.click</a>.</p>
   </section>
 </LegalPage>

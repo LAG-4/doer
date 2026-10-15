@@ -24,6 +24,8 @@ const enabledDefaultSettings = {
   providerInstances: {
     ...DEFAULT_SERVER_SETTINGS.providerInstances,
     opencode: { driver: ProviderDriverKind.make("opencode"), enabled: true, config: {} },
+    codex: { driver: ProviderDriverKind.make("codex"), enabled: true, config: {} },
+    claudeAgent: { driver: ProviderDriverKind.make("claudeAgent"), enabled: true, config: {} },
   },
 };
 
@@ -150,6 +152,7 @@ describe("filterSharedServerPatch", () => {
         ...DEFAULT_SERVER_SETTINGS,
         providerInstances: {
           codex: { driver: ProviderDriverKind.make("codex"), enabled: false, config: {} },
+          opencode: { driver: ProviderDriverKind.make("opencode"), enabled: false, config: {} },
           claudeAgent: {
             driver: ProviderDriverKind.make("claudeAgent"),
             enabled: true,

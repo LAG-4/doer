@@ -1,7 +1,7 @@
 import { ComputerToolUnavailableError } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Path from "effect/Path";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { ServerConfig } from "../../../config.ts";
 import { ensureComputerShim } from "../../../computer/ComputerShim.ts";
 
@@ -102,7 +102,7 @@ const handlers = {
       );
       const config = yield* ServerConfig;
       const path = yield* Path.Path;
-      const platform = yield* HostProcessPlatform;
+      const platform = yield* HostProcess.Platform;
       const shimDir = yield* ensureComputerShim({
         entryPath: started.entryPath,
         stateDir: config.stateDir,

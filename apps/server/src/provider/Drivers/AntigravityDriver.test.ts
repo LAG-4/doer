@@ -5,12 +5,7 @@ import {
   ProviderInstanceId,
   type AntigravitySettings,
 } from "@t3tools/contracts";
-import {
-  HostProcessEnvironment,
-  HostProcessExecutablePath,
-  HostProcessIsExecutable,
-  HostProcessPlatform,
-} from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
@@ -30,14 +25,15 @@ import {
   ANTIGRAVITY_AUTH_STDOUT_PREFIX,
   resolveAntigravityInstanceDirectories,
 } from "../antigravityAuthSupport.ts";
-import * as ProviderEventLoggers from "../ProviderEventLoggers.ts";
+import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
+import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as ModelManifest from "../ModelManifest.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import { AntigravityDriver } from "./AntigravityDriver.ts";
 import * as ProviderHostLive from "../ProviderHostLive.ts";
 import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
 
-const hostPlatform = HostProcessPlatform.defaultValue();
+const hostPlatform = HostProcess.Platform.defaultValue();
 const windowsHost = hostPlatform === "win32";
 const decodeRequest = Schema.decodeEffect(
   Schema.fromJsonString(
@@ -65,8 +61,8 @@ const makeHarness = Effect.fn("makeAntigravityDriverHarness")(function* (
   const path = yield* Path.Path;
   const config = yield* ServerConfig.ServerConfig;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  const nodePath = yield* HostProcessExecutablePath;
-  const baseEnv = yield* HostProcessEnvironment;
+  const nodePath = yield* HostProcess.ExecutablePath;
+  const baseEnv = yield* HostProcess.Environment;
   const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-antigravity-driver-" });
   const instanceId = ProviderInstanceId.make(path.basename(root));
   const mockAgentPath = yield* path.fromFileUrl(
@@ -191,7 +187,7 @@ const makeHarness = Effect.fn("makeAntigravityDriverHarness")(function* (
   const instance = yield* AntigravityDriver.create({
     instanceId,
     displayName: "Google test account",
-    enabled: options.enabled ?? false,
+    enabled: options.enabled ?? true,
     config: { ...AntigravityDriver.defaultConfig(), ...options.config },
     environment: [
       { name: "PATH", value: instancePath },
@@ -271,6 +267,7 @@ const layerDeps = ServerConfig.layerTest(process.cwd(), {
   ),
   Layer.provideMerge(ModelManifest.layerTest),
   Layer.provideMerge(IdAllocator.layer),
+  Layer.provideMerge(McpProviderSessions.layer),
 );
 const layerTest = ProviderHostLive.layer.pipe(
   Layer.provideMerge(ServerSecretStore.layer),
@@ -288,14 +285,14 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
         expect(h.launches).toEqual([]);
       }).pipe(
         Effect.scoped,
-        Effect.provideService(HostProcessIsExecutable, true),
-        Effect.provideService(HostProcessEnvironment, { PATH: "" }),
+        Effect.provideService(HostProcess.IsExecutable, true),
+        Effect.provideService(HostProcess.Environment, { PATH: "" }),
       ),
   );
 
   it.effect.skipIf(windowsHost)("does not launch a process for a disabled instance", () =>
     Effect.gen(function* () {
-      const h = yield* makeHarness();
+      const h = yield* makeHarness({ enabled: false });
       const snapshot = yield* h.instance.snapshot.refresh;
       expect(snapshot.status).toBe("disabled");
       expect(h.acquisitions).toEqual([]);
@@ -325,13 +322,13 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
   );
 
   it.effect.skipIf(windowsHost)(
-    "refreshes a disabled instance through the selected executable and personal Google ACP",
+    "refreshes through the selected executable and personal Google ACP",
     () =>
       Effect.gen(function* () {
         const h = yield* makeHarness();
         yield* h.refresh();
         const snapshot = yield* h.instance.snapshot.getSnapshot;
-        expect(snapshot.status).toBe("disabled");
+        expect(snapshot.status).toBe("ready");
         expect(snapshot.auth.status).toBe("authenticated");
         expect(snapshot.models.map((model) => model.slug)).toEqual([
           "gemini-test-low",

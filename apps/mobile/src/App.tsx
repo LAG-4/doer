@@ -27,6 +27,7 @@ import { useUiRuntimeMemoryWarningGc } from "./lib/useUiRuntimeMemoryWarningGc";
 import { SubscriptionUsageCoordinator } from "./widgets/SubscriptionUsageCoordinator";
 import { VoiceInputProvider } from "./features/voice-input/VoiceInputProvider";
 import { GlobalVoiceInputControl } from "./features/voice-input/GlobalVoiceInputControl";
+import { NativeLayoutMetricsProvider } from "./native/native-layout-metrics";
 
 import "../global.css";
 
@@ -39,7 +40,15 @@ void SplashScreen.preventAutoHideAsync().catch(() => {
 });
 
 const appLinking = {
-  prefixes: [Linking.createURL("/"), "t3code://", "t3code-dev://", "t3code-preview://"],
+  prefixes: [
+    Linking.createURL("/"),
+    "doer://",
+    "doer-dev://",
+    "doer-preview://",
+    "t3code://",
+    "t3code-dev://",
+    "t3code-preview://",
+  ],
   // Keep the compact thread list available beneath a directly opened thread.
   config: { initialRouteName: "Home" },
   filter: shouldHandleAppLink,
@@ -91,11 +100,13 @@ function AppContent() {
                 header (glass buttons, title, materials) is forced light even when
                 the system is in dark mode. */}
               <GlobalVoiceInputControl>
-                <IncomingShareProvider>
-                  <Navigation linking={appLinking} theme={navigationTheme} />
-                </IncomingShareProvider>
-                <ConfirmDialogHost />
-                <ThreadArrangementHost />
+                <NativeLayoutMetricsProvider>
+                  <IncomingShareProvider>
+                    <Navigation linking={appLinking} theme={navigationTheme} />
+                  </IncomingShareProvider>
+                  <ConfirmDialogHost />
+                  <ThreadArrangementHost />
+                </NativeLayoutMetricsProvider>
               </GlobalVoiceInputControl>
               {/* Anchored-menu overlays render here — in-window, so the
                 keyboard stays up while a dropdown is open. */}

@@ -72,6 +72,15 @@ export interface CommandPaletteUiState {
   readonly open: boolean;
   readonly mode: SearchOverlayMode;
   readonly openIntent: CommandPaletteOpenIntent | null;
+  /** The requested flow stays allowed after the dialog consumes its intent. */
+  readonly openedForFlow: boolean;
+}
+
+export function isCommandPaletteVisible(
+  state: CommandPaletteUiState,
+  simpleMode: boolean,
+): boolean {
+  return state.open && (!simpleMode || state.openedForFlow || state.mode !== "command");
 }
 
 export type CommandPaletteUiAction =
@@ -94,16 +103,22 @@ export function reduceCommandPaletteUiState(
   switch (action._tag) {
     case "SetOpen":
       return action.open
-        ? { open: true, mode: "command", openIntent: state.openIntent }
-        : { ...state, open: false, openIntent: null };
+        ? {
+            open: true,
+            mode: "command",
+            openIntent: state.openIntent,
+            openedForFlow: state.open && state.openedForFlow,
+          }
+        : { ...state, open: false, openIntent: null, openedForFlow: false };
     case "ToggleMode":
       return state.open && state.mode === action.mode
-        ? { ...state, open: false, openIntent: null }
-        : { open: true, mode: action.mode, openIntent: null };
+        ? { ...state, open: false, openIntent: null, openedForFlow: false }
+        : { open: true, mode: action.mode, openIntent: null, openedForFlow: false };
     case "OpenSearch":
       return {
         open: true,
         mode: "command",
+        openedForFlow: true,
         openIntent: {
           kind: "search",
           query: action.query,
@@ -111,11 +126,26 @@ export function reduceCommandPaletteUiState(
         },
       };
     case "OpenAddProject":
-      return { open: true, mode: "command", openIntent: { kind: "add-project" } };
+      return {
+        open: true,
+        mode: "command",
+        openIntent: { kind: "add-project" },
+        openedForFlow: true,
+      };
     case "OpenNewThreadIn":
-      return { open: true, mode: "command", openIntent: { kind: "new-thread-in" } };
+      return {
+        open: true,
+        mode: "command",
+        openIntent: { kind: "new-thread-in" },
+        openedForFlow: true,
+      };
     case "OpenChangeTheme":
-      return { open: true, mode: "command", openIntent: { kind: "change-theme" } };
+      return {
+        open: true,
+        mode: "command",
+        openIntent: { kind: "change-theme" },
+        openedForFlow: true,
+      };
     case "ClearOpenIntent":
       return state.openIntent ? { ...state, openIntent: null } : state;
   }

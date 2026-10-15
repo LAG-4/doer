@@ -14,6 +14,7 @@ import {
   filterCommandPaletteGroups,
   findHighlightedCommandPaletteItem,
   reduceCommandPaletteUiState,
+  isCommandPaletteVisible,
   type CommandPaletteActionItem,
   type CommandPaletteGroup,
 } from "./CommandPalette.logic";
@@ -36,7 +37,7 @@ describe("linked pull request thread navigation", () => {
       ],
     };
     const state = reduceCommandPaletteUiState(
-      { open: false, mode: "command", openIntent: null },
+      { open: false, mode: "command", openIntent: null, openedForFlow: false },
       {
         _tag: "OpenSearch",
         query,
@@ -179,24 +180,65 @@ describe("buildCommandPaletteProjectMetadata", () => {
 });
 
 describe("reduceCommandPaletteUiState", () => {
-  const closedState = { open: false, mode: "command", openIntent: null } as const;
+  const closedState = {
+    open: false,
+    mode: "command",
+    openIntent: null,
+    openedForFlow: false,
+  } as const;
+
+  it.each([
+    { _tag: "OpenAddProject" },
+    { _tag: "OpenNewThreadIn" },
+    { _tag: "OpenChangeTheme" },
+    { _tag: "OpenSearch", query: "tax receipts" },
+  ] as const)("keeps an explicit $_tag flow visible after its intent is consumed", (action) => {
+    const opened = reduceCommandPaletteUiState(closedState, action);
+    const consumed = reduceCommandPaletteUiState(opened, { _tag: "ClearOpenIntent" });
+    expect(consumed.openIntent).toBeNull();
+    expect(isCommandPaletteVisible(consumed, true)).toBe(true);
+
+    const closed = reduceCommandPaletteUiState(consumed, { _tag: "SetOpen", open: false });
+    expect(isCommandPaletteVisible(closed, true)).toBe(false);
+    const generic = reduceCommandPaletteUiState(closed, { _tag: "SetOpen", open: true });
+    expect(isCommandPaletteVisible(generic, true)).toBe(false);
+    expect(isCommandPaletteVisible(generic, false)).toBe(true);
+  });
+
+  it("does not carry an explicit flow into a generic mode switch", () => {
+    const opened = reduceCommandPaletteUiState(closedState, { _tag: "OpenAddProject" });
+    const files = reduceCommandPaletteUiState(opened, { _tag: "ToggleMode", mode: "files" });
+    expect(isCommandPaletteVisible(files, true)).toBe(true);
+    const command = reduceCommandPaletteUiState(files, { _tag: "ToggleMode", mode: "command" });
+    expect(isCommandPaletteVisible(command, true)).toBe(false);
+  });
 
   it("toggles each overlay mode open and closed", () => {
     const filesOpen = reduceCommandPaletteUiState(closedState, {
       _tag: "ToggleMode",
       mode: "files",
     });
-    expect(filesOpen).toEqual({ open: true, mode: "files", openIntent: null });
+    expect(filesOpen).toEqual({
+      open: true,
+      mode: "files",
+      openIntent: null,
+      openedForFlow: false,
+    });
 
     const contentOpen = reduceCommandPaletteUiState(filesOpen, {
       _tag: "ToggleMode",
       mode: "content",
     });
-    expect(contentOpen).toEqual({ open: true, mode: "content", openIntent: null });
+    expect(contentOpen).toEqual({
+      open: true,
+      mode: "content",
+      openIntent: null,
+      openedForFlow: false,
+    });
 
     expect(
       reduceCommandPaletteUiState(contentOpen, { _tag: "ToggleMode", mode: "content" }),
-    ).toEqual({ open: false, mode: "content", openIntent: null });
+    ).toEqual({ open: false, mode: "content", openIntent: null, openedForFlow: false });
   });
 
   it("switches between open modes without closing", () => {
@@ -209,13 +251,14 @@ describe("reduceCommandPaletteUiState", () => {
         open: true,
         mode: "command",
         openIntent: null,
+        openedForFlow: false,
       },
     );
   });
 
   it("opens PR search from another overlay and replaces an earlier search", () => {
     const first = reduceCommandPaletteUiState(
-      { open: true, mode: "files", openIntent: null },
+      { open: true, mode: "files", openIntent: null, openedForFlow: false },
       {
         _tag: "OpenSearch",
         query: "https://github.com/acme/web/pull/7",
@@ -225,6 +268,7 @@ describe("reduceCommandPaletteUiState", () => {
       open: true,
       mode: "command",
       openIntent: { kind: "search", query: "https://github.com/acme/web/pull/7" },
+      openedForFlow: true,
     });
     const second = reduceCommandPaletteUiState(first, {
       _tag: "OpenSearch",
@@ -248,11 +292,13 @@ describe("reduceCommandPaletteUiState", () => {
       open: true,
       mode: "command",
       openIntent: { kind: "add-project" },
+      openedForFlow: true,
     });
     expect(reduceCommandPaletteUiState(filesOpen, { _tag: "OpenNewThreadIn" })).toEqual({
       open: true,
       mode: "command",
       openIntent: { kind: "new-thread-in" },
+      openedForFlow: true,
     });
   });
 
@@ -266,11 +312,13 @@ describe("reduceCommandPaletteUiState", () => {
       open: false,
       mode: "files",
       openIntent: null,
+      openedForFlow: false,
     });
     expect(reduceCommandPaletteUiState(filesOpen, { _tag: "SetOpen", open: true })).toEqual({
       open: true,
       mode: "command",
       openIntent: null,
+      openedForFlow: false,
     });
   });
 });

@@ -6,6 +6,7 @@ import {
 } from "./ChatView.logic";
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
+  DEFAULT_UNIFIED_SETTINGS,
   ProviderDriverKind,
   type ServerProvider,
 } from "@t3tools/contracts";
@@ -42,6 +43,7 @@ import {
   resolveComposerInteractionMode,
   restorePlanFollowUpComposer,
   resolveComposerProviderSelection,
+  resolveComposerHandoffTarget,
   resolveProactiveTurnDiffAction,
   resolveDraftHeroState,
   resolveWorktreeSetupProgress,
@@ -1372,6 +1374,89 @@ describe("resolveComposerProviderSelection", () => {
       itemCount: 1,
     });
   }
+
+  it("previews the effective free model instead of a stale disabled paid-provider draft", () => {
+    const codex = entry("codex", "codex", { enabled: false });
+    const opencode = entry("opencode", "opencode", {
+      models: [
+        { slug: "opencode/big-pickle", name: "Big Pickle", isCustom: false, capabilities: null },
+      ],
+    });
+    const entries = [opencode, codex];
+    expect(
+      resolveComposerHandoffTarget({
+        providerSelection: {
+          entries,
+          candidateInstanceIds: [codex.instanceId, opencode.instanceId],
+          lockedProvider: null,
+          lockedInstanceId: opencode.instanceId,
+        },
+        modelState: {
+          draft: {
+            activeProvider: codex.instanceId,
+            modelSelectionByProvider: {
+              [codex.instanceId]: { instanceId: codex.instanceId, model: "gpt-6-astra" },
+            },
+          },
+          providers: entries.map((entry) => entry.snapshot),
+          threadModelSelection: { instanceId: opencode.instanceId, model: "opencode/big-pickle" },
+          projectModelSelection: null,
+          settings: DEFAULT_UNIFIED_SETTINGS,
+        },
+      }),
+    ).toEqual({ instanceId: "opencode", model: "opencode/big-pickle" });
+  });
+
+  it("retains an intentional selection of another enabled provider and its saved model", () => {
+    const codex = entry("codex", "codex", {
+      models: [{ slug: "gpt-6-astra", name: "GPT 6 Astra", isCustom: false, capabilities: null }],
+    });
+    const opencode = entry("opencode");
+    const entries = [opencode, codex];
+    expect(
+      resolveComposerHandoffTarget({
+        providerSelection: {
+          entries,
+          candidateInstanceIds: [codex.instanceId, opencode.instanceId],
+          lockedProvider: null,
+          lockedInstanceId: opencode.instanceId,
+        },
+        modelState: {
+          draft: {
+            activeProvider: codex.instanceId,
+            modelSelectionByProvider: {
+              [codex.instanceId]: { instanceId: codex.instanceId, model: "gpt-6-astra" },
+            },
+          },
+          providers: entries.map((entry) => entry.snapshot),
+          threadModelSelection: { instanceId: opencode.instanceId, model: "opencode/big-pickle" },
+          projectModelSelection: null,
+          settings: DEFAULT_UNIFIED_SETTINGS,
+        },
+      }),
+    ).toEqual({ instanceId: "codex", model: "gpt-6-astra" });
+  });
+
+  it("does not preview a handoff when no enabled destination exists", () => {
+    const codex = entry("codex", "codex", { enabled: false });
+    expect(
+      resolveComposerHandoffTarget({
+        providerSelection: {
+          entries: [codex],
+          candidateInstanceIds: [codex.instanceId],
+          lockedProvider: null,
+          lockedInstanceId: codex.instanceId,
+        },
+        modelState: {
+          draft: null,
+          providers: [codex.snapshot],
+          threadModelSelection: { instanceId: codex.instanceId, model: "gpt-6-astra" },
+          projectModelSelection: null,
+          settings: DEFAULT_UNIFIED_SETTINGS,
+        },
+      }),
+    ).toBeNull();
+  });
 
   it.each([
     ["claudeAgent", "claude_work"],
