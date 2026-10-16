@@ -1,10 +1,7 @@
 name: Publish release assets
 
-# Recovery path for when the automated `release` job cannot run (for
-# example, `publish_cli` failed on missing npm credentials but the desktop
-# artifacts built fine). Downloads the `desktop-*` artifacts of a completed
-# Release run, merges the macOS updater manifests exactly like the release
-# job does, and publishes the GitHub Release. Never builds anything.
+# Recover publication after all release checks and desktop builds succeeded.
+# Reuse those installers, publish the matching CLI first, then publish assets.
 
 on:
   workflow_dispatch:
@@ -14,7 +11,7 @@ on:
         required: true
         type: string
       tag:
-        description: "Release tag to publish (for example v0.0.41). Must already exist."
+        description: "Stable release tag matching the completed artifacts (for example v0.0.58)"
         required: true
         type: string
       make_latest:
@@ -28,20 +25,79 @@ permissions:
   # Reading artifacts that belong to a different workflow run.
   actions: read
 
+concurrency:
+  group: release-stable
+  cancel-in-progress: false
+
 jobs:
   publish_assets:
     name: Publish release assets
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      DOER_RELEASE_GOOGLE_OAUTH_CLIENT_ID: ${{ vars.DOER_GMAIL_PUBLIC_READY == 'true' && secrets.DOER_RELEASE_GOOGLE_OAUTH_CLIENT_ID || '' }}
+      DOER_RELEASE_GOOGLE_OAUTH_CLIENT_SECRET: ${{ vars.DOER_GMAIL_PUBLIC_READY == 'true' && secrets.DOER_RELEASE_GOOGLE_OAUTH_CLIENT_SECRET || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.tag }}
+          fetch-depth: 0
           sparse-checkout: |
             /*
             !/.repos/
           sparse-checkout-cone-mode: false
+
+      - name: Validate completed release builds
+        id: source
+        uses: actions/github-script@v8
+        env:
+          SOURCE_RUN_ID: ${{ inputs.run_id }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        with:
+          script: |
+            const { execFileSync } = require("node:child_process");
+            if (!/^[1-9][0-9]*$/.test(process.env.SOURCE_RUN_ID)) {
+              throw new Error("Expected a numeric release run ID.");
+            }
+            const match = /^v([0-9]+\.[0-9]+\.[0-9]+)$/.exec(process.env.RELEASE_TAG);
+            if (!match) throw new Error("Recovery requires a stable vX.Y.Z tag.");
+            const run_id = Number(process.env.SOURCE_RUN_ID);
+            const { data: run } = await github.rest.actions.getWorkflowRun({
+              ...context.repo, run_id,
+            });
+            if (run.status !== "completed" || run.path !== ".github/workflows/release.yml" ||
+                run.head_repository.full_name !== context.repo.owner + "/" + context.repo.repo) {
+              throw new Error("Source must be a completed Release run in this repository.");
+            }
+            const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+              ...context.repo, run_id, filter: "latest", per_page: 100,
+            });
+            for (const name of [
+              "Preflight", "Release quality checks", "Build WSL runtime before desktop packaging",
+              "Build macOS arm64", "Build macOS x64", "Build Windows x64", "Build Linux x64",
+            ]) {
+              if (!jobs.some(job => job.name === name && job.conclusion === "success")) {
+                throw new Error("Required release check/build did not succeed: " + name);
+              }
+            }
+            const changed = execFileSync("git", [
+              "diff", "--name-only", run.head_sha, context.sha,
+            ], { encoding: "utf8" }).trim().split("\n").filter(Boolean);
+            const allowed = new Set([
+              ".github/workflows/publish-release-assets.yml",
+              "apps/server/scripts/cli.ts",
+              "apps/server/scripts/cliPublish.ts",
+              "apps/server/scripts/cliPublish.test.ts",
+              "apps/server/scripts/publishOrder.ts",
+              "apps/server/scripts/publishOrder.test.ts",
+              "docs/operations/doer-distribution.md",
+            ]);
+            if (changed.some(file => !allowed.has(file))) {
+              throw new Error("Recovery ref changes application code; rebuild the release instead.");
+            }
+            core.setOutput("sha", run.head_sha);
+            core.setOutput("version", match[1]);
 
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1
@@ -50,12 +106,15 @@ jobs:
           cache: true
           run-install: |
             args:
+              - --filter=@lag4/doer-cli...
+              - --filter=@t3tools/web...
               - --filter=@t3tools/scripts...
 
       - name: Download all desktop artifacts
         uses: actions/download-artifact@v8
         with:
           run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
           pattern: desktop-*
           merge-multiple: true
           path: release-assets
@@ -71,6 +130,102 @@ jobs:
             fi
           done
 
+      - name: Validate artifact versions and update feeds
+        env:
+          RELEASE_VERSION: ${{ steps.source.outputs.version }}
+        run: |
+          node --input-type=module <<'JS'
+          import assert from "node:assert/strict";
+          import { readFileSync, statSync } from "node:fs";
+          import { parse } from "yaml";
+          const version = process.env.RELEASE_VERSION;
+          for (const name of [
+            "Doer-" + version + "-arm64.dmg", "Doer-" + version + "-x64.dmg",
+            "Doer-" + version + "-arm64.zip", "Doer-" + version + "-x64.zip",
+            "Doer-" + version + "-x64.exe", "Doer-" + version + "-x86_64.AppImage",
+          ]) assert.ok(statSync("release-assets/" + name).size > 0, name);
+          for (const name of ["latest-mac.yml", "latest.yml", "latest-linux.yml"]) {
+            const feed = parse(readFileSync("release-assets/" + name, "utf8"));
+            assert.equal(feed.version, version, name);
+            assert.ok(feed.files.length > 0, name);
+            for (const entry of feed.files) {
+              assert.ok(!entry.url.includes("/") && !entry.url.includes("\\"), entry.url);
+              assert.equal(statSync("release-assets/" + entry.url).size, entry.size, entry.url);
+            }
+          }
+          JS
+
+      - name: Check matching CLI publication
+        id: cli
+        env:
+          RELEASE_VERSION: ${{ steps.source.outputs.version }}
+        run: |
+          node --input-type=module <<'JS'
+          import assert from "node:assert/strict";
+          import { appendFileSync } from "node:fs";
+          const response = await fetch("https://registry.npmjs.org/@lag4%2fdoer-cli/" + process.env.RELEASE_VERSION);
+          if (response.status === 200) {
+            const pkg = await response.json();
+            assert.equal(pkg.name, "@lag4/doer-cli");
+            assert.equal(pkg.version, process.env.RELEASE_VERSION);
+            appendFileSync(process.env.GITHUB_OUTPUT, "published=true\n");
+          } else if (response.status === 404) {
+            appendFileSync(process.env.GITHUB_OUTPUT, "published=false\n");
+          } else {
+            throw new Error("Cannot verify matching CLI version: registry status " + response.status);
+          }
+          JS
+
+      - name: Align package versions
+        if: steps.cli.outputs.published != 'true'
+        run: node scripts/update-release-package-versions.ts "${{ steps.source.outputs.version }}"
+
+      - name: Build matching CLI package
+        if: steps.cli.outputs.published != 'true'
+        run: vp run --filter @lag4/doer-cli build
+
+      - name: Download resource monitors
+        if: steps.cli.outputs.published != 'true'
+        uses: actions/download-artifact@v8
+        with:
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+          pattern: resource-monitor-*
+          path: ${{ runner.temp }}/resource-monitors
+
+      - name: Bundle resource monitors
+        if: steps.cli.outputs.published != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for artifact_dir in "$RUNNER_TEMP"/resource-monitors/resource-monitor-*; do
+            resource_key="${artifact_dir##*/resource-monitor-}"
+            target_dir="apps/server/dist/resource-monitor/$resource_key"
+            mkdir -p "$target_dir"
+            cp "$artifact_dir"/t3-resource-monitor* "$target_dir/"
+            chmod +x "$target_dir"/t3-resource-monitor 2>/dev/null || true
+          done
+
+      - name: Publish matching CLI package
+        if: steps.cli.outputs.published != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${NODE_AUTH_TOKEN:-}" ]]; then
+            echo "NPM_TOKEN is required before desktop release publication." >&2
+            exit 1
+          fi
+          printf '//registry.npmjs.org/:_authToken=%s\n' "$NODE_AUTH_TOKEN" > ~/.npmrc
+          node apps/server/scripts/cli.ts publish --tag latest --verbose
+
+      - name: Verify installed CLI
+        env:
+          RELEASE_VERSION: ${{ steps.source.outputs.version }}
+        run: |
+          npm install --prefix "$RUNNER_TEMP/doer-cli-install" --omit=dev --no-audit --no-fund "@lag4/doer-cli@$RELEASE_VERSION"
+          installed_version="$(node "$RUNNER_TEMP/doer-cli-install/node_modules/@lag4/doer-cli/dist/bin.mjs" --version)"
+          test "$installed_version" = "$RELEASE_VERSION"
+
       - name: List release assets
         run: ls -la release-assets/
 
@@ -78,6 +233,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ inputs.tag }}
+          target_commitish: ${{ steps.source.outputs.sha }}
           name: Doer ${{ inputs.tag }}
           generate_release_notes: true
           make_latest: ${{ inputs.make_latest == true }}

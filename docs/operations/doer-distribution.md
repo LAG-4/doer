@@ -89,8 +89,11 @@ the live domain served a fresh upstream build (canonical `t3.codes`,
 - Never push a test tag: every accepted tag publishes for real (npm package +
   GitHub Release).
 - **Recovery**: if desktop artifacts built but the release job couldn't
-  publish, Actions → Publish release assets re-publishes the GitHub Release
-  from that run's `desktop-*` artifacts without rebuilding.
+  publish, Actions → Publish release assets checks that the source run's
+  quality gate and all desktop builds passed, then reuses its installers.
+  It builds and publishes the matching CLI if npm does not have that version
+  yet, before publishing the GitHub Release. Select a ref with the publishing
+  fix; recovery rejects application changes since the original build.
 
 ## Identity (do not change casually)
 
