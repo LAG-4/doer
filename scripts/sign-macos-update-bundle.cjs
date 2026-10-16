@@ -127,7 +127,16 @@ async function signMacosUpdateBundleAfterPack(
     writeFileSync(p12Path, configuration.p12, { mode: 0o600 });
     run("security", ["create-keychain", "-p", keychainPassword, keychain]);
     created = true;
+    run("security", ["set-keychain-settings", "-lut", "21600", keychain]);
     run("security", ["unlock-keychain", "-p", keychainPassword, keychain]);
+    // --keychain narrows identity lookup, but codesign still resolves its
+    // certificate chain through the user search list. Keep existing entries;
+    // delete-keychain removes our temporary entry during cleanup.
+    const searchList = run("security", ["list-keychains", "-d", "user"])
+      .split(/\r?\n/)
+      .map((line) => line.trim().replace(/^"|"$/g, ""))
+      .filter((entry) => entry.length > 0 && entry !== keychain);
+    run("security", ["list-keychains", "-d", "user", "-s", keychain, ...searchList]);
     run("security", [
       "import",
       p12Path,
