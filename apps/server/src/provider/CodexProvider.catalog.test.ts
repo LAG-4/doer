@@ -86,7 +86,7 @@ const solServiceTiers = Effect.fn("solServiceTiers")(function* (ultrafastEntitle
 
   const { CODEX_INTERNAL_ORIGINATOR_OVERRIDE: _ambient, ...environment } = process.env;
   const provider = yield* checkCodexProviderStatus(
-    decodeCodexSettings({ binaryPath, homePath: dir }),
+    decodeCodexSettings({ binaryPath, homePath: dir, enabled: true }),
     undefined,
     { ...environment, FAKE_ULTRAFAST_ENTITLED: ultrafastEntitled ? "1" : "0" },
   );

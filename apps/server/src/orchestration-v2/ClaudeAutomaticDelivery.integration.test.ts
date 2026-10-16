@@ -9,6 +9,7 @@ import {
   MessageId,
   NodeId,
   ProjectId,
+  ProviderDriverKind,
   ProviderInstanceId,
   ScheduledTaskUpsertInput,
   ThreadId,
@@ -316,7 +317,17 @@ it.effect.each(["child completion", "scheduled message", "user steering"] as con
               Effect.provide(
                 ScheduledTaskService.layer.pipe(
                   Layer.provide(ThreadManagementService.layer),
-                  Layer.provide(ServerSettings.layerTest()),
+                  Layer.provide(
+                    ServerSettings.layerTest({
+                      providerInstances: {
+                        [ProviderInstanceId.make("claudeAgent")]: {
+                          driver: ProviderDriverKind.make("claudeAgent"),
+                          enabled: true,
+                          config: {},
+                        },
+                      },
+                    }),
+                  ),
                   Layer.provide(
                     Layer.mock(LegacyV1ThreadImporter.LegacyV1ThreadImporter)({
                       ensureTranscript: () =>

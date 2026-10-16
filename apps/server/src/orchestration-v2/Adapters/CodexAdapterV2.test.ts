@@ -1619,7 +1619,7 @@ function codexReplayPreamble(input: {
         id: 1,
         method: "initialize",
         params: {
-          clientInfo: { name: "Doer", title: "Doer Desktop", version: packageJson.version },
+          clientInfo: { name: "Doer", title: "Doer", version: packageJson.version },
           capabilities: {
             experimentalApi: true,
             optOutNotificationMethods: ["turn/diff/updated"],
@@ -2216,7 +2216,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       // version, so pin the whole value here.
       assert.deepEqual(initializeParams, [
         {
-          clientInfo: { name: "Doer", title: "Doer Desktop", version: packageJson.version },
+          clientInfo: { name: "Doer", title: "Doer", version: packageJson.version },
           capabilities: {
             experimentalApi: true,
             optOutNotificationMethods: ["turn/diff/updated"],

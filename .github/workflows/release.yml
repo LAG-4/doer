@@ -172,6 +172,10 @@ jobs:
       - name: Install browser secret helper build libraries
         run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
 
+      - name: Install server browser test runtime
+        working-directory: apps/server
+        run: vp exec playwright-core install --with-deps chromium
+
       - name: Test
         run: vp run test
 

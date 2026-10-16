@@ -34,7 +34,7 @@ import type {
 } from "@t3tools/contracts";
 
 import {
-  DEFAULT_SERVER_SETTINGS,
+  DEFAULT_TEXT_GENERATION_MODEL,
   EventId,
   GitCommandError,
   ProjectId,
@@ -3644,6 +3644,16 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const { manager } = yield* makeManager({
         serverSettings: {
           providerInstances: {
+            [ProviderInstanceId.make("codex")]: {
+              driver: ProviderDriverKind.make("codex"),
+              enabled: true,
+              config: {},
+            },
+            [ProviderInstanceId.make("opencode")]: {
+              driver: ProviderDriverKind.make("opencode"),
+              enabled: false,
+              config: {},
+            },
             [missingInstanceId]: {
               driver: ProviderDriverKind.make("missing-driver"),
               config: {},
@@ -3668,8 +3678,8 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       });
 
       expect(generatedModelSelection).toEqual({
-        ...DEFAULT_SERVER_SETTINGS.textGenerationModelSelection,
         instanceId: ProviderInstanceId.make("codex"),
+        model: DEFAULT_TEXT_GENERATION_MODEL,
       });
     }),
   );
@@ -3693,6 +3703,13 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
       const { manager } = yield* makeManager({
         serverSettings: {
+          providerInstances: {
+            [ProviderInstanceId.make("codex")]: {
+              driver: ProviderDriverKind.make("codex"),
+              enabled: true,
+              config: {},
+            },
+          },
           projectSettingsOverrides: { [projectId]: { textGenerationModelSelection: projectModel } },
         },
         textGeneration: {
@@ -3785,6 +3802,13 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
       const { manager } = yield* makeManager({
         serverSettings: {
+          providerInstances: {
+            [ProviderInstanceId.make("claudeAgent")]: {
+              driver: ProviderDriverKind.make("claudeAgent"),
+              enabled: true,
+              config: {},
+            },
+          },
           textGenerationModelSelection: {
             instanceId: ProviderInstanceId.make("claudeAgent"),
             model: "claude-sonnet-4-6",

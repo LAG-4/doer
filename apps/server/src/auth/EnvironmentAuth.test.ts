@@ -644,13 +644,16 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
         origin: "https://box.tail1234.ts.net",
         "x-forwarded-host": "box.tail1234.ts.net",
       });
-      yield* upgrade({ origin: "t3code://app" });
+      yield* upgrade({ origin: "doer://app" });
       yield* upgrade({ origin: "http://localhost:5733" });
       yield* upgrade({});
 
       // Another port on the same machine is the same site but not the app.
       const otherPort = yield* Effect.flip(upgrade({ origin: "http://192.168.1.50:8080" }));
       expect(otherPort._tag).toBe("ServerAuthInvalidCredentialError");
+      // The pre-rebrand custom scheme is not the app and must not authenticate.
+      const legacyScheme = yield* Effect.flip(upgrade({ origin: "t3code://app" }));
+      expect(legacyScheme._tag).toBe("ServerAuthInvalidCredentialError");
       const opaque = yield* Effect.flip(upgrade({ origin: "null" }));
       expect(opaque._tag).toBe("ServerAuthInvalidCredentialError");
     }).pipe(

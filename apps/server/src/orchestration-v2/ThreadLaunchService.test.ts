@@ -16,7 +16,7 @@ import {
   type ChatAttachment,
   CommandId,
   EnvironmentId,
-  DEFAULT_SERVER_SETTINGS,
+  DEFAULT_TEXT_GENERATION_MODEL,
   GitCommandError,
   MessageId,
   ProjectId,
@@ -115,10 +115,23 @@ interface HarnessOptions {
   readonly git?: Partial<GitWorkflow.GitWorkflowService["Service"]>;
 }
 
-// These launch fixtures expose only the Codex adapter, independently of Doer's install defaults.
+// Enable the providers exercised by this harness independently of install defaults.
 const testTextGenerationModelSelection = {
-  ...DEFAULT_SERVER_SETTINGS.textGenerationModelSelection,
   instanceId: ProviderInstanceId.make("codex"),
+  model: DEFAULT_TEXT_GENERATION_MODEL,
+};
+
+const defaultEnabledTestInstances = {
+  [ProviderInstanceId.make("codex")]: {
+    driver: ProviderDriverKind.make("codex"),
+    enabled: true,
+    config: {},
+  },
+  [ProviderInstanceId.make("claudeAgent")]: {
+    driver: ProviderDriverKind.make("claudeAgent"),
+    enabled: true,
+    config: {},
+  },
 };
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -129,9 +142,15 @@ function makeHarness(options: HarnessOptions = {}) {
     layerRegistry,
     { databaseLayer: layerDatabase, runEffectWorker: false },
   );
+  const { providerInstances: optionProviderInstances, ...restServerSettings } =
+    options.serverSettings ?? {};
   const layerServerSettings = ServerSettings.layerTest({
     textGenerationModelSelection: testTextGenerationModelSelection,
-    ...options.serverSettings,
+    providerInstances: {
+      ...defaultEnabledTestInstances,
+      ...optionProviderInstances,
+    },
+    ...restServerSettings,
   });
   const layerReceipts = CommandReceiptStore.layer.pipe(Layer.provide(layerDatabase));
   const layerThreadManagement = ThreadManagement.layer.pipe(
@@ -995,6 +1014,7 @@ it.effect("uses the available source control writer for generated worktree branc
         providerInstances: {
           [writerInstanceId]: {
             driver: ProviderDriverKind.make("codex"),
+            enabled: true,
             config: {},
           },
         },
@@ -2763,7 +2783,11 @@ it.effect.each(
         ],
         serverSettings: {
           providerInstances: {
-            [childInstanceId]: { driver: ProviderDriverKind.make(driver), config: {} },
+            [childInstanceId]: {
+              driver: ProviderDriverKind.make(driver),
+              enabled: true,
+              config: {},
+            },
           },
         },
         hasCommit: () => Effect.succeed(true),

@@ -1,6 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   DEFAULT_SERVER_SETTINGS,
+  DEFAULT_TEXT_GENERATION_MODEL,
   ModelSelection,
   ProjectId,
   ProjectScript,
@@ -452,6 +453,13 @@ it.layer(NodeServices.layer)("server settings", (it) => {
 
       yield* serverSettings.updateSettings({
         observability: { otlpTracesUrl: "http://localhost:4318/v1/traces" },
+        providerInstances: {
+          [ProviderInstanceId.make("codex")]: {
+            driver: ProviderDriverKind.make("codex"),
+            enabled: true,
+            config: {},
+          },
+        },
         textGenerationModelSelection: {
           instanceId: ProviderInstanceId.make("codex"),
           model: DEFAULT_SERVER_SETTINGS.textGenerationModelSelection.model,
@@ -639,6 +647,18 @@ it.layer(NodeServices.layer)("server settings", (it) => {
 
       // Start with Claude text generation selection
       yield* serverSettings.updateSettings({
+        providerInstances: {
+          [ProviderInstanceId.make("claudeAgent")]: {
+            driver: ProviderDriverKind.make("claudeAgent"),
+            enabled: true,
+            config: {},
+          },
+          [ProviderInstanceId.make("codex")]: {
+            driver: ProviderDriverKind.make("codex"),
+            enabled: true,
+            config: {},
+          },
+        },
         textGenerationModelSelection: {
           instanceId: ProviderInstanceId.make("claudeAgent"),
           model: "claude-sonnet-4-6",
@@ -772,7 +792,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           });
           const fallbackSelection = {
             instanceId: fallbackInstanceId,
-            model: DEFAULT_SERVER_SETTINGS.textGenerationModelSelection.model,
+            model: DEFAULT_TEXT_GENERATION_MODEL,
           };
           assert.deepEqual(next.textGenerationModelSelection, fallbackSelection);
           assert.deepEqual(
@@ -800,9 +820,19 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
       const next = yield* serverSettings.updateSettings({
         providerInstances: {
+          [ProviderInstanceId.make("opencode")]: {
+            driver: ProviderDriverKind.make("opencode"),
+            enabled: false,
+            config: {},
+          },
           [ProviderInstanceId.make("codex")]: {
             driver: ProviderDriverKind.make("codex"),
             enabled: false,
+            config: {},
+          },
+          [ProviderInstanceId.make("claudeAgent")]: {
+            driver: ProviderDriverKind.make("claudeAgent"),
+            enabled: true,
             config: {},
           },
         },
@@ -819,6 +849,11 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
       const claude = ProviderInstanceId.make("claudeAgent");
       const providerInstances = {
+        [ProviderInstanceId.make("opencode")]: {
+          driver: ProviderDriverKind.make("opencode"),
+          enabled: false,
+          config: {},
+        },
         [ProviderInstanceId.make("codex")]: {
           driver: ProviderDriverKind.make("codex"),
           enabled: false,
@@ -826,6 +861,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         },
         [claude]: {
           driver: ProviderDriverKind.make("claudeAgent"),
+          enabled: true,
           config: { customModels: ["z-ai/glm-5.3-flash"] },
         },
       };
@@ -1045,8 +1081,11 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           driver: ProviderDriverKind.make("codex"),
           config: { binaryPath: "/opt/guard/bin/codex" },
         },
-        [ProviderInstanceId.make("claudeAgent")]: {
-          driver: ProviderDriverKind.make("claudeAgent"),
+        // opencode ships enabled, so its explicit legacy disable is kept;
+        // default-off drivers left at their default (like claudeAgent above)
+        // are dropped as fresh-install noise.
+        [ProviderInstanceId.make("opencode")]: {
+          driver: ProviderDriverKind.make("opencode"),
           enabled: false,
           config: {},
         },
@@ -1098,7 +1137,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           providers: { opencode: { serverUrl: "http://127.0.0.1:4096" }, cursor: {} },
           providerInstances: {
             cursor_work: { driver: "cursor", config: {} },
-            opencode_unused: { driver: "opencode", config: {} },
+            grok_unused: { driver: "grok", config: {} },
           },
         }),
       );
@@ -1118,7 +1157,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       assert.isTrue(settings.providerInstances[ProviderInstanceId.make("cursor_work")]?.enabled);
       // Using any cursor instance counts as opting into the driver.
       assert.isTrue(settings.providerInstances[ProviderInstanceId.make("cursor")]?.enabled);
-      const unused = settings.providerInstances[ProviderInstanceId.make("opencode_unused")];
+      const unused = settings.providerInstances[ProviderInstanceId.make("grok_unused")];
       assert.isDefined(unused);
       assert.isFalse(resolveProviderInstanceEnabled(unused));
     }).pipe(Effect.provide(layerServerSettings())),
@@ -1188,7 +1227,13 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
       yield* fileSystem.writeFileString(
         serverConfig.settingsPath,
-        '{"providerInstances":{"codex":{"driver":"codex","enabled":false,"config":{}}}}',
+        JSON.stringify({
+          providerInstances: {
+            opencode: { driver: "opencode", enabled: false, config: {} },
+            codex: { driver: "codex", enabled: false, config: {} },
+            claudeAgent: { driver: "claudeAgent", enabled: true, config: {} },
+          },
+        }),
       );
 
       const settings = yield* serverSettings.getSettings;
