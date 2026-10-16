@@ -64,10 +64,12 @@ const layerScannerTest = (input: ScannerTestInput) =>
           providerInstances: {
             [ProviderInstanceId.make("claudeAgent")]: {
               driver: ProviderDriverKind.make("claudeAgent"),
+              enabled: true,
               config: { homePath: input.claudeHomePath },
             },
             [ProviderInstanceId.make("codex")]: {
               driver: ProviderDriverKind.make("codex"),
+              enabled: true,
               config: { homePath: input.codexHomePath },
             },
             ...input.providerInstances,
@@ -579,10 +581,12 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
           providerInstances: {
             [ProviderInstanceId.make("claudeAgent")]: {
               driver: ProviderDriverKind.make("claudeAgent"),
+              enabled: true,
               config: { homePath: claudeInstanceHome },
             },
             [ProviderInstanceId.make("codex")]: {
               driver: ProviderDriverKind.make("codex"),
+              enabled: true,
               config: { homePath: codexInstanceHome },
             },
           },
@@ -621,10 +625,12 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
           providerInstances: {
             [ProviderInstanceId.make("codex-personal")]: {
               driver: ProviderDriverKind.make("codex"),
+              enabled: true,
               config: { homePath: codexHomePath },
             },
             [ProviderInstanceId.make("codex-work")]: {
               driver: ProviderDriverKind.make("codex"),
+              enabled: true,
               config: { homePath: otherCodexHome },
             },
           },
@@ -672,6 +678,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
           providerInstances: {
             [ProviderInstanceId.make("claudeAgent")]: {
               driver: ProviderDriverKind.make("claudeAgent"),
+              enabled: true,
               environment: [
                 { name: "CLAUDE_CONFIG_DIR", value: claudeEnvironmentHome, sensitive: false },
               ],
@@ -679,6 +686,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
             },
             [ProviderInstanceId.make("codex")]: {
               driver: ProviderDriverKind.make("codex"),
+              enabled: true,
               environment: [{ name: "CODEX_HOME", value: codexEnvironmentHome, sensitive: false }],
               config: {},
             },
@@ -1007,6 +1015,30 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
       }),
     );
 
+    it.effect("excludes sandboxes when the configured base directory is a symlink", () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const claudeHomePath = yield* makeTempDir("t3code-claude-home-");
+        const codexHomePath = yield* makeTempDir("t3code-codex-home-");
+        const backingBase = yield* makeTempDir("t3code-scanner-backing-");
+        const linkParent = yield* makeTempDir("t3code-scanner-links-");
+        const configBaseDir = path.join(linkParent, "configured-base");
+        yield* fileSystem.symlink(backingBase, configBaseDir);
+        const worktreeCwd = path.join(backingBase, "worktrees", "doer", "sandbox");
+        yield* fileSystem.makeDirectory(worktreeCwd, { recursive: true });
+        yield* writeTranscript({
+          filePath: path.join(claudeHomePath, "projects", "-slug", "a.jsonl"),
+          contents: claudeSessionLine(worktreeCwd),
+          mtimeMs: Date.parse("2026-01-01T00:00:00.000Z"),
+        });
+
+        const input = { claudeHomePath, codexHomePath, configBaseDir };
+        expect((yield* runScan(input)).candidates).toEqual([]);
+        expect(yield* runRecentThreads({ ...input, workspaceRoot: worktreeCwd })).toEqual([]);
+      }),
+    );
+
     it.effect("finds the cwd on a later line when the first records carry none", () =>
       Effect.gen(function* () {
         const path = yield* Path.Path;
@@ -1139,6 +1171,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
           providerInstances: {
             [ProviderInstanceId.make("claude-work")]: {
               driver: ProviderDriverKind.make("claudeAgent"),
+              enabled: true,
               config: { homePath: secondHome },
             },
           },
@@ -1252,6 +1285,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
           providerInstances: {
             [ProviderInstanceId.make("claude-work")]: {
               driver: ProviderDriverKind.make("claudeAgent"),
+              enabled: true,
               config: { homePath: secondHome },
             },
           },
@@ -1570,6 +1604,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
           providerInstances: {
             [ProviderInstanceId.make("codex-work")]: {
               driver: ProviderDriverKind.make("codex"),
+              enabled: true,
               config: { homePath: customHome },
             },
           },
@@ -2447,14 +2482,17 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
           providerInstances: {
             [ProviderInstanceId.make("codex")]: {
               driver: ProviderDriverKind.make("codex"),
+              enabled: true,
               config: { homePath: sharedHome },
             },
             [ProviderInstanceId.make("codex-personal")]: {
               driver: ProviderDriverKind.make("codex"),
+              enabled: true,
               config: { homePath: sharedHome },
             },
             [ProviderInstanceId.make("codex-work")]: {
               driver: ProviderDriverKind.make("codex"),
+              enabled: true,
               config: { homePath: sharedHome },
             },
           },
@@ -2496,10 +2534,12 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
           providerInstances: {
             [ProviderInstanceId.make("codex-work")]: {
               driver: ProviderDriverKind.make("codex"),
+              enabled: true,
               config: { homePath: sharedHome },
             },
             [ProviderInstanceId.make("codex-personal")]: {
               driver: ProviderDriverKind.make("codex"),
+              enabled: true,
               config: { homePath: sharedHome },
             },
           },
@@ -2569,6 +2609,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
           providerInstances: {
             [ProviderInstanceId.make("claude-work")]: {
               driver: ProviderDriverKind.make("claudeAgent"),
+              enabled: true,
               config: { homePath: recentHome },
             },
           },
