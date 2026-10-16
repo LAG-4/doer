@@ -4,7 +4,8 @@ name: Publish release assets
 # example, `publish_cli` failed on missing npm credentials but the desktop
 # artifacts built fine). Downloads the `desktop-*` artifacts of a completed
 # Release run, merges the macOS updater manifests exactly like the release
-# job does, and publishes the GitHub Release. Never builds anything.
+# job does, and publishes the GitHub Release. Optionally rebuilds and publishes
+# the CLI; desktop installers are always reused from the validated source run.
 
 on:
   workflow_dispatch:
@@ -14,14 +15,27 @@ on:
         required: true
         type: string
       tag:
-        description: "Release tag to publish (for example v0.0.41). Must already exist."
+        description: "Release tag to publish (for example v0.0.58)."
         required: true
         type: string
+      source_ref:
+        description: "Source commit when creating a new tag; blank uses the existing tag"
+        required: false
+        type: string
+      publish_cli:
+        description: "Recover npm publication before publishing desktop assets"
+        required: false
+        default: false
+        type: boolean
       make_latest:
         description: "Mark this release as latest (stable only)"
         required: false
         default: true
         type: boolean
+
+concurrency:
+  group: release-stable
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -29,15 +43,130 @@ permissions:
   actions: read
 
 jobs:
+  validate:
+    name: Validate recovery source
+    runs-on: ubuntu-24.04
+    outputs:
+      source_sha: ${{ steps.source.outputs.sha }}
+      version: ${{ steps.source.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.source_ref || inputs.tag }}
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.run_id }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" > "$RUNNER_TEMP/source-run.json"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?per_page=100" > "$RUNNER_TEMP/source-jobs.json"
+          node --input-type=module - <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const run = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/source-run.json`));
+          if (run.path !== '.github/workflows/release.yml') throw new Error('Expected a Release workflow run');
+          const { jobs } = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/source-jobs.json`));
+          for (const name of ['Release quality checks', 'Build WSL runtime before desktop packaging', 'Build Linux x64', 'Build macOS x64', 'Build macOS arm64', 'Build Windows x64']) {
+            if (!jobs.some(job => job.name === name && job.conclusion === 'success')) throw new Error(`Source run did not pass ${name}`);
+          }
+          NODE
+          build_sha="$(jq -r .head_sha "$RUNNER_TEMP/source-run.json")"
+          git fetch --no-tags origin "$build_sha"
+          # Recovery can fix packaging, never replace the validated app runtime.
+          git diff --name-only "$build_sha" HEAD > "$RUNNER_TEMP/recovery-files.txt"
+          while IFS= read -r path; do
+            case "$path" in
+              apps/server/scripts/cli.ts|apps/server/scripts/publishOrder.ts|apps/server/scripts/publishOrder.test.ts|.github/workflows/publish-release-assets.yml) ;;
+              *) echo "Runtime differs from validated desktop artifacts: $path" >&2; exit 1 ;;
+            esac
+          done < "$RUNNER_TEMP/recovery-files.txt"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
+
+  publish_cli:
+    name: Recover CLI publication
+    needs: validate
+    if: ${{ inputs.publish_cli }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.validate.outputs.source_sha }}
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+      - name: Check publisher and runtime dependency selection
+        run: |
+          vp lint apps/server/scripts/cli.ts
+          vp run --filter @lag4/doer-cli typecheck
+          vp test run scripts/lib/cli-external-packages.test.ts scripts/lib/resolve-catalog.test.ts
+      - name: Align package versions
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: node scripts/update-release-package-versions.ts --version "$RELEASE_VERSION"
+      - name: Build CLI package
+        run: vp run --filter @lag4/doer-cli build
+      - uses: actions/download-artifact@v8
+        with:
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+          pattern: resource-monitor-*
+          path: resource-monitors
+      - name: Bundle resource monitors
+        run: |
+          for artifact_dir in resource-monitors/resource-monitor-*; do
+            resource_key="${artifact_dir##*/resource-monitor-}"
+            target_dir="apps/server/dist/resource-monitor/${resource_key}"
+            mkdir -p "$target_dir"
+            cp "$artifact_dir"/t3-resource-monitor* "$target_dir/"
+            chmod +x "$target_dir"/t3-resource-monitor 2>/dev/null || true
+          done
+      - name: Publish Doer CLI
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          test -n "$NODE_AUTH_TOKEN"
+          printf '//registry.npmjs.org/:_authToken=%s\n' "$NODE_AUTH_TOKEN" > ~/.npmrc
+          if npm view "@lag4/doer-cli@$RELEASE_VERSION" version --json > "$RUNNER_TEMP/existing-cli-version.json" 2>/dev/null; then
+            echo "CLI version already exists; verifying it instead of republishing."
+          else
+            node apps/server/scripts/cli.ts publish --tag latest --verbose
+          fi
+      - name: Verify installed CLI
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          npm install --prefix "$RUNNER_TEMP/doer-cli-install" --omit=dev --no-audit --no-fund "@lag4/doer-cli@$RELEASE_VERSION"
+          node "$RUNNER_TEMP/doer-cli-install/node_modules/@lag4/doer-cli/dist/bin.mjs" --version
+
   publish_assets:
     name: Publish release assets
+    needs: [validate, publish_cli]
+    if: ${{ always() && needs.validate.result == 'success' && (needs.publish_cli.result == 'success' || needs.publish_cli.result == 'skipped') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.tag }}
+          ref: ${{ needs.validate.outputs.source_sha }}
           sparse-checkout: |
             /*
             !/.repos/
@@ -52,13 +181,34 @@ jobs:
             args:
               - --filter=@t3tools/scripts...
 
+      - name: Verify matching CLI is public
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          node --input-type=module - <<'NODE'
+          const version = process.env.RELEASE_VERSION;
+          const response = await fetch(`https://registry.npmjs.org/@lag4%2fdoer-cli/${version}`);
+          if (!response.ok) throw new Error(`Matching CLI ${version} is not published`);
+          const pkg = await response.json();
+          if (pkg.version !== version || !pkg.bin?.doer || !pkg.bin?.['doer-cli']) throw new Error('Invalid Doer CLI metadata');
+          NODE
+
       - name: Download all desktop artifacts
         uses: actions/download-artifact@v8
         with:
           run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
           pattern: desktop-*
           merge-multiple: true
           path: release-assets
+
+      - name: Verify desktop artifact versions
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          for suffix in arm64.dmg x64.dmg x64.exe x86_64.AppImage; do
+            test -s "release-assets/Doer-${RELEASE_VERSION}-${suffix}"
+          done
 
       - name: Merge macOS updater manifests
         run: |
@@ -78,6 +228,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ inputs.tag }}
+          target_commitish: ${{ needs.validate.outputs.source_sha }}
           name: Doer ${{ inputs.tag }}
           generate_release_notes: true
           make_latest: ${{ inputs.make_latest == true }}
