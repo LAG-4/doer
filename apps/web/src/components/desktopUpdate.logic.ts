@@ -25,16 +25,6 @@ export function getDesktopUpdateReleaseHistoryUrl(): string {
   return DESKTOP_RELEASE_HISTORY_URL;
 }
 
-/**
- * Recovery guidance for failed installs. The updater deliberately reports only
- * generic error text (underlying causes can carry feed URLs with secrets), so
- * a failed install — common on unsigned macOS builds, where the OS installer
- * refuses the staged update — would otherwise leave the user retrying forever.
- */
-export function getDesktopUpdateManualDownloadHint(): string {
-  return `If installing keeps failing, download the update from ${DESKTOP_RELEASE_HISTORY_URL} and install it manually.`;
-}
-
 export function resolveDesktopUpdateButtonAction(
   state: DesktopUpdateState,
 ): DesktopUpdateButtonAction {
@@ -81,6 +71,13 @@ export function getArm64IntelBuildWarningDescription(state: DesktopUpdateState):
 }
 
 export function getDesktopUpdateButtonTooltip(state: DesktopUpdateState): string {
+  if (
+    state.notAppliedVersion !== undefined &&
+    (state.status === "available" || state.status === "downloaded") &&
+    getDesktopUpdateDownloadedVersion(state) === state.notAppliedVersion
+  ) {
+    return `Update ${state.notAppliedVersion} did not apply. Click to retry.`;
+  }
   if (state.status === "available") {
     return `Update ${state.availableVersion ?? "available"} ready to download`;
   }

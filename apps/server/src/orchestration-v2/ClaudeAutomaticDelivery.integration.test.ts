@@ -9,6 +9,7 @@ import {
   MessageId,
   NodeId,
   ProjectId,
+  ProviderDriverKind,
   ProviderInstanceId,
   ScheduledTaskUpsertInput,
   ThreadId,
@@ -29,14 +30,17 @@ import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ClaudeAdapterV2 from "./Adapters/ClaudeAdapterV2.ts";
+import * as CommandReceiptStore from "./CommandReceiptStore.ts";
 import * as EffectWorker from "./EffectWorker.ts";
 import * as EventSink from "./EventSink.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as LegacyV1ThreadImporter from "./legacy/LegacyV1ThreadImporter.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ThreadLaunchService from "./ThreadLaunchService.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
 import { checkpointWorkspace } from "@t3tools/provider-testing/replayWorkspace";
 
@@ -131,7 +135,7 @@ it.effect.each(["child completion", "scheduled message", "user steering"] as con
         const offers: SDKUserMessage[] = [];
         const nativeQueue: SDKUserMessage[] = [];
         const batchAbort = new AbortController();
-        const adapter = ClaudeAdapterV2.makeClaudeAdapterV2({
+        const adapter = yield* ClaudeAdapterV2.makeClaudeAdapterV2({
           instanceId: modelSelection.instanceId,
           settings,
           environment: {},
@@ -156,7 +160,9 @@ it.effect.each(["child completion", "scheduled message", "user steering"] as con
                     }
                   }),
                 setModel: () => Effect.void,
+                applyFlagSettings: () => Effect.void,
                 setPermissionMode: () => Effect.void,
+                stopTask: () => Effect.void,
                 interrupt: Effect.die("automatic delivery must never interrupt"),
                 close: Effect.void,
               }),
@@ -312,6 +318,17 @@ it.effect.each(["child completion", "scheduled message", "user steering"] as con
                 ScheduledTaskService.layer.pipe(
                   Layer.provide(ThreadManagementService.layer),
                   Layer.provide(
+                    ServerSettings.layerTest({
+                      providerInstances: {
+                        [ProviderInstanceId.make("claudeAgent")]: {
+                          driver: ProviderDriverKind.make("claudeAgent"),
+                          enabled: true,
+                          config: {},
+                        },
+                      },
+                    }),
+                  ),
+                  Layer.provide(
                     Layer.mock(LegacyV1ThreadImporter.LegacyV1ThreadImporter)({
                       ensureTranscript: () =>
                         Effect.succeed({ importedThreadCount: 0, importedMessageCount: 0 }),
@@ -319,6 +336,9 @@ it.effect.each(["child completion", "scheduled message", "user steering"] as con
                   ),
                   Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
                   Layer.provide(Layer.mock(SecretRequests.SecretRequests)({})),
+                  Layer.provide(
+                    CommandReceiptStore.layer.pipe(Layer.provide(SqlitePersistence.layerMemory)),
+                  ),
                   Layer.provide(
                     Layer.mergeAll(
                       NodeCrypto.layer,
@@ -423,6 +443,10 @@ it.effect.each(["child completion", "scheduled message", "user steering"] as con
             ),
           ),
         );
-      }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
     ),
 );

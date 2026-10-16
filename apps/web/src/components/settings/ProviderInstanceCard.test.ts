@@ -108,7 +108,7 @@ describe("deriveProviderModelsForDisplay", () => {
     const markup = renderToStaticMarkup(
       createElement(ProviderInstanceCard, {
         instanceId,
-        instance: { driver },
+        instance: { driver, enabled: true },
         driverOption: undefined,
         liveProvider,
         mode: "editor",
@@ -118,6 +118,7 @@ describe("deriveProviderModelsForDisplay", () => {
         modelOrder: [],
         onHiddenModelsChange: () => undefined,
         onFavoriteModelsChange: () => undefined,
+        onToggleFavorite: () => undefined,
         onModelOrderChange: () => undefined,
       }),
     );
@@ -148,7 +149,7 @@ describe("deriveProviderModelsForDisplay", () => {
     };
     const props = {
       instanceId,
-      instance: { driver },
+      instance: { driver, enabled: true },
       driverOption: undefined,
       liveProvider,
       onUpdate: () => undefined,
@@ -157,6 +158,7 @@ describe("deriveProviderModelsForDisplay", () => {
       modelOrder: [],
       onHiddenModelsChange: () => undefined,
       onFavoriteModelsChange: () => undefined,
+      onToggleFavorite: () => undefined,
       onModelOrderChange: () => undefined,
     } as const;
 

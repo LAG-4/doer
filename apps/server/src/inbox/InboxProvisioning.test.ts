@@ -1,7 +1,7 @@
 import { it, expect } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ProjectId, type Project } from "@t3tools/contracts";
-import { HostProcessHomeDirectory } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -40,7 +40,7 @@ it.effect.each([true, false])("provisions the inbox, existing=%s", (exists) =>
             }),
         }),
       ),
-      Effect.provideService(HostProcessHomeDirectory, home),
+      Effect.provideService(HostProcess.HomeDirectory, home),
     );
     expect(result).toEqual({
       inboxProjectId: project.id,

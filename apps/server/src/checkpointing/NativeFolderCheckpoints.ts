@@ -309,6 +309,8 @@ export const make = (stateDir: string) =>
           }
           return result;
         }),
+      // Folder History has no repository commits to attribute between captures.
+      listAuthoredPaths: () => Effect.succeed(null),
       deleteCheckpointRefs: (input) =>
         run(input.cwd, async (_root, directory) => {
           for (const ref of input.checkpointRefs)

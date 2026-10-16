@@ -14,11 +14,7 @@ import { ManagedRelayDpopSigner } from "../relay/managedRelay.ts";
 import { RemoteEnvironmentAuthorization } from "../authorization/service.ts";
 import type { PreparedConnection } from "../connection/model.ts";
 import { executeAuthenticatedEnvironmentHttpRequest } from "./environmentHttpAuth.ts";
-import {
-  makeEnvironmentHttpApiUrlBuilder,
-  layerRemoteHttpClient,
-  type RemoteEnvironmentRequestError,
-} from "../rpc/http.ts";
+import { layerRemoteHttpClient, type RemoteEnvironmentRequestError } from "../rpc/http.ts";
 
 export class ConnectedAppsHttp extends Context.Service<
   ConnectedAppsHttp,
@@ -89,8 +85,7 @@ export const connectedAppsHttpLayer = Layer.effect(
           signer,
           remoteAuthorization,
           method: "GET",
-          url: (base: string) =>
-            String(makeEnvironmentHttpApiUrlBuilder(base).integrations.gmailStatus()),
+          url: (urls) => urls.gmailStatus(),
           timeoutMs: 35_000,
           group: "integrations",
           request: ({ client, headers }) =>
@@ -120,8 +115,7 @@ export const connectedAppsHttpLayer = Layer.effect(
           signer,
           remoteAuthorization,
           method: "POST",
-          url: (base: string) =>
-            String(makeEnvironmentHttpApiUrlBuilder(base).integrations.gmailBegin()),
+          url: (urls) => urls.gmailBegin(),
           timeoutMs: 35_000,
           group: "integrations",
           request: ({ client, headers }) =>
@@ -151,8 +145,7 @@ export const connectedAppsHttpLayer = Layer.effect(
           signer,
           remoteAuthorization,
           method: "POST",
-          url: (base: string) =>
-            String(makeEnvironmentHttpApiUrlBuilder(base).integrations.gmailDisconnect()),
+          url: (urls) => urls.gmailDisconnect(),
           timeoutMs: 35_000,
           group: "integrations",
           request: ({ client, headers }) =>
@@ -185,13 +178,12 @@ export const connectedAppsHttpLayer = Layer.effect(
           ),
         ),
       microsoft: (prepared, input) => {
-        const url = (base: string) => new URL("/api/doer/microsoft", base).toString();
         return executeAuthenticatedEnvironmentHttpRequest({
           prepared,
           signer,
           remoteAuthorization,
           method: "POST",
-          url,
+          url: (urls) => new URL("/api/doer/microsoft", urls.descriptor()).toString(),
           timeoutMs: 35_000,
           group: "metadata",
           request: ({ headers, requestUrl }) =>

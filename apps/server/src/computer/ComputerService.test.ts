@@ -1,4 +1,4 @@
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
@@ -16,7 +16,7 @@ const ProcessRunnerMock = Layer.succeed(ProcessRunner.ProcessRunner, {
 const serviceLayer = (prefix: string) =>
   Layer.effect(ComputerService, make).pipe(
     Layer.provide(ProcessRunnerMock),
-    Layer.provide(Layer.succeed(HostProcessPlatform, "darwin")),
+    Layer.provide(Layer.succeed(HostProcess.Platform, "darwin")),
     Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix })),
     // Never fetched in these tests (no install path runs), but the install
     // step requires an HTTP client in scope.

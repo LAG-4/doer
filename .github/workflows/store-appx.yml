@@ -5,7 +5,7 @@
 # publishes: no GitHub Release, no npm publish, no website assets, and the
 # .appx never lands in the ligma download mirror (sync.sh only mirrors .exe).
 #
-# Version design: the APP version (default 0.0.56) flows end to end unchanged
+# Version design: the explicitly selected APP version flows end to end unchanged
 # (package.json alignment, CLI archive, artifact names, in-app version). Only
 # the packed manifest carries the mapped Store quad (app major+1: 0.0.56 ->
 # manifest 1.0.56.0), rewritten by the staged appxManifestCreated hook,
@@ -50,9 +50,8 @@ on:
     inputs:
       version:
         description: "App version (for example 0.0.56). Manifest carries major+1. Must be new; never reuse a rejected version."
-        required: false
+        required: true
         type: string
-        default: "0.0.56"
       appx_identity_name:
         description: "Partner Center package identity Name."
         required: true

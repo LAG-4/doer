@@ -4,6 +4,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   type ServerConfig,
   ProviderInstanceId,
+  ProviderDriverKind,
   ScheduledTaskId,
   type ScheduledTask,
 } from "@t3tools/contracts";
@@ -232,7 +233,13 @@ describe("scheduled task model defaults", () => {
   };
   const projectSelection = { instanceId, model: "project-model" };
   const config = {
-    settings: { ...DEFAULT_SERVER_SETTINGS, defaultModelSelection: environmentSelection },
+    settings: {
+      ...DEFAULT_SERVER_SETTINGS,
+      defaultModelSelection: environmentSelection,
+      providerInstances: {
+        [instanceId]: { driver: ProviderDriverKind.make("codex"), enabled: true },
+      },
+    },
     providers: [
       {
         instanceId,

@@ -19,6 +19,9 @@ const legacyReaders = ["orchestration-v2/legacy/", "persistence/Migrations/"] as
 const legacyReaderFiles: Record<string, string> = {
   // Provider history for settings migration reads V1 thread sessions once at load.
   "serverSettings.ts": "one-time provider history for settings migration",
+  // Fork-local schedule migration imports legacy automations into scheduled_tasks once.
+  "persistence/DoerLegacySchedules.ts":
+    "one-time legacy schedule import from the V1 automation and thread tables",
 };
 const retiredPaths = [
   "orchestration",

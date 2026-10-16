@@ -45,7 +45,7 @@ export function isAdvancedSettingId(id: string | undefined): boolean {
   return (
     id !== undefined &&
     (ADVANCED_SETTING_IDS.has(id) ||
-      /^(?:diagnostics|terminal|git|source-control|keybinding|load-balancing|worktree|project-script)/.test(
+      /^(?:diagnostics|terminal|git|source-control|keybinding|load-balancing|worktree|storage-worktree|project-script)/.test(
         id,
       ))
   );

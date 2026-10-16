@@ -10,11 +10,7 @@ import {
   type DesktopAppActivationRequest,
 } from "@t3tools/contracts";
 import { resolveDesktopAppControlAddress } from "@t3tools/shared/desktopAppControl";
-import {
-  HostProcessPlatform,
-  HostProcessUserId,
-  HostProcessWorkingDirectory,
-} from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Config from "effect/Config";
 import * as Console from "effect/Console";
 import * as Crypto from "effect/Crypto";
@@ -189,7 +185,7 @@ const runAppCommand = Effect.fn("cli.app")(function* (flags: {
   readonly workspaceRoot: Option.Option<string>;
 }) {
   const environment = yield* appEnvironment;
-  const hostPlatform = yield* HostProcessPlatform;
+  const hostPlatform = yield* HostProcess.Platform;
   if (Option.isSome(environment.sshConnection) || Option.isSome(environment.sshTty)) {
     return yield* new DesktopAppSshUnsupportedError({});
   }
@@ -204,9 +200,9 @@ const runAppCommand = Effect.fn("cli.app")(function* (flags: {
   const allowDevFallback =
     Option.isNone(flags.baseDir) && !environment.doerHome?.trim() && !environment.t3Home?.trim();
   const rawWorkspaceRoot =
-    Option.getOrUndefined(flags.workspaceRoot) ?? (yield* HostProcessWorkingDirectory);
+    Option.getOrUndefined(flags.workspaceRoot) ?? (yield* HostProcess.WorkingDirectory);
   const workspaceRoot = path.resolve(yield* expandHomePath(rawWorkspaceRoot));
-  const userId = yield* HostProcessUserId;
+  const userId = yield* HostProcess.UserId;
   const resolveAddress = (stateSubdirectory: "userdata" | "dev") =>
     resolveDesktopAppControlAddress({
       stateDir: path.join(baseDir, stateSubdirectory),
@@ -216,7 +212,7 @@ const runAppCommand = Effect.fn("cli.app")(function* (flags: {
       joinPath: path.join,
     }).address;
   const crypto = yield* Crypto.Crypto;
-  const requestId = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
+  const requestId = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
   const request: DesktopAppActivationRequest = {
     version: DESKTOP_APP_ACTIVATION_PROTOCOL_VERSION,
     requestId,

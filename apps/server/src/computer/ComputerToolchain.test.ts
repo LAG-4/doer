@@ -1,6 +1,6 @@
 import * as NodeZlib from "node:zlib";
 
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
@@ -189,7 +189,7 @@ const testLayer = (run: ProcessRunner.ProcessRunner["Service"]["run"]) =>
   Layer.mergeAll(
     NodeServices.layer,
     Layer.succeed(ProcessRunner.ProcessRunner, { run }),
-    Layer.succeed(HostProcessPlatform, "darwin"),
+    Layer.succeed(HostProcess.Platform, "darwin"),
     // Required in scope by the installer; stub fetchers never touch it.
     FetchHttpClient.layer,
   );
@@ -314,7 +314,7 @@ describe("ensureComputerUse", () => {
       Effect.provide(
         Layer.mergeAll(
           NodeServices.layer,
-          Layer.succeed(HostProcessPlatform, "darwin"),
+          Layer.succeed(HostProcess.Platform, "darwin"),
           FetchHttpClient.layer,
         ),
       ),

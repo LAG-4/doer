@@ -60,6 +60,8 @@ export const make = (stateDir: string) =>
         resolve(input.cwd).pipe(Effect.flatMap((history) => history.restoreCheckpoint(input))),
       diffCheckpoints: (input) =>
         resolve(input.cwd).pipe(Effect.flatMap((history) => history.diffCheckpoints(input))),
+      listAuthoredPaths: (input) =>
+        resolve(input.cwd).pipe(Effect.flatMap((history) => history.listAuthoredPaths(input))),
       deleteCheckpointRefs: (input) =>
         resolve(input.cwd).pipe(Effect.flatMap((history) => history.deleteCheckpointRefs(input))),
     } satisfies VcsCheckpointOps;

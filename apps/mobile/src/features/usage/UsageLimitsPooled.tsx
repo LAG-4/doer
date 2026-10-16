@@ -8,7 +8,6 @@ import {
   collectLimitPools,
   cursorUsageWindowDetails,
   displayLimitWindows,
-  formatDuration,
   formatResetsIn,
   remainingPercent,
   type LimitAccount,
@@ -123,7 +122,9 @@ function PoolWindowCard({
       {nextRefill ? (
         <Text className="text-xs tabular-nums text-foreground-muted">
           ↻ +{nextRefill.restoresPercent}%{" "}
-          {nextRefill.at <= now ? "now" : `in ${formatDuration(nextRefill.at - now)}`}
+          {formatResetsIn(nextRefill.member.window, now)
+            ?.replace("resets in ", "in ")
+            .replace("resets now", "now")}
         </Text>
       ) : null}
       <View className="flex-row gap-1">
@@ -182,9 +183,16 @@ function PoolWindowCard({
               </Text>
               <View className="flex-row items-center gap-1">
                 {resetsIn ? (
-                  <Text className="text-xs tabular-nums text-foreground-muted">
-                    {resetsIn.replace("resets in ", "↻ ")}
-                  </Text>
+                  <>
+                    <SymbolView
+                      name="arrow.clockwise"
+                      size={12}
+                      tintColorClassName="accent-foreground-muted"
+                    />
+                    <Text className="text-xs tabular-nums text-foreground-muted">
+                      {resetsIn.replace("resets in ", "")}
+                    </Text>
+                  </>
                 ) : null}
                 {credits ? (
                   <>
