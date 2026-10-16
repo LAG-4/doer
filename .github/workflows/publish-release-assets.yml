@@ -33,7 +33,7 @@ jobs:
   publish_assets:
     name: Publish release assets
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 40
     env:
       NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       DOER_RELEASE_GOOGLE_OAUTH_CLIENT_ID: ${{ vars.DOER_GMAIL_PUBLIC_READY == 'true' && secrets.DOER_RELEASE_GOOGLE_OAUTH_CLIENT_ID || '' }}
@@ -86,6 +86,8 @@ jobs:
             ], { encoding: "utf8" }).trim().split("\n").filter(Boolean);
             const allowed = new Set([
               ".github/workflows/publish-release-assets.yml",
+              ".github/workflows/release.yml",
+              "scripts/wait-for-doer-cli.mjs",
               "apps/server/scripts/cli.ts",
               "apps/server/scripts/cliPublish.ts",
               "apps/server/scripts/cliPublish.test.ts",
@@ -218,11 +220,16 @@ jobs:
           printf '//registry.npmjs.org/:_authToken=%s\n' "$NODE_AUTH_TOKEN" > ~/.npmrc
           node apps/server/scripts/cli.ts publish --tag latest --verbose
 
+      - name: Wait for public CLI availability
+        env:
+          RELEASE_VERSION: ${{ steps.source.outputs.version }}
+        run: node scripts/wait-for-doer-cli.mjs "$RELEASE_VERSION"
+
       - name: Verify installed CLI
         env:
           RELEASE_VERSION: ${{ steps.source.outputs.version }}
         run: |
-          npm install --prefix "$RUNNER_TEMP/doer-cli-install" --omit=dev --no-audit --no-fund "@lag4/doer-cli@$RELEASE_VERSION"
+          npm install --prefix "$RUNNER_TEMP/doer-cli-install" --prefer-online --omit=dev --no-audit --no-fund "@lag4/doer-cli@$RELEASE_VERSION"
           installed_version="$(node "$RUNNER_TEMP/doer-cli-install/node_modules/@lag4/doer-cli/dist/bin.mjs" --version)"
           test "$installed_version" = "$RELEASE_VERSION"
 

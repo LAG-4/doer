@@ -641,7 +641,7 @@ jobs:
     needs: [preflight, quality, build]
     if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' && needs.quality.result == 'success' && needs.build.result == 'success' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 35
     permissions:
       contents: read
     env:
@@ -704,6 +704,9 @@ jobs:
           fi
           printf '//registry.npmjs.org/:_authToken=%s\n' "$NODE_AUTH_TOKEN" > ~/.npmrc
           node apps/server/scripts/cli.ts publish --tag "${{ needs.preflight.outputs.cli_dist_tag }}" --verbose
+
+      - name: Wait for public CLI availability
+        run: node scripts/wait-for-doer-cli.mjs "${{ needs.preflight.outputs.version }}"
 
   release:
     name: Publish GitHub Release
