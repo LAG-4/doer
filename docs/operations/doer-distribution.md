@@ -94,6 +94,12 @@ the live domain served a fresh upstream build (canonical `t3.codes`,
   It builds and publishes the matching CLI if npm does not have that version
   yet, before publishing the GitHub Release. Select a ref with the publishing
   fix; recovery rejects application changes since the original build.
+  If GitHub returns "Resource not accessible by integration" for a source
+  commit whose workflow files differ from `lite`, its Actions token cannot
+  create or edit that release. From an authenticated account with the
+  `workflow` scope, create a draft targeting the build commit. Run recovery
+  with `upload_only` enabled, then publish the complete draft from that
+  account. This keeps the built source commit and the release files intact.
 
 ## Identity (do not change casually)
 

@@ -19,6 +19,11 @@ on:
         required: false
         default: true
         type: boolean
+      upload_only:
+        description: "Upload to an existing draft; publish it separately with a workflow-authorized account"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -237,6 +242,7 @@ jobs:
         run: ls -la release-assets/
 
       - name: Publish release
+        if: inputs.upload_only != true
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ inputs.tag }}
@@ -253,3 +259,25 @@ jobs:
             release-assets/*.yml
           fail_on_unmatched_files: true
           token: ${{ github.token }}
+
+      - name: Upload to prepared draft
+        if: inputs.upload_only == true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          node --input-type=module <<'JS'
+          import assert from "node:assert/strict";
+          import { execFileSync } from "node:child_process";
+          const release = JSON.parse(execFileSync("gh", [
+            "release", "view", process.env.RELEASE_TAG,
+            "--repo", process.env.GITHUB_REPOSITORY,
+            "--json", "isDraft,targetCommitish",
+          ], { encoding: "utf8" }));
+          assert.equal(release.isDraft, true, "Upload-only recovery requires an unpublished draft.");
+          assert.equal(release.targetCommitish, process.env.SOURCE_SHA, "Draft must target the validated build commit.");
+          JS
+          shopt -s nullglob
+          assets=(release-assets/*.dmg release-assets/*.zip release-assets/*.AppImage release-assets/*.exe release-assets/*.blockmap release-assets/latest*.yml)
+          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber "${assets[@]}"
