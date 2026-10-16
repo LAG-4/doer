@@ -1,7 +1,11 @@
 import * as NodeAssert from "node:assert/strict";
 
 const version = process.argv[2];
-NodeAssert.match(version ?? "", /^[0-9]+\.[0-9]+\.[0-9]+$/, "Expected a stable release version.");
+NodeAssert.match(
+  version ?? "",
+  /^[0-9]+\.[0-9]+\.[0-9]+(?:[.-][0-9A-Za-z.-]+)?$/,
+  "Expected a release version.",
+);
 
 // npm scans accepted publishes before they become installable:
 // https://github.blog/changelog/2026-07-28-npm-publish-time-malware-scanning-and-dual-use-metadata/
