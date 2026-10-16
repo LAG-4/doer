@@ -231,7 +231,7 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/doer-cli-install" --prefer-online --omit=dev --no-audit --no-fund "@lag4/doer-cli@$RELEASE_VERSION"
           installed_version="$(node "$RUNNER_TEMP/doer-cli-install/node_modules/@lag4/doer-cli/dist/bin.mjs" --version)"
-          test "$installed_version" = "$RELEASE_VERSION"
+          test "${installed_version#t3 v}" = "$RELEASE_VERSION"
 
       - name: List release assets
         run: ls -la release-assets/
