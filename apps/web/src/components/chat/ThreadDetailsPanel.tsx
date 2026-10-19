@@ -104,50 +104,52 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
     >
       {(density) => (
         <>
-          <ThreadDetailsSection
-            headingId="thread-details-workspace-heading"
-            title="Workspace"
-            separated={false}
-            showHeading={false}
-          >
-            <div className="flex flex-col">
-              {!simpleModeEnabled && density === "full" ? (
-                <BranchToolbar
-                  layout="panel"
-                  panelSection="workspace"
-                  availableEnvironments={props.availableEnvironments}
-                  onEnvironmentChange={props.onEnvironmentChange}
-                  autoEnvironmentLabel={props.autoEnvironmentLabel}
-                  onAutoEnvironment={props.onAutoEnvironment}
-                  {...branchToolbarProps}
-                />
-              ) : null}
+          {!simpleModeEnabled ? (
+            <ThreadDetailsSection
+              headingId="thread-details-workspace-heading"
+              title="Workspace"
+              separated={false}
+              showHeading={false}
+            >
+              <div className="flex flex-col">
+                {density === "full" ? (
+                  <BranchToolbar
+                    layout="panel"
+                    panelSection="workspace"
+                    availableEnvironments={props.availableEnvironments}
+                    onEnvironmentChange={props.onEnvironmentChange}
+                    autoEnvironmentLabel={props.autoEnvironmentLabel}
+                    onAutoEnvironment={props.onAutoEnvironment}
+                    {...branchToolbarProps}
+                  />
+                ) : null}
 
-              {!simpleModeEnabled && density !== "essential" && props.showOpenInPicker ? (
-                <OpenInPicker
-                  keybindings={props.keybindings}
-                  environmentId={props.environmentId}
-                  availableEditors={props.availableEditors}
-                  openInCwd={props.gitCwd}
-                  displayMode="panel"
-                />
-              ) : null}
+                {density !== "essential" && props.showOpenInPicker ? (
+                  <OpenInPicker
+                    keybindings={props.keybindings}
+                    environmentId={props.environmentId}
+                    availableEditors={props.availableEditors}
+                    openInCwd={props.gitCwd}
+                    displayMode="panel"
+                  />
+                ) : null}
 
-              {!simpleModeEnabled && props.activeProjectScripts ? (
-                <ProjectScriptsControl
-                  environmentId={props.environmentId}
-                  displayMode="panel"
-                  scripts={props.activeProjectScripts}
-                  fileScripts={fileScripts}
-                  preferredScriptId={props.preferredScriptId}
-                  onRunScript={props.onRunProjectScript}
-                  onAddScript={props.onAddProjectScript}
-                  onUpdateScript={props.onUpdateProjectScript}
-                  onDeleteScript={props.onDeleteProjectScript}
-                />
-              ) : null}
-            </div>
-          </ThreadDetailsSection>
+                {props.activeProjectScripts ? (
+                  <ProjectScriptsControl
+                    environmentId={props.environmentId}
+                    displayMode="panel"
+                    scripts={props.activeProjectScripts}
+                    fileScripts={fileScripts}
+                    preferredScriptId={props.preferredScriptId}
+                    onRunScript={props.onRunProjectScript}
+                    onAddScript={props.onAddProjectScript}
+                    onUpdateScript={props.onUpdateProjectScript}
+                    onDeleteScript={props.onDeleteProjectScript}
+                  />
+                ) : null}
+              </div>
+            </ThreadDetailsSection>
+          ) : null}
 
           {!simpleModeEnabled && props.gitCwd ? (
             <ThreadDetailsSection
