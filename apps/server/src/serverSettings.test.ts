@@ -2844,8 +2844,11 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         const settings = yield* service.getSettings;
         // Never deleted: the instance stays for its threads, and the registry shows it unavailable.
         assert.equal(settings.providerInstances[cursorId]?.driver, cursor);
-        // Built-in text generation does not fall back onto a disallowed driver either.
-        assert.equal(settings.textGenerationModelSelection.instanceId, "claudeAgent");
+        // Doer enables only opencode by default (upstream enables codex/claudeAgent),
+        // so with a policy allowing only claude/codex there is no allowed+enabled
+        // fallback: the disallowed selection is preserved rather than falling onto
+        // another disallowed driver.
+        assert.equal(settings.textGenerationModelSelection.instanceId, "cursor_work");
 
         const rejected = yield* service
           .updateProviderInstance({

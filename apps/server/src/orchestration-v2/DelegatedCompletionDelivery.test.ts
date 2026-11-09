@@ -151,7 +151,24 @@ const layerTest = Layer.mergeAll(
   Layer.provide(SqlitePersistence.layerMemory),
   Layer.provide(layerCheckpointStoreTest),
   Layer.provide(layerServerConfig),
-  Layer.provide(ServerSettings.layerTest()),
+  // Doer disables codex/claudeAgent by default (only opencode enabled); enable the
+  // drivers exercised here independently of install defaults.
+  Layer.provide(
+    ServerSettings.layerTest({
+      providerInstances: {
+        [ProviderInstanceId.make("codex")]: {
+          driver: ProviderDriverKind.make("codex"),
+          enabled: true,
+          config: {},
+        },
+        [ProviderInstanceId.make("claudeAgent")]: {
+          driver: ProviderDriverKind.make("claudeAgent"),
+          enabled: true,
+          config: {},
+        },
+      },
+    }),
+  ),
   Layer.provide(layerTestProviderInstanceRegistry),
   Layer.provide(layerPlatformTest),
 );
