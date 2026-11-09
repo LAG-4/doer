@@ -5,6 +5,9 @@ import iconStable from "../../assets/icon.webp";
 import iconNightly from "../../assets/icon-nightly.webp";
 import Layout from "../../layouts/Layout.astro";
 import { RELEASES_URL } from "../../lib/releases";
+import { localeStaticPaths } from "../../i18n/locales";
+
+export const getStaticPaths = localeStaticPaths;
 
 const imageProps = {
   alt: "",

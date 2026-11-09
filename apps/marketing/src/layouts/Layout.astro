@@ -2,8 +2,6 @@
 import { getImage, Image } from "astro:assets";
 import appIcon from "../assets/icon.webp";
 import desktopScreenshot from "../assets/app-desktop.webp";
-import dmSansLatinUrl from "../assets/fonts/dm-sans-latin.woff2?url";
-import "../styles/fonts.css";
 import { GITHUB_REPOSITORY_URL } from "../lib/site";
 
 interface Props {
@@ -55,13 +53,6 @@ const canonicalUrl = new URL(Astro.url.pathname, Astro.site);
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={socialImageUrl} />
-    <link
-      rel="preload"
-      href={dmSansLatinUrl}
-      as="font"
-      type="font/woff2"
-      crossorigin="anonymous"
-    />
     <link rel="icon" href="/favicon.ico" sizes="48x48" />
     <link rel="icon" type="image/png" href="/favicon-32x32.png" sizes="32x32" />
     <link rel="icon" type="image/png" href="/favicon-16x16.png" sizes="16x16" />

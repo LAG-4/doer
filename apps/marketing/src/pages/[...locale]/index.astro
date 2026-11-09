@@ -2,6 +2,9 @@
 import { getImage } from "astro:assets";
 import desktopScreenshot from "../../assets/doer-research-example.png";
 import Layout from "../../layouts/Layout.astro";
+import { localeStaticPaths } from "../../i18n/locales";
+
+export const getStaticPaths = localeStaticPaths;
 
 const screenshot = await getImage({
   src: desktopScreenshot,
