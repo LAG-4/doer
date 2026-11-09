@@ -212,7 +212,7 @@ export function isSameOriginRendererNavigation(input: {
   }
 }
 
-function isRetryableDevelopmentRendererLoadFailure(input: {
+export function isRetryableDevelopmentRendererLoadFailure(input: {
   readonly applicationUrl: string;
   readonly errorCode: number;
   readonly isMainFrame: boolean;

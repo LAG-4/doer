@@ -129,20 +129,28 @@ describe("DesktopClerk", () => {
     return Effect.gen(function* () {
       yield* Effect.scoped(Layer.build(layerDesktopClerk(true, events)));
 
-      assert.deepEqual(createClerkBridgeMock.mock.calls, [
-        [
-          {
-            storage: storageAdapter,
-            passkeys: true,
-            renderer: { scheme: "doer-dev", host: "app" },
-          },
-        ],
-      ]);
+      assert.equal(createClerkBridgeMock.mock.calls.length, 1);
+      const bridgeOptions = createClerkBridgeMock.mock.calls[0]?.[0] as {
+        storage: unknown;
+        manageSingleInstanceLock: boolean;
+        passkeys: boolean;
+        renderer: unknown;
+      };
+      assert.equal(bridgeOptions.manageSingleInstanceLock, false);
+      assert.equal(bridgeOptions.passkeys, true);
+      assert.deepEqual(bridgeOptions.renderer, { scheme: "doer-dev", host: "app" });
+      assert.notStrictEqual(bridgeOptions.storage, storageAdapter);
       assert.equal(cleanup.mock.calls.length, 1);
       // The bridge acquires Electron's single-instance lock at creation, and
       // the lock both lives in and creates the userData directory — so the
       // real path must be set before the bridge exists.
-      assert.deepEqual(events, ["setPath:userData:/tmp/app-data/doer-dev", "createClerkBridge"]);
+      assert.deepEqual(events, [
+        "setPath:userData:/tmp/app-data/doer-dev",
+        "requestSingleInstanceLock",
+        "on:second-instance",
+        "on:open-url",
+        "createClerkBridge",
+      ]);
       storageMock.mockClear();
       createClerkBridgeMock.mockClear();
     });
@@ -153,13 +161,13 @@ describe("DesktopClerk", () => {
       name: "packaged macOS",
       isDevelopment: false,
       platform: "darwin" as const,
-      userData: "/tmp/app-data/t3code-v2",
+      userData: "/tmp/app-data/doer-v2",
     },
     {
       name: "packaged Linux",
       isDevelopment: false,
       platform: "linux" as const,
-      userData: "/tmp/app-data/t3code-v2",
+      userData: "/tmp/app-data/doer-v2",
     },
     {
       name: "packaged Windows",
@@ -315,7 +323,7 @@ describe("DesktopClerk", () => {
 
         assert.isTrue(Exit.hasInterrupts(exit));
         assert.deepEqual(events, [
-          "setPath:userData:/tmp/app-data/t3code-v2",
+          "setPath:userData:/tmp/app-data/doer-v2",
           "requestSingleInstanceLock",
           "quit",
         ]);

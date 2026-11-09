@@ -98,7 +98,9 @@ export const resolveServerInstallation = Effect.gen(function* () {
   const bin = yield* fs.realPath(path.join(packageRoot, manifest.bin.doer));
   const globalBin = yield* fs.realPath(path.join(prefix, "bin/doer"));
   if (globalBin !== bin) return null;
-  if (yield* HostProcess.IsExecutable) {
+  const isNativeEntry = entry.includes("/node_modules/@t3code/");
+  if (isNativeEntry) {
+    if (!(yield* HostProcess.IsExecutable)) return null;
     const nativeManifest = yield* fs
       .readFileString(path.join(path.dirname(entry), "package.json"))
       .pipe(Effect.flatMap(decodeInstallManifest));
@@ -192,6 +194,15 @@ export const resolveHostCliCommand = Effect.fn("invocation.resolveHostCliCommand
   const command = yield* resolveCliCommand(subcommand);
   if (command !== `doer ${subcommand}`) return { command: withArgs(command), launcher: false };
   const onPath = yield* resolveCommandPath("doer");
+  if (onPath !== null) {
+    const shim = (yield* HostProcess.Environment).T3CODE_CLI_PATH?.trim();
+    const fs = yield* FileSystem.FileSystem;
+    const real = (file: string) => fs.realPath(file).pipe(Effect.orElseSucceed(() => null));
+    const shimReal = shim ? yield* real(shim) : null;
+    if (shimReal === null || shimReal === (yield* real(onPath))) {
+      return { command: withArgs(command), launcher: false };
+    }
+  }
   const launcher = yield* resolveInstallLauncher;
   if (Option.isNone(launcher)) return { command: withArgs(command), launcher: false };
   // PowerShell runs a quoted path only through the call operator.
