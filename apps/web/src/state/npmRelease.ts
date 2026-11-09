@@ -1,13 +1,26 @@
-import { useAtomValue } from "@effect/atom-react";
+import { ServerNpmReleaseError } from "@t3tools/contracts";
 import { npmReleaseDatabaseMigration } from "@t3tools/shared/cliRelease";
+import { useAtomValue } from "@effect/atom-react";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";
 
 export interface NpmRelease {
   readonly version: string;
   /** Absent on releases published before npm manifests carried it. */
   readonly databaseMigration: number | undefined;
+}
+
+const isServerNpmReleaseError = Schema.is(ServerNpmReleaseError);
+
+export function npmReleaseFailureMessage(cause: Cause.Cause<unknown>): string {
+  const error = Option.getOrUndefined(Cause.findErrorOption(cause));
+  return isServerNpmReleaseError(error)
+    ? error.message
+    : "Could not check this environment's npm registry. Check the connection and registry settings.";
 }
 
 /** `spec` is an exact version or a dist-tag such as `nightly`. Null when npm has no such release.

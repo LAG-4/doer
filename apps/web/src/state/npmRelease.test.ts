@@ -1,8 +1,13 @@
 import { AtomRegistry } from "effect/reactivity";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import { afterAll, afterEach, describe, expect, it, vi } from "vite-plus/test";
+import * as Cause from "effect/Cause";
+import { ServerNpmReleaseError } from "@t3tools/contracts";
 
-import { npmReleasePublishedAtom } from "./npmRelease";
+import {
+  npmReleaseFailureMessage,
+  npmReleasePublishedAtom,
+} from "./npmRelease";
 
 const version = "0.0.46-nightly.20261012.3021";
 
@@ -56,5 +61,13 @@ describe("npmReleasePublishedAtom", () => {
 
     expect(AsyncResult.isFailure(result)).toBe(true);
     expect(AsyncResult.getOrElse(result, () => false)).toBe(false);
+  });
+
+  it("only displays the safe release error, not arbitrary transport diagnostics", () => {
+    const error = new ServerNpmReleaseError({ reason: "Install npm on the server's PATH." });
+    expect(npmReleaseFailureMessage(Cause.fail(error))).toBe(error.message);
+    expect(
+      npmReleaseFailureMessage(Cause.fail(new Error("sensitive transport details"))),
+    ).not.toContain("sensitive");
   });
 });

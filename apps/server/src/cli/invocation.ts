@@ -6,7 +6,7 @@ import * as Schema from "effect/Schema";
 
 import type { ServerInstallation } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { isCommandAvailable } from "@t3tools/shared/shell";
+import { resolveCommandPath } from "@t3tools/shared/shell";
 
 import packageJson from "../../package.json" with { type: "json" };
 
@@ -16,7 +16,7 @@ export type CliRunner = "npx" | "pnpm dlx" | "bunx";
  * How the CLI was launched, judged by where its entry script lives.
  * Detection is best-effort; callers must fail closed to a plain `doer` command.
  */
-function detectCliRunner(entryPath: string): CliRunner | null {
+export function detectCliRunner(entryPath: string): CliRunner | null {
   const path = entryPath.replaceAll("\\", "/");
   if (path.includes("/_npx/")) {
     return "npx";
@@ -191,7 +191,7 @@ export const resolveHostCliCommand = Effect.fn("invocation.resolveHostCliCommand
     [prefix, ...args.map((arg) => hostShellWord(platform, arg))].join(" ");
   const command = yield* resolveCliCommand(subcommand);
   if (command !== `doer ${subcommand}`) return { command: withArgs(command), launcher: false };
-  if (yield* isCommandAvailable("doer")) return { command: withArgs(command), launcher: false };
+  const onPath = yield* resolveCommandPath("doer");
   const launcher = yield* resolveInstallLauncher;
   if (Option.isNone(launcher)) return { command: withArgs(command), launcher: false };
   // PowerShell runs a quoted path only through the call operator.
@@ -208,8 +208,9 @@ export const resolveHostCliCommand = Effect.fn("invocation.resolveHostCliCommand
  */
 export const resolveRootCliCommand = Effect.fn("invocation.resolveRootCliCommand")(function* (
   subcommand: string,
+  args: ReadonlyArray<string> = [],
 ) {
-  const { command, launcher } = yield* resolveHostCliCommand(subcommand);
+  const { command, launcher } = yield* resolveHostCliCommand(subcommand, args);
   if (launcher) return `sudo ${command}`;
   const executablePath = yield* HostProcess.ExecutablePath;
   const systemNode = ROOT_PATH_DIRECTORIES.some((directory) =>

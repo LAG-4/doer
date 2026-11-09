@@ -150,6 +150,7 @@ export function resolveEarlyLinuxElectronOptions(
   return {
     isDevelopment,
     linuxWmClass: isDevelopment ? "doer-dev" : "doer",
+
     linuxDesktopEntryName: resolveLinuxDesktopEntryName(isDevelopment),
     passwordStore: resolveLinuxPasswordStoreSwitch({
       preference,

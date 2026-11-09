@@ -236,6 +236,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
     ),
     linuxDesktopEntryName: resolveLinuxDesktopEntryName(isDevelopment),
     linuxWmClass: isDevelopment ? "doer-dev" : "doer",
+
     linuxApplicationsDir,
     desktopLauncherPath: config.desktopLauncherPath,
     appImagePath: config.appImagePath,
