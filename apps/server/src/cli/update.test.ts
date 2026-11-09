@@ -465,7 +465,7 @@ it.layer(NodeServices.layer)("t3 update with a background service", (it) => {
       const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-update-" });
       const version = packageJson.version;
       const runtime = pinnedRuntimePaths(path, baseDir, version, "linux");
-      yield* fs.makeDirectory(runtime.versionDir, { recursive: true });
+      yield* fs.makeDirectory(path.dirname(runtime.entryPath), { recursive: true });
       yield* fs.writeFileString(runtime.entryPath, "");
       yield* fs.writeFileString(runtime.sentinelPath, `${version}\n`);
       const unitPath = path.join(baseDir, "t3code.service");

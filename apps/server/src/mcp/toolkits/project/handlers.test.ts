@@ -69,6 +69,30 @@ const clientLaunchHarness = (input: {
     }),
     ServerSettings.layerTest({
       fallbackModelSelection: input.fallbackModel ?? null,
+      // Doer disables codex/claudeAgent/pi by default (only opencode enabled);
+      // enable the drivers exercised here independently of install defaults.
+      providerInstances: {
+        [ProviderInstanceId.make("claudeAgent")]: {
+          driver: ProviderDriverKind.make("claudeAgent"),
+          enabled: true,
+          config: {},
+        },
+        [ProviderInstanceId.make("codex")]: {
+          driver: ProviderDriverKind.make("codex"),
+          enabled: true,
+          config: {},
+        },
+        [ProviderInstanceId.make("pi")]: {
+          driver: ProviderDriverKind.make("pi"),
+          enabled: true,
+          config: {},
+        },
+        [ProviderInstanceId.make("opencode")]: {
+          driver: ProviderDriverKind.make("opencode"),
+          enabled: true,
+          config: {},
+        },
+      },
       ...(input.defaultRuntimeMode === undefined
         ? {}
         : { defaultRuntimeMode: input.defaultRuntimeMode }),

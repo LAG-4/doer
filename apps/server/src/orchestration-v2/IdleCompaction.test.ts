@@ -295,7 +295,11 @@ describe("IdleCompactionService", () => {
                 idleCompaction: test.mode,
                 providerInstances:
                   "unconfigured" in test
-                    ? {}
+                    ? // Doer disables claudeAgent by default (only opencode enabled);
+                      // upstream treats unconfigured as enabled, so opt in explicitly.
+                      {
+                        [selectedInstance]: { driver, enabled: true, config: {} },
+                      }
                     : {
                         [selectedInstance]: {
                           driver,
@@ -404,6 +408,10 @@ describe("IdleCompactionService", () => {
             getSettings: Effect.succeed({
               ...DEFAULT_SERVER_SETTINGS,
               idleCompaction: "beforeCacheExpires",
+              // Doer disables claudeAgent by default; enable it for this compaction test.
+              providerInstances: {
+                [instanceId]: { driver: ProviderDriverKind.make("claudeAgent"), enabled: true },
+              },
             }),
           }),
         );

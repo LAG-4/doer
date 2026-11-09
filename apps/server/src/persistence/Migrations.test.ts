@@ -166,6 +166,14 @@ describe("runMigrations", () => {
 });
 
 // The npm launcher reads the highest migration id from these file names.
+// Doer keeps fork-local migrations alongside canonical ones for upgrade
+// reconciliation (051/052 automations, 057 memories); they are not registered
+// in migrationManifest and run through reconcileDoerMigrations instead.
+const FORK_LOCAL_MIGRATIONS: ReadonlySet<string> = new Set([
+  "51_ProjectionAutomations",
+  "52_ProjectionAutomationsDedicatedThread",
+  "57_DoerMemories",
+]);
 it.effect("registers every migration file", () =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -173,7 +181,10 @@ it.effect("registers every migration file", () =>
     const dir = path.join(import.meta.dirname, "Migrations");
     const files = (yield* fs.readDirectory(dir)).flatMap((name) => {
       const match = /^(\d+)_(\w+)\.ts$/.exec(name);
-      return match ? [[Number(match[1]), match[2]] as const] : [];
+      if (!match) return [];
+      // Fork-local files use canonical ids but are not in the manifest.
+      if (FORK_LOCAL_MIGRATIONS.has(`${Number(match[1])}_${match[2]}`)) return [];
+      return [[Number(match[1]), match[2]] as const];
     });
     assert.deepStrictEqual(
       files.toSorted(([a], [b]) => a - b),
