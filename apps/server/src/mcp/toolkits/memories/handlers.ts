@@ -8,10 +8,10 @@ import {
   type DoerMemoryScope,
 } from "@t3tools/shared/doerMemory";
 import * as Cause from "effect/Cause";
-import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as NodeCrypto from "node:crypto";
 
 import * as DoerMemoryStore from "../../../persistence/Services/DoerMemoryStore.ts";
 import * as ProjectionSnapshotQuery from "../../../memory/DoerTaskContext.ts";
@@ -43,13 +43,9 @@ const dispatchFailure =
 const make = Effect.gen(function* () {
   const store = yield* DoerMemoryStore.DoerMemoryStore;
   const snapshots = yield* ProjectionSnapshotQuery.DoerTaskContext;
-  const crypto = yield* Crypto.Crypto;
 
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
-  const newMemoryId = crypto.randomUUIDv4().pipe(
-    Effect.orDie,
-    Effect.map((uuid) => `mem_${uuid}`),
-  );
+  const newMemoryId = Effect.succeed(`mem_${NodeCrypto.randomUUID()}`);
 
   /** The calling Task's thread; scope always resolves from here, never from caller ids. */
   const requireScopeThread = Effect.fn("MemoriesToolkit.requireScopeThread")(function* (
