@@ -1,10 +1,10 @@
 ---
 import type { ComponentProps } from "astro/types";
 import { Image } from "astro:assets";
-import iconStable from "../assets/icon.webp";
-import iconNightly from "../assets/icon-nightly.webp";
-import Layout from "../layouts/Layout.astro";
-import { RELEASES_URL } from "../lib/releases";
+import iconStable from "../../assets/icon.webp";
+import iconNightly from "../../assets/icon-nightly.webp";
+import Layout from "../../layouts/Layout.astro";
+import { RELEASES_URL } from "../../lib/releases";
 
 const imageProps = {
   alt: "",
@@ -127,7 +127,7 @@ const imageProps = {
 </Layout>
 
 <script>
-  import { fetchLatestRelease, RELEASES_URL, NIGHTLY_RELEASES_URL, type ReleaseChannel } from "../lib/releases";
+  import { fetchLatestRelease, RELEASES_URL, NIGHTLY_RELEASES_URL, type ReleaseChannel } from "../../lib/releases";
 
   const page = document.getElementById("download-page")!;
   const versionLabel = document.getElementById("version-label")!;

@@ -1,7 +1,7 @@
 ---
 import { getImage } from "astro:assets";
-import desktopScreenshot from "../assets/doer-research-example.png";
-import Layout from "../layouts/Layout.astro";
+import desktopScreenshot from "../../assets/doer-research-example.png";
+import Layout from "../../layouts/Layout.astro";
 
 const screenshot = await getImage({
   src: desktopScreenshot,
@@ -285,8 +285,8 @@ const screenshot = await getImage({
 </Layout>
 
 <script>
-  import { fetchLatestRelease, RELEASES_URL, type ReleaseAsset } from "../lib/releases";
-  import { startHomeMotion } from "../lib/homeMotion";
+  import { fetchLatestRelease, RELEASES_URL, type ReleaseAsset } from "../../lib/releases";
+  import { startHomeMotion } from "../../lib/homeMotion";
 
   type Platform = { os: "mac" | "win" | "linux"; label: string };
 
