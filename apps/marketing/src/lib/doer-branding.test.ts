@@ -19,7 +19,8 @@ function readSource(relativePath: string): string {
 
 describe("doer marketing identity", () => {
   it("serves the Doer homepage, not the upstream T3 page", () => {
-    const index = readSource("src/pages/index.astro");
+    // Upstream moved to i18n [...locale]/index.astro (no top-level index.astro).
+    const index = readSource("src/pages/[...locale]/index.astro");
     expect(index).toContain("boring work");
     expect(index).toContain("Doer is free forever");
     expect(index).toContain("What can you hand to Doer?");
@@ -60,7 +61,8 @@ describe("doer marketing identity", () => {
   });
 
   it("keeps the download page fork-specific, without store listings", () => {
-    const download = readSource("src/pages/download.astro");
+    // Upstream moved to i18n [...locale]/download.astro (no top-level download.astro).
+    const download = readSource("src/pages/[...locale]/download.astro");
     expect(download).toContain("Download Doer");
     expect(download).toContain("@lag4/doer-cli");
     expect(download).not.toContain("apps.apple.com");
