@@ -3,9 +3,10 @@ import * as NodePath from "node:path";
 import { assert, describe, it } from "@effect/vitest";
 
 import {
-  restoreEarlyLinuxDeviceScaleFactor,
+  resolveEarlyLinuxElectronOptions,
   resolveEarlyLinuxPasswordStorePreference,
   resolveLinuxDisableFeaturesSwitch,
+  restoreEarlyLinuxDeviceScaleFactor,
 } from "./DesktopEarlyElectronStartup.ts";
 
 describe("DesktopEarlyElectronStartup", () => {

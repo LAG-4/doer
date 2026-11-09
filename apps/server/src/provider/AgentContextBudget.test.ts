@@ -5,14 +5,19 @@ import { ProviderInstanceId } from "@t3tools/contracts";
 import { McpProviderSessions } from "@t3tools/provider-core/server/McpProviderSessions";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { McpServer } from "effect/ai";
+import { McpSchema, McpServer } from "effect/ai";
 
 import { AssetSigner } from "../assets/AssetSigner.ts";
 import { ServerSecretStore } from "../auth/ServerSecretStore.ts";
+import { MicrosoftConnection } from "../connectedApps/MicrosoftConnection.ts";
+import { ComputerService } from "../computer/ComputerService.ts";
 import { ServerConfig } from "../config.ts";
 import { DeviceService } from "../device/DeviceService.ts";
 import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
+import { ExperimentalConnections } from "../integrations/ExperimentalConnections.ts";
+import { GmailConnection } from "../integrations/GmailConnection.ts";
+import { DoerTaskContext } from "../memory/DoerTaskContext.ts";
 import * as McpHttpServer from "../mcp/McpHttpServer.ts";
 import { PreviewAutomationBroker } from "../mcp/PreviewAutomationBroker.ts";
 import {
@@ -35,12 +40,14 @@ import { ProjectCloneTracker } from "../project/ProjectCloneTracker.ts";
 import { ProjectService } from "../project/ProjectService.ts";
 import { ProjectSetupScriptRunner } from "../project/ProjectSetupScriptRunner.ts";
 import { PullRequestReviewGuideService } from "../pullRequest/PullRequestReviewGuideService.ts";
+import { DoerMemoryStore } from "../persistence/Services/DoerMemoryStore.ts";
 import { ScheduledTaskService } from "../scheduledTasks/ScheduledTaskService.ts";
 import { SecretRequests } from "../secrets/SecretRequests.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { SourceControlRepositoryService } from "../sourceControl/SourceControlRepositoryService.ts";
 import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
 import { VcsStatusBroadcaster } from "../vcs/VcsStatusBroadcaster.ts";
+import { WorkspaceFileSystem } from "../workspace/WorkspaceFileSystem.ts";
 import { buildCodexAdditionalContext } from "./CodexDeveloperInstructions.ts";
 import { DocumentText } from "./DocumentText.ts";
 import { ProviderRegistry } from "./ProviderRegistry.ts";
@@ -48,13 +55,69 @@ import budget from "./agentContextBudget.json" with { type: "json" };
 
 // Registration only stores tool definitions, so the handlers' services are never called.
 const toolHandlerServices = Layer.mergeAll(
+  Layer.succeed(
+    McpSchema.McpServerClient,
+    McpSchema.McpServerClient.of({
+      clientId: 1,
+      clientCapabilities: {},
+      clientInfo: { name: "agent-context-budget-test", version: "1.0.0" },
+      protocolVersion: "2025-06-18",
+      initializePayload: {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "agent-context-budget-test", version: "1.0.0" },
+      },
+      getClient: Effect.die("unused"),
+    }),
+  ),
   Layer.mock(AssetSigner)({}),
+  Layer.mock(ComputerService)({}),
   Layer.mock(DeviceService)({}),
   Layer.mock(DocumentText)({}),
+  Layer.mock(DoerMemoryStore)({}),
+  Layer.mock(DoerTaskContext)({}),
+  Layer.mock(ExperimentalConnections)({}),
   Layer.mock(GitVcsDriver)({}),
   Layer.mock(GitWorkflowService)({}),
+  Layer.mock(GmailConnection)({}),
   Layer.mock(ManagedProjectFolders)({ namedProjectsRoot: "" }),
   Layer.mock(McpProviderSessions)({}),
+  // Layer.mock requires the class's plain-Promise methods in full
+  // (only Effect members are optional); unused paths stay inert.
+  Layer.mock(MicrosoftConnection)({
+    status: () =>
+      Promise.resolve({
+        configured: true,
+        connected: true,
+        account: "test@example.com",
+        sharePoint: false,
+      }),
+    start: () =>
+      Promise.resolve({
+        userCode: "code",
+        verificationUrl: "https://microsoft.com",
+        expiresAt: 1,
+        intervalSeconds: 5,
+      }),
+    finish: () =>
+      Promise.resolve({
+        status: {
+          configured: true,
+          connected: true,
+          account: "test@example.com",
+          sharePoint: false,
+        },
+      }),
+    disconnect: () =>
+      Promise.resolve({
+        configured: true,
+        connected: false,
+        account: null,
+        sharePoint: false,
+      }),
+    downloadFile: () => Promise.resolve(new Uint8Array()),
+    graph: () => Promise.resolve({ value: [] }),
+  }),
   Layer.mock(OrchestratorV2)({}),
   Layer.mock(PeerForwarding)({}),
   Layer.mock(PeerLinkRequests)({}),
@@ -80,6 +143,7 @@ const toolHandlerServices = Layer.mergeAll(
   Layer.mock(ThreadManagementService)({}),
   Layer.mock(ThreadSearch)({}),
   Layer.mock(VcsStatusBroadcaster)({}),
+  Layer.mock(WorkspaceFileSystem)({}),
 ).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 const utf8Bytes = (text: string) => Buffer.byteLength(text, "utf8");

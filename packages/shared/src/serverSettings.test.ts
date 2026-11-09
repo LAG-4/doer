@@ -1042,7 +1042,20 @@ describe("resolveSpeechPostProcessingModelSelection", () => {
     ]);
     const base = { ...DEFAULT_SERVER_SETTINGS, textGenerationModelSelection: textGeneration };
     expect(resolveSpeechPostProcessingModelSelection(base)).toBe(textGeneration);
-    const pinned = applyServerSettingsPatch(base, { speechPostProcessingModelSelection: cleanup });
+    // Doer ships with only opencode enabled; enable the pinned provider so the
+    // "usable cleanup model is set" path below exercises selection, not fallback.
+    const enabled = applyServerSettingsPatch(base, {
+      providerInstances: {
+        [ProviderInstanceId.make("claudeAgent")]: {
+          driver: ProviderDriverKind.make("claudeAgent"),
+          enabled: true,
+          config: {},
+        },
+      },
+    });
+    const pinned = applyServerSettingsPatch(enabled, {
+      speechPostProcessingModelSelection: cleanup,
+    });
     expect(resolveSpeechPostProcessingModelSelection(pinned)).toEqual(cleanup);
     expect(
       resolveSpeechPostProcessingModelSelection({

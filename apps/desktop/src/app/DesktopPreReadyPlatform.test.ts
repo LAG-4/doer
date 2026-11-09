@@ -159,8 +159,8 @@ describe("DesktopPreReadyPlatform", () => {
         );
         const identity = yield* Effect.promise(() => portalIdentity);
         assert.equal(identity.desktopName, "click.lagaryan.Doer.desktop");
-        assert.include(identity.desktopEntry ?? "", 'Exec="/Applications/current.AppImage" %U');
-        assert.include(identity.desktopEntry ?? "", "Name=Doer (Alpha)");
+        assert.include(identity.desktopEntry ?? "", "Exec=/Applications/current.AppImage %U");
+        assert.include(identity.desktopEntry ?? "", "Name=Doer (Beta)");
         assert.include(identity.desktopEntry ?? "", "MimeType=x-scheme-handler/doer;");
         assert.include(
           identity.desktopEntry ?? "",

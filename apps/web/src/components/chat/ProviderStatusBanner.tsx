@@ -130,7 +130,6 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
     setIsRefreshing(false);
   };
 
->>>>>>> upstream/main
   if (!status || getProviderStatusBannerKey(status) === null) {
     return null;
   }

@@ -349,7 +349,6 @@ function getAutoUpdateDisabledReason(args: {
   if (args.policy.mode === "off") {
     return args.policy.message ?? "Updates are turned off on this machine.";
   }
-  }
   if (!args.hasUpdateFeedConfig) {
     return "Automatic updates are not available because no update feed is configured.";
   }
@@ -1140,6 +1139,18 @@ export const make = Effect.gen(function* () {
         });
       }
 
+      const settings = yield* desktopSettings.get;
+      const disabledReason = yield* resolveDisabledReason;
+      yield* setState(
+        yield* baseUpdateState(
+          settings.updateChannel,
+          Option.orElse(disabledReason, () => channelBlockedReason(settings.updateChannel)),
+        ),
+      );
+      if (Option.isSome(disabledReason)) {
+        return;
+      }
+
       if (mockUpdates) {
         yield* electronUpdater.setFeedURL({
           provider: "generic",
@@ -1151,18 +1162,6 @@ export const make = Effect.gen(function* () {
           provider: "generic",
           url: policy.feedUrl,
         } as ElectronUpdater.ElectronUpdaterFeedUrl);
-      }
-
-      const settings = yield* desktopSettings.get;
-      const disabledReason = yield* resolveDisabledReason;
-      yield* setState(
-        yield* baseUpdateState(
-          settings.updateChannel,
-          Option.orElse(disabledReason, () => channelBlockedReason(settings.updateChannel)),
-        ),
-      );
-      if (Option.isSome(disabledReason)) {
-        return;
       }
       yield* Ref.set(updaterConfiguredRef, true);
 

@@ -90,7 +90,7 @@ function unexpectedPasswordPromptError(error: never): never {
   throw new Error(`Unhandled desktop SSH password prompt error: ${String(error)}`);
 }
 
-function toSshPasswordPromptError(
+export function toSshPasswordPromptError(
   cause: DesktopSshPasswordPrompts.DesktopSshPasswordPromptRequestError,
 ): SshPasswordPromptError {
   let message: string;

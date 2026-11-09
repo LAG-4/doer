@@ -98,7 +98,7 @@ function unavailable(error: unknown): boolean {
 }
 
 /** One connection per operation: portal registration and request ownership stay together. */
-class LinuxCaptureConnection {
+export class LinuxCaptureConnection {
   private readonly bus: MessageBus;
   private readonly disconnected: Promise<never>;
   private uniqueName = "";

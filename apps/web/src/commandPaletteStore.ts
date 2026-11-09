@@ -12,6 +12,7 @@ const INITIAL_STATE: CommandPaletteUiState = {
   open: false,
   mode: "command",
   openIntent: null,
+  openedForFlow: false,
   session: 0,
 };
 

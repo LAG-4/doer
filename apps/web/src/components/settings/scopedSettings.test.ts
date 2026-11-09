@@ -731,6 +731,7 @@ it("routes legacy model preference keys exclusively to the selected environment"
 describe("model selection patches at project scope", () => {
   const codex = ProviderInstanceId.make("codex");
   const claude = ProviderInstanceId.make("claudeAgent");
+  const opencode = ProviderInstanceId.make("opencode");
   const saved = {
     instanceId: codex,
     model: "gpt-5.6",
@@ -766,13 +767,15 @@ describe("model selection patches at project scope", () => {
   });
 
   it("completes partial text-generation selections without retaining old options", () => {
+    // Doer enables only opencode by default, so the saved codex selection
+    // resolves to the opencode default before a partial patch completes it.
     const modelPlan = planScopedSettingsPatch(checkout, [customized], {
       textGenerationModelSelection: { model: "gpt-5.6-mini" },
     });
     expect(
       modelPlan.serverWrites[0]?.patch.projectSettingsOverrides?.[projectId]
         ?.textGenerationModelSelection,
-    ).toEqual({ instanceId: codex, model: "gpt-5.6-mini" });
+    ).toEqual({ instanceId: opencode, model: "gpt-5.6-mini" });
 
     const options = [{ id: "reasoningEffort", value: "low" }];
     const optionsPlan = planScopedSettingsPatch(checkout, [customized], {
@@ -781,6 +784,6 @@ describe("model selection patches at project scope", () => {
     expect(
       optionsPlan.serverWrites[0]?.patch.projectSettingsOverrides?.[projectId]
         ?.textGenerationModelSelection,
-    ).toEqual({ ...saved, options });
+    ).toEqual({ instanceId: opencode, model: "opencode/big-pickle", options });
   });
 });

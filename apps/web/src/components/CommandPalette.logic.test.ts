@@ -304,7 +304,7 @@ describe("buildThreadActionItems", () => {
       runThread,
     });
     expect(new Set(items.map((item) => item.value)).size).toBe(2);
-    const remoteItem = items.find((item) => item.description === "Remote project · Current thread");
+    const remoteItem = items.find((item) => item.description === "Remote project · Current Task");
     await remoteItem?.run();
     expect(runThread).toHaveBeenCalledWith(remote);
   });
@@ -419,9 +419,9 @@ describe("buildThreadActionItems", () => {
     const before = filter([]);
     // The server matched both; the title match stays where it was.
     const after = filter([items[0]!, items[1]!].toReversed());
-    expect(before).toEqual([["Threads", ["thread:environment-local:title"]]]);
+    expect(before).toEqual([["Tasks", ["thread:environment-local:title"]]]);
     expect(after).toEqual([
-      ["Threads", ["thread:environment-local:title"]],
+      ["Tasks", ["thread:environment-local:title"]],
       ["In messages", ["thread:environment-local:message"]],
     ]);
   });
@@ -464,7 +464,7 @@ describe("buildThreadActionItems", () => {
       })[0]?.label;
 
     for (const query of ["comp", "compa", "compac", "compact", "compacti", "compaction"]) {
-      expect(firstGroup(query), query).toBe("Threads");
+      expect(firstGroup(query), query).toBe("Tasks");
     }
   });
 
@@ -494,7 +494,7 @@ describe("buildThreadActionItems", () => {
         threadSearchItems,
       }).map((group) => group.label);
 
-    expect(labels("upgrade")).toEqual(["Threads"]);
+    expect(labels("upgrade")).toEqual(["Tasks"]);
     expect(labels("upl")).toEqual(["Actions"]);
     // A short query still finds a command by a keyword it equals.
     const prGroups = filterCommandPaletteGroups({
@@ -524,8 +524,8 @@ describe("buildThreadActionItems", () => {
       "action:open-prs",
       "action:project",
     ]);
-    expect(labels("up")).toEqual(["Actions", "Threads"]);
-    expect(labels("pnpm up")).toEqual(["Threads"]);
+    expect(labels("up")).toEqual(["Actions", "Tasks"]);
+    expect(labels("pnpm up")).toEqual(["Tasks"]);
   });
 
   it("runs the command for its whole name over a thread with that title, and lists the open thread last", () => {
@@ -563,7 +563,7 @@ describe("buildThreadActionItems", () => {
       projectSearchItems: [],
       threadSearchItems,
     });
-    expect(groups.map((group) => group.label)).toEqual(["Actions", "Threads"]);
+    expect(groups.map((group) => group.label)).toEqual(["Actions", "Tasks"]);
     expect(groups[1]?.items.at(-1)?.title).toBe("New thread layout");
   });
 
@@ -592,8 +592,8 @@ describe("buildThreadActionItems", () => {
         projectSearchItems,
         threadSearchItems,
       }).map((group) => group.label);
-    expect(labels("lakebed")).toEqual(["Projects", "Threads"]);
-    expect(labels("lake")).toEqual(["Threads", "Projects"]);
+    expect(labels("lakebed")).toEqual(["Spaces", "Tasks"]);
+    expect(labels("lake")).toEqual(["Tasks", "Spaces"]);
   });
 
   it("keeps a command first over a thread in daily use that matches as well", () => {
@@ -633,7 +633,7 @@ describe("buildThreadActionItems", () => {
       threadSearchItems,
       now,
     });
-    expect(groups.map((group) => group.label)).toEqual(["Actions", "Threads"]);
+    expect(groups.map((group) => group.label)).toEqual(["Actions", "Tasks"]);
   });
 
   it("ranks an order-independent setting title match above a split context match", () => {
@@ -1005,6 +1005,7 @@ describe("returning from file and content search", () => {
     open: true,
     mode: "command",
     openIntent: null,
+    openedForFlow: false,
     session: 0,
   };
   const query = "https://github.com/acme/web/pull/7";
@@ -1041,7 +1042,13 @@ describe("returning from file and content search", () => {
   it("closing a child search discards its return context before reopening", () => {
     const child: CommandPaletteUiState = { ...root, mode: "files", parentSearch: context };
     const closed = reduceCommandPaletteUiState(child, { _tag: "SetOpen", open: false });
-    expect(closed).toEqual({ open: false, mode: "files", openIntent: null, session: 0 });
+    expect(closed).toEqual({
+      open: false,
+      mode: "files",
+      openIntent: null,
+      openedForFlow: false,
+      session: 0,
+    });
     expect(reduceCommandPaletteUiState(closed, { _tag: "BackToCommand" })).toEqual(closed);
     expect(reduceCommandPaletteUiState(closed, { _tag: "SetOpen", open: true })).toEqual(root);
   });

@@ -1,5 +1,7 @@
-import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
-import { MacPermissionHelper } from "./MacPermissionHelper.ts";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import * as Electron from "electron";
+import { MAC_PERMISSION_HELPER_CHANNEL } from "../ipc/channels.ts";
+import { macAppBundlePath, MacPermissionHelper } from "./MacPermissionHelper.ts";
 import type { SettingsWindow } from "./MacSettingsWindow.ts";
 
 const mocks = vi.hoisted(() => ({

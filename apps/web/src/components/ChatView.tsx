@@ -51,7 +51,7 @@ import { freshSessionBannerItem } from "./chat/ComposerFreshSession";
 import { armFreshSession, disarmFreshSession, useFreshSessionArmed } from "./chat/freshSessionArms";
 import { useUsageLimitsPanel } from "./chat/useUsageLimitsPanel";
 import { useWorktreeSetup } from "./chat/useWorktreeSetup";
-import type { ChatShortcutCommands } from "./chat/useChatShortcuts";
+import { useChatShortcuts, type ChatShortcutCommands } from "./chat/useChatShortcuts";
 import { ChatBannerLane } from "./chat/ChatBannerLane";
 import * as Schema from "effect/Schema";
 import {

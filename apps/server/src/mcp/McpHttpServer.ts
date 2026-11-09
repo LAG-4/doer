@@ -1297,6 +1297,6 @@ export const layerTools = Layer.mergeAll(
   toolkitRegistration(LocalDocumentsToolkit, LocalDocumentsToolkitHandlers.layer),
   toolkitRegistration(OutputsToolkit, OutputsToolkitHandlers.layer),
   toolkitRegistration(MemoriesToolkit, MemoriesToolkitHandlers.layer),
-).pipe(Layer.provideMerge(layerMcpTransport));
+);
 
 export const layer = layerMcpTransport(layerTools);

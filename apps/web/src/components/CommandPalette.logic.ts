@@ -88,8 +88,8 @@ export interface CommandPaletteUiState {
   readonly openedForFlow: boolean;
   /** Bumped by every intent so an open palette starts over from the new one. */
   readonly session: number;
-  readonly parentSearch?: CommandPaletteReturnContext;
-  readonly restoredSearch?: CommandPaletteReturnContext;
+  readonly parentSearch?: CommandPaletteReturnContext | undefined;
+  readonly restoredSearch?: CommandPaletteReturnContext | undefined;
 }
 
 export function isCommandPaletteVisible(

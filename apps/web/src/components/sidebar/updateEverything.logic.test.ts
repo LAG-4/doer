@@ -342,8 +342,17 @@ describe("resolveUpdateRunMachineStatus", () => {
     environmentId: EnvironmentId.make("alvin"),
     label: "alvin",
     updatesProviders: true,
-    updatesServer: true,
+    server: {
+      environmentId: EnvironmentId.make("alvin"),
+      serverLabel: "alvin",
+      selfUpdate: null,
+      targetVersion: "0.0.50",
+    },
+    handedOffVersion: null,
+    startedAt: 0,
     result: null,
+    failure: null,
+    providerFailure: null,
     ...overrides,
   });
   const running = (stage: "downloading" | "installing" | "resuming") =>
@@ -394,6 +403,7 @@ describe("update everything summary", () => {
       localVersion: "0.0.50",
       updatedServers: 2,
       updatedProviders: 1,
+      restarting: [],
       failures: [
         "This app: Could not download update: Network error.",
         "alvin: Download failed.",
@@ -419,7 +429,7 @@ describe("update everything summary", () => {
   });
 
   it("reports a failure when nothing updated, and nothing when nothing finished", () => {
-    const empty = { localVersion: null, updatedServers: 0, updatedProviders: 0 };
+    const empty = { localVersion: null, updatedServers: 0, updatedProviders: 0, restarting: [] };
     expect(
       getUpdateEverythingToastView({ ...empty, failures: ["alvin: offline"] }, "0.0.50"),
     ).toEqual({ type: "error", title: "Update failed", description: "alvin: offline" });
