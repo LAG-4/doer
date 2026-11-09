@@ -64,8 +64,3 @@ export const npmReleasePublishedAtom = Atom.family((version: string) =>
 const NO_VERSION_ATOM = Atom.make(AsyncResult.success(false)).pipe(
   Atom.withLabel("npm-release-published:none"),
 );
-
-export function useNpmReleasePublished(version: string | null): boolean {
-  const result = useAtomValue(version ? npmReleasePublishedAtom(version) : NO_VERSION_ATOM);
-  return AsyncResult.getOrElse(result, () => false);
-}

@@ -838,44 +838,6 @@ const reportServiceOnboarding = Effect.fn("cli.connect.report_service_onboarding
   );
 });
 
-export const connectCommand = Command.make("connect", {
-  ...projectLocationFlags,
-  headless: headlessFlag,
-}).pipe(
-  Command.withDescription("Set up T3 Connect for this machine."),
-  Command.withHandler((flags) =>
-    runCloudCommand(
-      flags,
-      Effect.gen(function* () {
-        yield* Console.log("T3 Connect\n");
-        const linked = yield* linkEnvironmentForConnect(flags);
-        if (!linked) {
-          return;
-        }
-        yield* Console.log(`✓ Authorized${connectedAs(linked.identity)}`);
-
-        // Authorization is stored. If service setup fails, preserve it and
-        // show how to run the server manually.
-        const outcome = yield* CliService.recoverServiceOnboardingOffer(
-          CliService.offerServiceDuringOnboarding,
-        );
-        yield* reportServiceOnboarding(outcome);
-        if (outcome !== "skipped") {
-          yield* waitForReachability();
-        }
-      }),
-    ),
-  ),
-  Command.withSubcommands([
-    connectLoginCommand,
-    connectLinkCommand,
-    connectPublishCommand,
-    connectStatusCommand,
-    connectUnlinkCommand,
-    connectLogoutCommand,
-  ]),
-);
-
 // `doer connect` itself is also wired as `doer up --connect`; keep this subcommand list in sync.
 export const connectSubcommands = [
   connectLoginCommand,
