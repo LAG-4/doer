@@ -622,8 +622,19 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
               Effect.succeed(instances.find((instance) => instance.instanceId === id)),
           }),
           ServerSettings.layerTest({
+            // Doer disables codex/claudeAgent by default (only opencode enabled);
+            // enable the fallback driver exercised here independently of install defaults.
             providerInstances: {
-              [fallback]: { driver: ProviderDriverKind.make("claudeAgent"), config: {} },
+              [ProviderInstanceId.make("codex")]: {
+                driver: ProviderDriverKind.make("codex"),
+                enabled: true,
+                config: {},
+              },
+              [fallback]: {
+                driver: ProviderDriverKind.make("claudeAgent"),
+                enabled: true,
+                config: {},
+              },
             },
           }),
           Layer.mock(TextGenerators.TextGenerators)({ runner: () => Effect.undefined }),
@@ -706,7 +717,17 @@ it.effect(
                 getInstance: (id) =>
                   Effect.succeed(instances.find((candidate) => candidate.instanceId === id)),
               }),
-              ServerSettings.layerTest({}),
+              // Doer disables claudeAgent by default (only opencode enabled); enable it
+              // for the review-guide fallback exercised here.
+              ServerSettings.layerTest({
+                providerInstances: {
+                  [ProviderInstanceId.make("claudeAgent")]: {
+                    driver: ProviderDriverKind.make("claudeAgent"),
+                    enabled: true,
+                    config: {},
+                  },
+                },
+              }),
               Layer.mock(TextGenerators.TextGenerators)({
                 runner: (id) =>
                   Effect.succeed(

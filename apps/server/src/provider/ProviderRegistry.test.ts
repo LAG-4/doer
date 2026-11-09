@@ -518,7 +518,7 @@ it.layer(
             OBSOLETE_CODEX_APP_SERVER,
           ].join("\n"),
         );
-        const settings = decodeCodexSettings({ binaryPath, homePath: codexHome });
+        const settings = decodeCodexSettings({ binaryPath, homePath: codexHome, enabled: true });
 
         const status = yield* checkCodexProviderStatus(settings, undefined, {
           ...process.env,
@@ -548,7 +548,7 @@ it.layer(
           ].join("\n"),
         );
 
-        const status = yield* checkCodexProviderStatus(decodeCodexSettings({ binaryPath }));
+        const status = yield* checkCodexProviderStatus(decodeCodexSettings({ binaryPath, enabled: true }));
 
         assert.strictEqual(status.version, "0.159.0-alpha.1");
         const classified = withBundledCompatibility({
@@ -570,7 +570,7 @@ it.layer(
           ].join("\n"),
         );
 
-        const status = yield* checkCodexProviderStatus(decodeCodexSettings({ binaryPath }));
+        const status = yield* checkCodexProviderStatus(decodeCodexSettings({ binaryPath, enabled: true }));
 
         assert.strictEqual(status.status, "error");
         assert.strictEqual(status.installed, true);
@@ -3046,9 +3046,7 @@ it.layer(
 
     it.effect("reports a disabled Codex provider as disabled", () =>
       Effect.gen(function* () {
-        const status = yield* checkCodexProviderStatus(disabledCodexSettings).pipe(
-          Effect.provide(layerFailingSpawner("spawn codex ENOENT")),
-        );
+        const status = yield* checkCodexProviderStatus(disabledCodexSettings);
         assert.strictEqual(status.enabled, false);
         assert.strictEqual(status.status, "disabled");
         assert.strictEqual(status.installed, false);

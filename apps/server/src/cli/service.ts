@@ -147,7 +147,7 @@ function formatProtection(
   ];
 }
 
-function formatServiceStatus(
+export function formatServiceStatus(
   status: BootService.BootServiceStatus,
   cliVersion: string,
   protection?: ServiceProtection.ServiceProtectionState,

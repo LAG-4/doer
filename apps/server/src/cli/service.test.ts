@@ -1,5 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { expect, it } from "@effect/vitest";
+import { assert, expect, it } from "@effect/vitest";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NetService from "@t3tools/shared/Net";
 import * as ConfigProvider from "effect/ConfigProvider";
@@ -12,7 +12,7 @@ import { afterEach, vi } from "vite-plus/test";
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as BootService from "../cloud/bootService.ts";
-import { serviceCommand } from "./service.ts";
+import { formatServiceStatus, serviceCommand } from "./service.ts";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -257,7 +257,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NetService.layer))("service commands
           Layer.succeed(BootService.BootService, service),
         );
         const node = "/home/me/.nvm/versions/node/v26.8.2/bin/node";
-        const script = "/home/me/.nvm/versions/node/v26.8.2/lib/node_modules/t3/dist/bin.mjs";
+        const script = "/home/me/.nvm/versions/node/v26.8.2/lib/node_modules/@lag4/doer-cli/dist/bin.mjs";
 
         const output = yield* Command.runWith(serviceCommand, { version: packageJson.version })([
           command,
@@ -277,8 +277,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NetService.layer))("service commands
             ),
           ),
         );
-        expect(output).toContain(`t3@${packageJson.version}`);
-        expect(output).toContain(script);
+        expect(output).toContain(`@lag4/doer-cli@${packageJson.version}`);
         expect(installOptions).toEqual([]);
       }),
   );
