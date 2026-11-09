@@ -55,18 +55,9 @@ function isSessionStopped(status: OrchestrationSessionStatus | null | undefined)
 
 /**
  * Classifies the latest turn of an onboarding task. Mirrors the sidebar's
- * failure rule (turn error or session error is terminal) and additionally
- * requires real visible assistant text before reporting success.
- *
- * Projection order: content streams in while the session runs, then the turn
- * checkpoint marks the turn completed and the session settles to ready in a
- * separate event — so `completed` while the session still shows
- * running/starting reads as `waiting` (detail still syncing). `completed`
- * with no useful text once the session is ready/idle/stopped/interrupted, or
- * with no session left to sync, reads as `failed`, so the follow-up can offer
- * the existing retry path instead of waiting forever. `interrupted` (turn or
- * session) reads as `stopped`. Only the latest turn is classified, so a retry
- * in the same task naturally replaces a previous stopped/failed outcome.
+ * failure rule and additionally requires real visible assistant text before
+ * reporting success. Only the latest turn is classified, so a retry in the
+ * same task naturally replaces a previous stopped or failed outcome.
  */
 export function getFirstTaskTurnOutcome(
   thread: FirstTaskTurnSnapshot | null,

@@ -6,12 +6,8 @@ import type {
 import { sortScopedProjectsForSidebar } from "./Sidebar.logic";
 
 /**
- * Shared landing rule: the index route and the post-tour handoff open a
- * draft in the same project, so finishing the tour never flashes an
- * intermediate screen. No-folder chats belong in the auto-provisioned
- * inbox while the user has no chats outside it; otherwise the most
- * recently active project wins. Falls back to null (caller shows its own
- * hero) when shells are not bootstrapped yet.
+ * Landing rule: the index route and the post-tour handoff open a draft
+ * in the same project, so the tour never flashes an intermediate screen.
  */
 export function resolveLandingProject(input: {
   readonly bootstrapped: boolean;

@@ -9,8 +9,7 @@ import {
   useClientSettings,
   useClientSettingsHydrationStatus,
 } from "../../hooks/useSettings";
-import { isLocalEnvironmentDisabled } from "../../localEnvironment";
-import { useCompleteOnboarding } from "../../onboarding/firstRun";
+import { completeOnboarding } from "../../onboarding/firstRun";
 import {
   isFirstRunWorkspaceProvenanceAuthoritative,
   isFreshFirstRunWorkspace,
@@ -31,19 +30,7 @@ import { environmentShell } from "../../state/shell";
 import { environmentThreadShells } from "../../state/threads";
 import { Button } from "../ui/button";
 
-/**
- * Holds back authenticated and hosted app trees until the first-run decision
- * is known, so a fresh install never flashes the main screen before the wizard.
- * Nothing renders while pending — no shell, no EventRouter (whose welcome
- * payload would otherwise navigate into a thread), no dialogs.
- *
- * Decision order: a set `onboardingCompletedAt` resolves to the app as soon as
- * settings hydrate (the common case, no server round-trip). A `null` flag also
- * covers installs that predate the field, so it alone is not enough — the gate
- * waits for environment shells to bootstrap and inspects the workspace.
- * Hosted mode instead checks its saved environment catalog. A timeout shows
- * recovery for an unreachable primary server without mounting the app tree.
- */
+/** Pending blocks all rendering, including EventRouter welcome navigation. */
 
 const FIRST_RUN_DECISION_TIMEOUT_MS = 4_000;
 
@@ -84,18 +71,15 @@ export function FirstRunGate({
   const hydrationStatus = useClientSettingsHydrationStatus();
   const simpleMode = useClientSettings((s) => s.simpleModeEnabled);
   const hydrated = hydrationStatus === "ready";
-  const completeOnboarding = useCompleteOnboarding();
   const onboardingCompletedAt = useClientSettings((settings) => settings.onboardingCompletedAt);
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
-  const { environments, isReady: environmentCatalogReady } = useEnvironments();
+  const { isReady: environmentCatalogReady } = useEnvironments();
   const projects = useProjects();
   const threads = useThreadShells();
   const serverConfig = useAtomValue(primaryServerConfigAtom);
   const serverWelcome = useAtomValue(primaryServerWelcomeAtom);
   const primaryShellLive = useAtomValue(primaryShellLiveAtom);
   const workspaceEvidenceLive = useAtomValue(workspaceEvidenceLiveAtom);
-  // Within a session settings stay hydrated, so remounts (e.g. returning from
-  // the wizard) resolve synchronously instead of blanking a frame.
   const [gateState, setGateState] = useState<FirstRunGateState>(() => ({
     decision:
       (!enabled && !hostedStatic) || (hydrated && onboardingCompletedAt !== null)
@@ -106,13 +90,9 @@ export function FirstRunGate({
   const { decision, stalled } = gateState;
   const settingsReadFailed = hydrationStatus === "failed" || hydrationStatus === "retrying";
   // A workspace still counts as fresh when its only content is the server's
-  // own cwd auto-bootstrap: web mode creates a project + thread from cwd at
-  // startup (`autoBootstrapProjectFromCwd` defaults on there), so "no
-  // projects at all" would mean `npx @lag4/doer-cli` users never see the wizard. Any
-  // other project, more than one thread, or state in a non-primary
-  // environment is real user state — the aggregate hooks span every
-  // environment, and a saved remote's project must never read as "the
-  // bootstrap project" just because its root string matches the primary cwd.
+  // own cwd auto-bootstrap or the auto-provisioned inbox ("My Stuff"):
+  // `npx @lag4/doer-cli` users would otherwise never see the wizard, and
+  // inbox-only threads must not trip the multi-thread shortcut to the app.
   const serverCwd = serverConfig?.cwd ?? null;
   const primaryEnvironmentId = serverConfig?.environment.environmentId ?? null;
   // The auto-provisioned inbox ("My Stuff") never counts as user state: an
@@ -146,13 +126,7 @@ export function FirstRunGate({
   });
 
   const { decision: nextDecision, persistCompletion } = hostedStatic
-    ? resolveHostedFirstRunDecision({
-        localEnvironmentDisabled: isLocalEnvironmentDisabled(),
-        hydrated,
-        completed: onboardingCompletedAt !== null,
-        catalogReady: environmentCatalogReady,
-        environmentCount: environments.length,
-      })
+    ? resolveHostedFirstRunDecision(hydrated)
     : resolveFirstRunDecision({
         enabled,
         hydrated,
@@ -171,28 +145,24 @@ export function FirstRunGate({
         threadCount: nonInboxThreadCount,
       });
 
+  if (hydrated) {
+    const transitioned = transitionFirstRunGateState(gateState, {
+      type: "evidence",
+      decision: nextDecision,
+    });
+    if (transitioned !== gateState) setGateState(transitioned);
+  }
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- persists onboarding completion to settings once the gate settles on skipping the wizard
   useEffect(() => {
     if ((simpleMode && decision === "wizard") || !hydrated) return;
 
     if (persistCompletion && onboardingCompletedAt === null) {
       void completeOnboarding().catch(() => undefined);
     }
+  }, [decision, hydrated, onboardingCompletedAt, persistCompletion, simpleMode]);
 
-    setGateState((state) =>
-      transitionFirstRunGateState(state, { type: "evidence", decision: nextDecision }),
-    );
-  }, [
-    completeOnboarding,
-    decision,
-    hydrated,
-    nextDecision,
-    onboardingCompletedAt,
-    persistCompletion,
-  ]);
-
-  // A stalled server read gets a recovery screen, but never mounts the app.
-  // The timer starts after settings hydrate so slow local hydration does not
-  // show a false connection failure.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- timer gives up on a pending first-run decision after the timeout
   useEffect(() => {
     if (!enabled || decision !== "pending" || !hydrated) return;
     const timer = window.setTimeout(
@@ -202,6 +172,10 @@ export function FirstRunGate({
     return () => window.clearTimeout(timer);
   }, [decision, enabled, hydrated]);
 
+  // Setup opens by itself only from the home route. A direct link, such as
+  // Settings, opens as asked so setup can never lock a user out of the app.
+  const wizardOwnsRoute = pathname === "/";
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- navigates from the home route to /welcome when the gate decides on the wizard
   useEffect(() => {
     if (simpleMode && decision === "wizard" && pathname !== "/welcome") {
       void navigate({ to: "/welcome", replace: true });
@@ -211,6 +185,9 @@ export function FirstRunGate({
   if (!simpleMode) return children;
   if (settingsReadFailed) {
     return <FirstRunRecovery reason="settings" retrying={hydrationStatus === "retrying"} />;
+  }
+  if (decision === "wizard" && !wizardOwnsRoute) {
+    return children;
   }
   if (decision !== "app") {
     return stalled ? <FirstRunRecovery reason="connection" /> : null;

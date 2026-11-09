@@ -5,15 +5,8 @@ export interface BuiltInToolApprovalPresentation {
   readonly description: string;
 }
 
-// OpenCode surfaces Doer bundled-tool permissions as command approvals whose
-// detail is the permission name with underscores replaced by spaces (for
-// example the `t3-code_create_document` permission arrives as
-// "t3-code create document"). These are product-native actions, not shell
-// commands, so they get plain words. Matching uses a switch on the exact
-// full detail only: a longer shell command that merely mentions one of these
-// names must keep the honest generic command wording. A switch (rather than
-// a record lookup) also avoids inherited properties such as
-// "constructor" or "__proto__" ever matching as a known action.
+// Doer bundled-tool approvals arrive as command approvals; match on the
+// exact full detail so longer shell commands keep generic wording.
 
 /** Plain presentation for known Doer built-in tool approvals, else null. */
 export function describeBuiltInToolApproval(approval: {

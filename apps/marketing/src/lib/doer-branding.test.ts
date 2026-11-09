@@ -3,11 +3,9 @@ import * as NodeURL from "node:url";
 import * as NodePath from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 
-// FORK (Doer): pins the fork's marketing identity. Upstream's marketing pages
-// constantly gain T3-branded content (hero copy, endorsement marquee, store
-// links, t3.codes canonical URLs) that must never ship on doer.lagaryan.click.
-// Every upstream catch-up merge touches apps/marketing, so this test fails
-// loudly when a conflict resolution accidentally keeps the upstream side.
+// FORK (Doer): pins the fork's marketing identity. Every upstream catch-up
+// merge touches apps/marketing, so this test fails loudly when a conflict
+// resolution accidentally keeps the upstream side.
 
 const marketingDir = NodePath.join(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),

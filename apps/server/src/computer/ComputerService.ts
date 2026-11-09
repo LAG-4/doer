@@ -1,17 +1,8 @@
 /**
  * Computer use: Codex-style desktop control for agents.
  *
- * The heavy lifting (screenshots, accessibility trees, input injection,
- * per-OS runtimes) lives in the pinned `open-computer-use` CLI installed by
- * `ComputerToolchain`. This service owns the Doer side: install lifecycle,
- * the user's per-app allow list (Codex's "Always allow"), status/doctor
- * reporting, and the `get_app_state` observe call whose screenshot travels
- * back as image content.
- *
- * Driving (click/type/press) happens through the `computer-use` launcher on
- * the provider PATH (see `ComputerShim`), which enforces the same allow list
- * for CLI-direct calls. Wrapping every upstream tool here would only lag
- * behind its releases — the same call the `device_*` tools made.
+ * Screenshots and input live in the pinned `open-computer-use` CLI; the Doer
+ * service owns install lifecycle, the per-app allow list, and status reporting.
  */
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
@@ -232,44 +223,43 @@ export const make = Effect.gen(function* () {
     },
   );
 
-  const writeAllowlist = (
+  const writeAllowlist = Effect.fn("ComputerService.writeAllowlist")(function* (
     apps: ReadonlyArray<string>,
-  ): Effect.Effect<ReadonlyArray<string>, ComputerUseError> =>
-    Effect.gen(function* () {
-      const next = dedupeApps(apps);
-      yield* fs.makeDirectory(path.dirname(allowlistPath), { recursive: true }).pipe(
-        Effect.mapError(
-          (cause) =>
-            new ComputerUseError({
-              operation: "recording approval",
-              reason: "unavailable",
-              cause,
-            }),
-        ),
-      );
-      const staging = `${allowlistPath}.tmp`;
-      yield* fs.writeFileString(staging, encodeAllowlistFile(next)).pipe(
-        Effect.mapError(
-          (cause) =>
-            new ComputerUseError({
-              operation: "recording approval",
-              reason: "unavailable",
-              cause,
-            }),
-        ),
-      );
-      yield* fs.rename(staging, allowlistPath).pipe(
-        Effect.mapError(
-          (cause) =>
-            new ComputerUseError({
-              operation: "recording approval",
-              reason: "unavailable",
-              cause,
-            }),
-        ),
-      );
-      return next;
-    });
+  ) {
+    const next = dedupeApps(apps);
+    yield* fs.makeDirectory(path.dirname(allowlistPath), { recursive: true }).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ComputerUseError({
+            operation: "recording approval",
+            reason: "unavailable",
+            cause,
+          }),
+      ),
+    );
+    const staging = `${allowlistPath}.tmp`;
+    yield* fs.writeFileString(staging, encodeAllowlistFile(next)).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ComputerUseError({
+            operation: "recording approval",
+            reason: "unavailable",
+            cause,
+          }),
+      ),
+    );
+    yield* fs.rename(staging, allowlistPath).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ComputerUseError({
+            operation: "recording approval",
+            reason: "unavailable",
+            cause,
+          }),
+      ),
+    );
+    return next;
+  });
 
   const withAllowlist = <A, E>(
     update: (current: ReadonlyArray<string>) => Effect.Effect<A, E>,
@@ -290,13 +280,15 @@ export const make = Effect.gen(function* () {
         ),
       );
 
-  const readCliVersion = (entryPath: string): Effect.Effect<string | undefined, never> =>
-    Effect.gen(function* () {
+  const readCliVersion = Effect.fn("ComputerService.readCliVersion")(
+    function* (entryPath: string) {
       const result = yield* runEntry(entryPath, ["version"], "checking version", DOCTOR_TIMEOUT);
       if (result.code !== 0) return undefined;
       const version = result.stdout.trim().split("\n", 1)[0]?.trim();
       return version === undefined || version.length === 0 ? undefined : version;
-    }).pipe(Effect.orElseSucceed(() => undefined));
+    },
+    (effect) => effect.pipe(Effect.orElseSucceed(() => undefined)),
+  );
 
   const status: ComputerService["Service"]["status"] = Effect.gen(function* () {
     const allowed = yield* readAllowlist;
@@ -352,8 +344,8 @@ export const make = Effect.gen(function* () {
     return paths.entryPath;
   });
 
-  const start: ComputerService["Service"]["start"] = (input) =>
-    Effect.gen(function* () {
+  const start: ComputerService["Service"]["start"] = Effect.fn("ComputerService.start")(
+    function* (input: { readonly app?: string | undefined }) {
       if (!supportedPlatform(platform)) {
         return yield* new ComputerUseError({
           operation: "starting computer use",
@@ -385,38 +377,47 @@ export const make = Effect.gen(function* () {
         appAllowed: app === undefined || app.length === 0 ? true : matchesAllowlist(allowed, app),
         platformNote: platformNoteFor(platform),
       } satisfies ComputerStart;
-    });
+    },
+  );
 
-  const allow: ComputerService["Service"]["allow"] = (app) =>
-    Effect.gen(function* () {
-      const name = normalizeApp(app);
-      if (name.length === 0) {
-        return yield* new ComputerUseError({
-          operation: "recording approval",
-          reason: "Pass the app name or bundle identifier the user approved.",
-        });
-      }
-      return yield* withAllowlist((current) => writeAllowlist([...current, name]));
-    });
+  const allow: ComputerService["Service"]["allow"] = Effect.fn("ComputerService.allow")(function* (
+    app: string,
+  ) {
+    const name = normalizeApp(app);
+    if (name.length === 0) {
+      return yield* new ComputerUseError({
+        operation: "recording approval",
+        reason: "Pass the app name or bundle identifier the user approved.",
+      });
+    }
+    return yield* withAllowlist((current) => writeAllowlist([...current, name]));
+  });
 
-  const forget: ComputerService["Service"]["forget"] = (input) =>
-    Effect.gen(function* () {
+  const forget: ComputerService["Service"]["forget"] = Effect.fn("ComputerService.forget")(
+    function* (input: { readonly app?: string | undefined }) {
       return yield* withAllowlist((current) => {
         if (input.app === undefined) return writeAllowlist([]);
         const name = normalizeApp(input.app).toLowerCase();
         return writeAllowlist(current.filter((entry) => entry.toLowerCase() !== name));
       });
-    });
+    },
+  );
 
   const allowedApps: ComputerService["Service"]["allowedApps"] = readAllowlist;
 
-  const isAllowed: ComputerService["Service"]["isAllowed"] = (app) =>
-    Effect.gen(function* () {
+  const isAllowed: ComputerService["Service"]["isAllowed"] = Effect.fn("ComputerService.isAllowed")(
+    function* (app: string) {
       return matchesAllowlist(yield* readAllowlist, app);
-    });
+    },
+  );
 
-  const observe: ComputerService["Service"]["observe"] = (input) =>
-    Effect.gen(function* () {
+  const observe: ComputerService["Service"]["observe"] = Effect.fn("ComputerService.observe")(
+    function* (input: {
+      readonly app: string;
+      readonly textLimit?: number | "max" | undefined;
+      readonly maxTreeNodes?: number | undefined;
+      readonly maxTreeDepth?: number | undefined;
+    }) {
       if (!supportedPlatform(platform)) {
         return yield* new ComputerUseError({
           operation: "observing app",
@@ -465,7 +466,8 @@ export const make = Effect.gen(function* () {
         });
       }
       return { app, tree: observation.tree, png: observation.png } satisfies ComputerObservation;
-    });
+    },
+  );
 
   return ComputerService.of({
     status,

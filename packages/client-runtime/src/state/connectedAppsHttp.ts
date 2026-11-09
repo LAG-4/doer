@@ -12,6 +12,7 @@ import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientRequest } from "effect/http";
 import { ManagedRelayDpopSigner } from "../relay/managedRelay.ts";
 import { RemoteEnvironmentAuthorization } from "../authorization/service.ts";
+import type { EnvironmentHttpAuthHeaders } from "./environmentHttpAuth.ts";
 import type { PreparedConnection } from "../connection/model.ts";
 import { executeAuthenticatedEnvironmentHttpRequest } from "./environmentHttpAuth.ts";
 import { layerRemoteHttpClient, type RemoteEnvironmentRequestError } from "../rpc/http.ts";
@@ -51,6 +52,20 @@ const boundConflictMessage = (message: string): string => {
   return trimmed.length > 0 ? trimmed.slice(0, 300) : "Gmail reported a conflict on this computer.";
 };
 
+const runMicrosoftRequest = Effect.fn("ConnectedAppsHttp.microsoftRequest")(function* (
+  input: typeof MicrosoftAction.Type,
+  headers: EnvironmentHttpAuthHeaders,
+  requestUrl: string,
+) {
+  const client = yield* HttpClient.HttpClient;
+  const request = yield* HttpClientRequest.bodyJson(
+    HttpClientRequest.post(requestUrl).pipe(HttpClientRequest.setHeaders({ ...headers })),
+    input,
+  );
+  const response = yield* client.execute(request);
+  return yield* response.json.pipe(Effect.flatMap(Schema.decodeUnknownEffect(MicrosoftResponse)));
+});
+
 type GmailEndpointResult<A> =
   | { readonly ok: true; readonly value: A }
   | { readonly ok: false; readonly message: string };
@@ -73,13 +88,9 @@ export const connectedAppsHttpLayer = Layer.effect(
     const signer = yield* Effect.serviceOption(ManagedRelayDpopSigner);
     const remoteAuthorization = yield* Effect.serviceOption(RemoteEnvironmentAuthorization);
     return ConnectedAppsHttp.of({
-      // The typed client decodes declared endpoint errors itself. A 409
-      // conflict becomes a success-channel value inside the request callback
-      // so the shared normalizer never wraps it; common errors (401
-      // invalid_credential, timeouts) pass through untouched, preserving DPoP
-      // refresh and transport semantics. GmailHttpError is only raised
-      // outside the normalizer, where the UI can match it.
-      gmailStatus: (prepared) =>
+      // Typed client decodes endpoint errors itself; 409 stays in-band so the
+      // normalizer preserves DPoP and transport semantics.
+      gmailStatus: Effect.fn("ConnectedAppsHttp.gmailStatus")((prepared) =>
         executeAuthenticatedEnvironmentHttpRequest({
           prepared,
           signer,
@@ -109,7 +120,8 @@ export const connectedAppsHttpLayer = Layer.effect(
           ),
           Effect.flatMap(gmailResultToEffect),
         ),
-      gmailBegin: (prepared) =>
+      ),
+      gmailBegin: Effect.fn("ConnectedAppsHttp.gmailBegin")((prepared) =>
         executeAuthenticatedEnvironmentHttpRequest({
           prepared,
           signer,
@@ -139,7 +151,8 @@ export const connectedAppsHttpLayer = Layer.effect(
           ),
           Effect.flatMap(gmailResultToEffect),
         ),
-      gmailDisconnect: (prepared) =>
+      ),
+      gmailDisconnect: Effect.fn("ConnectedAppsHttp.gmailDisconnect")((prepared) =>
         executeAuthenticatedEnvironmentHttpRequest({
           prepared,
           signer,
@@ -177,8 +190,9 @@ export const connectedAppsHttpLayer = Layer.effect(
               : Effect.fail(new GmailHttpError({ message: result.message })),
           ),
         ),
-      microsoft: (prepared, input) => {
-        return executeAuthenticatedEnvironmentHttpRequest({
+      ),
+      microsoft: Effect.fn("ConnectedAppsHttp.microsoft")((prepared, input) =>
+        executeAuthenticatedEnvironmentHttpRequest({
           prepared,
           signer,
           remoteAuthorization,
@@ -186,28 +200,15 @@ export const connectedAppsHttpLayer = Layer.effect(
           url: (urls) => new URL("/api/doer/microsoft", urls.descriptor()).toString(),
           timeoutMs: 35_000,
           group: "metadata",
-          request: ({ headers, requestUrl }) =>
-            Effect.gen(function* () {
-              const client = yield* HttpClient.HttpClient;
-              const request = yield* HttpClientRequest.bodyJson(
-                HttpClientRequest.post(requestUrl).pipe(
-                  HttpClientRequest.setHeaders({ ...headers }),
-                ),
-                input,
-              );
-              const response = yield* client.execute(request);
-              return yield* response.json.pipe(
-                Effect.flatMap(Schema.decodeUnknownEffect(MicrosoftResponse)),
-              );
-            }),
+          request: ({ headers, requestUrl }) => runMicrosoftRequest(input, headers, requestUrl),
         }).pipe(
           Effect.provide(
             layerRemoteHttpClient((input, init) =>
               globalThis.fetch(input, { ...init, credentials: "include" }),
             ),
           ),
-        );
-      },
+        ),
+      ),
     });
   }),
 );

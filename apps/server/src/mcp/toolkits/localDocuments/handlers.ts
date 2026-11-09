@@ -31,121 +31,122 @@ const make = Effect.gen(function* () {
   const snapshots = yield* ProjectionSnapshotQuery;
   const files = yield* WorkspaceFileSystem;
 
-  const workspace = (kind: Kind) =>
-    Effect.gen(function* () {
-      const scope = yield* McpInvocationContext.requireDoerCapability(kind).pipe(
-        Effect.mapError(() =>
-          failure("This local file tool is off. Enable it in Settings → Tools."),
-        ),
-      );
-      // Master switch first: stale per-tool toggles never bypass it.
-      if (!(yield* experimentalConnections.get))
-        return yield* failure(EXPERIMENTAL_CONNECTIONS_COPY.toolDenied);
-      const thread = yield* snapshots
-        .getThreadShellById(scope.threadId)
-        .pipe(Effect.orElseSucceed(() => Option.none()));
-      if (Option.isNone(thread)) return yield* failure("Task was not found.");
-      if (thread.value.archivedAt !== null || thread.value.deletedAt !== null) {
-        return yield* failure("Task is no longer active. Inspect it again from the current task.");
-      }
-      const settings = yield* settingsService.getSettings.pipe(
-        Effect.mapError(() => failure("Could not read tool settings.")),
-      );
-      const enabled = resolveProjectSettings(settings, thread.value.projectId).settings;
-      if (
-        !(kind === "local-spreadsheets"
-          ? enabled.enableLocalSpreadsheetAccess
-          : enabled.enableLocalPresentationAccess)
-      ) {
-        return yield* failure("This local file tool is off for this Space.");
-      }
-      const project = yield* snapshots
-        .getProjectShellById(thread.value.projectId)
-        .pipe(Effect.orElseSucceed(() => Option.none()));
-      if (Option.isNone(project)) return yield* failure("Space was not found.");
-      return project.value.workspaceRoot;
-    });
+  const workspace = Effect.fn("LocalDocuments.workspace")(function* (kind: Kind) {
+    const scope = yield* McpInvocationContext.requireDoerCapability(kind).pipe(
+      Effect.mapError(() => failure("This local file tool is off. Enable it in Settings → Tools.")),
+    );
+    // Master switch first: stale per-tool toggles never bypass it.
+    if (!(yield* experimentalConnections.get))
+      return yield* failure(EXPERIMENTAL_CONNECTIONS_COPY.toolDenied);
+    const thread = yield* snapshots
+      .getThreadShellById(scope.threadId)
+      .pipe(Effect.orElseSucceed(() => Option.none()));
+    if (Option.isNone(thread)) return yield* failure("Task was not found.");
+    if (thread.value.archivedAt !== null || thread.value.deletedAt !== null) {
+      return yield* failure("Task is no longer active. Inspect it again from the current task.");
+    }
+    const settings = yield* settingsService.getSettings.pipe(
+      Effect.mapError(() => failure("Could not read tool settings.")),
+    );
+    const enabled = resolveProjectSettings(settings, thread.value.projectId).settings;
+    if (
+      !(kind === "local-spreadsheets"
+        ? enabled.enableLocalSpreadsheetAccess
+        : enabled.enableLocalPresentationAccess)
+    ) {
+      return yield* failure("This local file tool is off for this Space.");
+    }
+    const project = yield* snapshots
+      .getProjectShellById(thread.value.projectId)
+      .pipe(Effect.orElseSucceed(() => Option.none()));
+    if (Option.isNone(project)) return yield* failure("Space was not found.");
+    return project.value.workspaceRoot;
+  });
 
-  const read = (kind: Kind, path: string) =>
-    Effect.gen(function* () {
-      const extension = kind === "local-spreadsheets" ? ".xlsx" : ".pptx";
-      if (
-        !path.toLowerCase().endsWith(extension) ||
-        path.length > 1024 ||
-        /^[\\/]/.test(path) ||
-        /^[a-z]:/i.test(path)
-      ) {
-        return yield* failure(`Choose a ${extension} file inside this Space.`);
-      }
-      const cwd = yield* workspace(kind);
-      const result = yield* files
-        .readFile({ cwd, relativePath: path, encoding: "base64" })
-        .pipe(Effect.mapError(() => failure("Could not read this file inside the Space.")));
-      if (result.truncated) return yield* failure("File is larger than the 1 MB local tool limit.");
-      const bytes = base64ToBytes(result.contents);
-      return { cwd, bytes, sha256: sha256(bytes) };
-    });
+  const read = Effect.fn("LocalDocuments.read")(function* (kind: Kind, path: string) {
+    const extension = kind === "local-spreadsheets" ? ".xlsx" : ".pptx";
+    if (
+      !path.toLowerCase().endsWith(extension) ||
+      path.length > 1024 ||
+      /^[\\/]/.test(path) ||
+      /^[a-z]:/i.test(path)
+    ) {
+      return yield* failure(`Choose a ${extension} file inside this Space.`);
+    }
+    const cwd = yield* workspace(kind);
+    const result = yield* files
+      .readFile({ cwd, relativePath: path, encoding: "base64" })
+      .pipe(Effect.mapError(() => failure("Could not read this file inside the Space.")));
+    if (result.truncated) return yield* failure("File is larger than the 1 MB local tool limit.");
+    const bytes = base64ToBytes(result.contents);
+    return { cwd, bytes, sha256: sha256(bytes) };
+  });
 
-  const update = (
+  const update = Effect.fn("LocalDocuments.update")(function* (
     kind: Kind,
     path: string,
     expectedSha256: string,
     edit: (bytes: Uint8Array) => Promise<Uint8Array>,
-  ) =>
-    Effect.gen(function* () {
-      const cwd = yield* workspace(kind);
-      return yield* withWorkspaceLease(
-        cwd,
-        Effect.gen(function* () {
-          const current = yield* read(kind, path);
-          if (current.sha256 !== expectedSha256)
-            return yield* failure("File changed since inspection. Inspect it again.");
-          const updated = yield* Effect.tryPromise({
-            try: () => edit(current.bytes),
-            catch: (cause) =>
-              failure(cause instanceof Error ? cause.message : "Could not edit this file."),
-          });
-          const saved = yield* Effect.tryPromise({
-            try: () =>
-              replaceLocalDocument({
-                cwd: current.cwd,
-                relativePath: path,
-                expectedSha256,
-                contents: updated,
-              }),
-            catch: () =>
-              failure(
-                "Could not save the document. It may have changed or be open in another app. Inspect it again; the original was preserved.",
-              ),
-          });
-          return { sha256: sha256(updated), backupPath: saved.backupPath };
-        }),
-      );
-    });
+  ) {
+    const cwd = yield* workspace(kind);
+    return yield* withWorkspaceLease(
+      cwd,
+      Effect.gen(function* () {
+        const current = yield* read(kind, path);
+        if (current.sha256 !== expectedSha256)
+          return yield* failure("File changed since inspection. Inspect it again.");
+        const updated = yield* Effect.tryPromise({
+          try: () => edit(current.bytes),
+          catch: (cause) =>
+            failure(cause instanceof Error ? cause.message : "Could not edit this file."),
+        });
+        const saved = yield* Effect.tryPromise({
+          try: () =>
+            replaceLocalDocument({
+              cwd: current.cwd,
+              relativePath: path,
+              expectedSha256,
+              contents: updated,
+            }),
+          catch: () =>
+            failure(
+              "Could not save the document. It may have changed or be open in another app. Inspect it again; the original was preserved.",
+            ),
+        });
+        return { sha256: sha256(updated), backupPath: saved.backupPath };
+      }),
+    );
+  });
 
   return LocalDocumentsToolkit.of({
-    inspect_spreadsheet: ({ path }) =>
-      Effect.gen(function* () {
-        const file = yield* read("local-spreadsheets", path);
-        const sheet = yield* Effect.tryPromise({
-          try: () => parseSpreadsheet(file.bytes),
-          catch: () => failure("Could not read this spreadsheet."),
-        });
-        return { sha256: file.sha256, rows: sheet.rows, sheetNames: sheet.sheetNames };
-      }),
+    inspect_spreadsheet: Effect.fn("LocalDocuments.inspectSpreadsheet")(function* ({
+      path,
+    }: {
+      path: string;
+    }) {
+      const file = yield* read("local-spreadsheets", path);
+      const sheet = yield* Effect.tryPromise({
+        try: () => parseSpreadsheet(file.bytes),
+        catch: () => failure("Could not read this spreadsheet."),
+      });
+      return { sha256: file.sha256, rows: sheet.rows, sheetNames: sheet.sheetNames };
+    }),
     replace_spreadsheet_cell: ({ path, expectedSha256, cell, value }) =>
       update("local-spreadsheets", path, expectedSha256, (bytes) =>
         replaceSpreadsheetCell(bytes, cell, value),
       ),
-    inspect_presentation: ({ path }) =>
-      Effect.gen(function* () {
-        const file = yield* read("local-presentations", path);
-        const slides = yield* Effect.tryPromise({
-          try: () => inspectPresentation(file.bytes),
-          catch: () => failure("Could not read this presentation."),
-        });
-        return { sha256: file.sha256, slides };
-      }),
+    inspect_presentation: Effect.fn("LocalDocuments.inspectPresentation")(function* ({
+      path,
+    }: {
+      path: string;
+    }) {
+      const file = yield* read("local-presentations", path);
+      const slides = yield* Effect.tryPromise({
+        try: () => inspectPresentation(file.bytes),
+        catch: () => failure("Could not read this presentation."),
+      });
+      return { sha256: file.sha256, slides };
+    }),
     replace_presentation_text: ({ path, expectedSha256, slide, oldText, newText }) =>
       update("local-presentations", path, expectedSha256, (bytes) =>
         replacePresentationText(bytes, slide, oldText, newText),

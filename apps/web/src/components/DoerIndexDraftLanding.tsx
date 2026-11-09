@@ -1,11 +1,8 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { useAtomValue } from "@effect/atom-react";
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { LinkIcon, PlusIcon } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { isLocalEnvironmentDisabled } from "../localEnvironment";
 import { isElectron } from "../env";
 import { resolveLandingProject } from "../components/landingProject.logic";
 import { NoProjectsHero } from "../components/NoProjectsHero";
@@ -20,10 +17,7 @@ import {
   useProjects,
   useThreadShells,
 } from "../state/entities";
-import { useEnvironments } from "../state/environments";
 import { primaryServerWelcomeAtom } from "../state/server";
-import { APP_DISPLAY_NAME } from "~/branding";
-import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 
 export function DoerIndexDraftLanding() {
   const projects = useProjects();
@@ -32,32 +26,37 @@ export function DoerIndexDraftLanding() {
   const handleNewThread = useNewThreadHandler();
   const serverWelcome = useAtomValue(primaryServerWelcomeAtom);
   const inboxProjectId = serverWelcome?.inboxProjectId;
-  const startingRef = useRef(false);
+  const startingRef = useRef<number | null>(null);
   const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
   const { prepareInboxProject, settleInboxProject, isInboxCapable } = useEnsureInboxProject();
   const preparedRef = useRef(false);
+  const attempt = startState.retryRequest;
 
-  const mostRecentProject = useMemo(() => {
-    return resolveLandingProject({ bootstrapped, inboxProjectId, projects, threads });
-  }, [bootstrapped, inboxProjectId, projects, threads]);
+  const mostRecentProject = resolveLandingProject({
+    bootstrapped,
+    inboxProjectId,
+    projects,
+    threads,
+  });
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts a draft thread in the most recent project and navigates to it while still on the landing view
   useEffect(() => {
-    if (mostRecentProject === null || startingRef.current) {
+    if (mostRecentProject === null || startingRef.current === attempt) {
       return;
     }
-    startingRef.current = true;
+    startingRef.current = attempt;
     void handleNewThread(scopeProjectRef(mostRecentProject.environmentId, mostRecentProject.id), {
       replace: true,
     }).catch(() => {
-      startingRef.current = false;
       setStartState((state) => ({ ...state, failed: true }));
     });
-  }, [handleNewThread, mostRecentProject, startState.retryRequest]);
+  }, [attempt, handleNewThread, mostRecentProject]);
 
   // Zero projects is a broken state, not a destination: open the inbox
   // draft instantly with a locally minted id while creation settles behind
   // it. The draft shows a setup state until the row lands; a lost creation
   // race just remaps to the winning project when it arrives.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- navigates to the inbox draft while mounted when no project exists yet
   useEffect(() => {
     if (!bootstrapped || projects.length > 0 || !isInboxCapable || preparedRef.current) {
       return;

@@ -1,11 +1,8 @@
 /**
  * Records where a new user stands in the first-task onboarding flow.
  *
- * The gate's `onboardingCompletedAt` (in client settings) stays the only
- * thing that routes to or away from onboarding. This record, kept in
- * localStorage next to it, distinguishes *skipping* onboarding from
- * *completing* the first task, and lets a user who leaves mid-task find
- * that task again. `packages/contracts` is untouched on purpose.
+ * Separate from the gate's `onboardingCompletedAt`: skipping onboarding
+ * versus completing the first task, resumable after leaving mid-task.
  */
 
 export type FirstTaskStatus = "pending" | "succeeded" | "skipped";

@@ -1,36 +1,36 @@
 # Product analytics
 
-The server owns PostHog delivery, opt-out, and identity for every connected client.
-[Identity selection](../../apps/server/src/telemetry/Identify.ts) hashes an available
-provider account ID, falling back to an installation-scoped ID. This identity can
-span several clients; it does not identify a browser session. Delivery targets the
-Doer PostHog Cloud project (`T3CODE_POSTHOG_HOST`, default
-`https://us.i.posthog.com`) with the project key from
-`T3CODE_POSTHOG_KEY`. Blank key or host values are treated as missing by
-Effect's config provider and fall back to these defaults; the supported way
-to silence a build is the kill switch below.
+The server owns analytics delivery, opt-out, and identity for every connected client.
+Clients do not load the PostHog browser SDK. Client-use events require an
+authenticated connection, so visiting the hosted app without connecting does not
+count as product use.
 
-`T3CODE_POSTHOG_PERSON_PROFILES` (default true) controls the
-`$process_person_profile` flag on server events. `T3CODE_TELEMETRY_ENABLED=false`
-is the single kill switch: it stops server recording and tells browsers not to
-start the SDK.
+## Installs and owners
 
-## Browser SDK
+`distinct_id` keeps the rule every build has used: the hashed Codex workspace,
+else the Claude machine id, else the install's anonymous id. It can change when
+someone logs in, and a Codex Team shares one, but keeping it means PostHog charts
+and history never break. Do not change it; add a field instead.
 
-Web and desktop clients load posthog-js (the self-contained `module.full`
-bundle, so no third-party CDN is involved) with session replay, autocapture,
-pageviews, and exception autocapture. The SDK reads its host and key at runtime
-from [GET /api/telemetry/config](../../apps/server/src/telemetry/TelemetryConfigRoute.ts),
-resolved against the connected environment, so ingest URLs are never baked into
-a build and desktop/remote/tunneled clients all work. Mobile does not load the
-browser SDK.
+Every event also carries `installId` when the server can save its state: the hash
+of a random id in the state directory, which never changes for the install. If
+that file cannot be written, events still go out under `distinct_id`, as before. Count installs
+with it. Who an install belongs to is a separate fact, sent as
+`install.owner_observed`. Owners are resolved at query time in our own store, so
+a rule can change and apply to all history.
 
-Server and browser events use different identities (hashed installation ID vs.
-browser-generated ID) and are not joined into one person. URL query strings and
-fragments are scrubbed from browser events in `sanitize_properties` because
-pairing tokens travel in the URL hash; form inputs are masked in recordings.
-Rendered on-screen content is not masked, which is an intentional trade-off for
-debugging real sessions and is disclosed in [user telemetry docs](../user/telemetry.md).
+[Owner sources](../../apps/server/src/telemetry/Identify.ts), strongest first:
+T3 Connect, then the OpenAI and Claude person ids, then the client device. The
+server reports what it can read itself: the linked Connect account and provider
+logins. A connecting client reports its signed-in Connect account and its device,
+which links every environment opened from one phone, browser, or desktop. Use the
+OpenAI `user_id` claim, not the Codex `account_id` (the ChatGPT workspace, which a
+whole Team shares) or the token `sub` (one per login method). Two Connect accounts are never the same person, whatever
+weaker ids they share.
+
+Every id is SHA-256 hashed with [one helper](../../packages/shared/src/telemetryId.ts)
+on both sides, so a Connect account hashes the same on the client and the server.
+The server accepts only hashes from clients.
 
 ## Attribution boundaries
 

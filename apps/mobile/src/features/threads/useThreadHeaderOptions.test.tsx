@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 import type { VcsStatusResult } from "@t3tools/contracts";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -17,7 +16,8 @@ vi.mock("./use-simple-mode-enabled", () => ({
   useSimpleModeEnabled: () => harness.simpleMode,
 }));
 
-vi.mock("@react-navigation/native", () => {
+vi.mock("@react-navigation/native", async () => {
+  const { createContext } = await import("react");
   const navigation = {
     canGoBack: () => true,
     dispatch: () => {},
@@ -34,12 +34,44 @@ vi.mock("@react-navigation/native", () => {
   return {
     StackActions: { replace: () => ({}) },
     useNavigation: () => navigation,
+    useRoute: () => ({}),
+    useFocusEffect: () => {},
+    useIsFocused: () => true,
+    usePreventRemove: () => {},
+    NavigationContext: createContext<unknown>(navigation),
+    NavigationRouteContext: createContext(null),
   };
 });
 vi.mock("../../native/useOpenPullRequest", () => ({ useOpenPullRequest: () => () => {} }));
+vi.mock("expo-crypto", () => ({
+  CryptoDigestAlgorithm: { SHA1: "SHA-1", SHA256: "SHA-256", SHA384: "SHA-384", SHA512: "SHA-512" },
+  getRandomBytes: (byteCount: number) =>
+    globalThis.crypto.getRandomValues(new Uint8Array(byteCount)),
+  getRandomBytesAsync: (byteCount: number) =>
+    Promise.resolve(globalThis.crypto.getRandomValues(new Uint8Array(byteCount))),
+  digest: async (algorithm: string, data: Uint8Array) =>
+    new Uint8Array(await globalThis.crypto.subtle.digest(algorithm, data as BufferSource)).buffer,
+}));
+vi.mock("expo-secure-store", () => ({
+  deleteItemAsync: vi.fn(),
+  getItemAsync: vi.fn(),
+  setItemAsync: vi.fn(),
+}));
+vi.mock("expo-constants", () => ({ default: {} }));
+vi.mock("expo", () => ({
+  requireNativeModule: () => null,
+  requireNativeView: () => () => null,
+  requireOptionalNativeModule: () => null,
+}));
 
 vi.mock("../../state/session", () => ({ useEnvironmentScope: () => true }));
-vi.mock("react-native", () => ({ Alert: { alert: () => {} }, Linking: {}, Platform: {} }));
+vi.mock("react-native", () => ({
+  ActivityIndicator: () => null,
+  Alert: { alert: () => {} },
+  Linking: {},
+  Platform: {},
+  View: () => null,
+}));
 vi.mock("../layout/AdaptiveWorkspaceLayout", () => ({
   useAdaptiveWorkspaceLayout: () => ({
     layout: { usesSplitView: false },

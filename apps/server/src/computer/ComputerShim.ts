@@ -1,22 +1,7 @@
 // @effect-diagnostics preferSchemaOverJson:off - JSON string literals embed paths safely into generated JavaScript.
 /**
- * A directory holding a `computer-use` launcher that runs the pinned
- * `open-computer-use` install with the server's Node. Prepended to provider
- * subprocess PATHs so the agent types `computer-use …` and gets the version
- * the injected instructions were written for, regardless of what is or is
- * not globally installed.
- *
- * Unlike a bare passthrough, the launcher enforces the user's per-app allow
- * list (Codex's per-app prompt / "Always allow") for CLI-direct calls too:
- * any `call`/`snapshot` naming an app the user did not approve is refused
- * with instructions to get approval first. Read-only discovery (`list-apps`,
- * `doctor`, `help`) always passes through.
- *
- * The launcher also scrubs the process-level pointer override
- * (`OPEN_COMPUTER_USE_ALLOW_GLOBAL_POINTER_FALLBACKS`) and the app-agent
- * proxy kill switch (`OPEN_COMPUTER_USE_DISABLE_APP_AGENT_PROXY`) so every
- * agent-driven action keeps the Codex default: the real pointer never moves,
- * and macOS automation keeps running under the helper app's identity.
+ * Launcher for the pinned `open-computer-use` install, prepended to provider
+ * PATHs so agents get the tested version. Enforces the per-app allowlist.
  */
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";

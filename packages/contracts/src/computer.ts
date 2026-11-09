@@ -3,10 +3,8 @@ import * as Schema from "effect/Schema";
 /**
  * Computer use: the agent sees the user's desktop and operates real GUI apps
  * (Codex-app parity), driven by the pinned `open-computer-use` CLI. The tool
- * surface deliberately mirrors `device_*`: lifecycle verbs here, driving via
- * the CLI on PATH, one image-returning verb for providers that need
- * tool-result images. Wrapping every upstream tool would only lag behind its
- * releases.
+ * surface mirrors `device_*` with lifecycle verbs; wrapping every upstream
+ * tool would only lag behind its releases.
  */
 
 // MCP tool shapes. Kept next to the service shapes so the tool surface and

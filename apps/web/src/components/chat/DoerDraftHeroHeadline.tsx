@@ -5,7 +5,7 @@ import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/envir
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { FolderPlusIcon } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
 import { useEnsureInboxProject } from "~/hooks/useEnsureInboxProject";
@@ -76,11 +76,11 @@ export function DoerDraftHeroHeadline({
   const getComposerDraft = useComposerDraftStore((store) => store.getComposerDraft);
   const applyStickyState = useComposerDraftStore((store) => store.applyStickyState);
   const setModelSelection = useComposerDraftStore((store) => store.setModelSelection);
-  const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
+  const openAddProject = () => openCommandPalette({ open: "add-project" });
   const { handleNewThread } = useHandleNewThread();
   const { prepareInboxProject, settleInboxProject, isInboxCapable, isEnsuring } =
     useEnsureInboxProject();
-  const startChatting = useCallback(async () => {
+  const startChatting = async () => {
     const prepared = prepareInboxProject();
     if (prepared === null) {
       openAddProject();
@@ -96,70 +96,42 @@ export function DoerDraftHeroHeadline({
     } else if (finalRef.projectId !== prepared.ref.projectId) {
       await handleNewThread(finalRef, { replace: true }).catch(() => undefined);
     }
-  }, [handleNewThread, openAddProject, prepareInboxProject, settleInboxProject]);
+  };
   const { scratchEnvironmentId, scratchWorkspaceRootFor, openScratchProject } = useScratchProject();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
 
-  const environmentLabelById = useMemo(
-    () =>
-      new Map(
-        environments.map((environment) => [environment.environmentId, environment.label] as const),
-      ),
-    [environments],
+  const environmentLabelById = new Map(
+    environments.map((environment) => [environment.environmentId, environment.label] as const),
   );
-  const projectGroups = useMemo(
-    () =>
-      sortLogicalProjectsForSidebar(
-        buildSidebarProjectSnapshots({
-          projects,
-          settings: projectGroupingSettings,
-          primaryEnvironmentId,
-          resolveEnvironmentLabel: (environmentId) =>
-            environmentLabelById.get(environmentId) ?? null,
-        }),
-        threads,
-        projectSortOrder,
-      ),
-    [
-      environmentLabelById,
-      primaryEnvironmentId,
-      projectGroupingSettings,
-      projectSortOrder,
+  const projectGroups = sortLogicalProjectsForSidebar(
+    buildSidebarProjectSnapshots({
       projects,
-      threads,
-    ],
+      settings: projectGroupingSettings,
+      primaryEnvironmentId,
+      resolveEnvironmentLabel: (environmentId) => environmentLabelById.get(environmentId) ?? null,
+    }),
+    threads,
+    projectSortOrder,
   );
   // Same-named projects on two machines are only told apart by where they
   // live, so rows on another machine carry its icon once the catalog spans
   // more than one environment; a single-machine catalog stays as it was.
-  const showProjectEnvironments = useMemo(
-    () => projectGroupsSpanEnvironments(projectGroups),
-    [projectGroups],
+  const showProjectEnvironments = projectGroupsSpanEnvironments(projectGroups);
+  const environmentMachineById = new Map(
+    environments.map(
+      (environment) =>
+        [
+          environment.environmentId,
+          resolveEnvironmentMachineKind(environment.serverConfig),
+        ] as const,
+    ),
   );
-  const environmentMachineById = useMemo(
-    () =>
-      new Map(
-        environments.map(
-          (environment) =>
-            [
-              environment.environmentId,
-              resolveEnvironmentMachineKind(environment.serverConfig),
-            ] as const,
-        ),
-      ),
-    [environments],
-  );
-  const projectPickerEntries = useMemo(
-    () =>
-      buildSidebarProjectPickerEntries({
-        groups: projectGroups,
-        preferredProjectRef: activeProjectRef,
-      }),
-    [activeProjectRef, projectGroups],
-  );
-  const projectEntryByKey = useMemo(
-    () => new Map(projectPickerEntries.map((entry) => [entry.group.projectKey, entry] as const)),
-    [projectPickerEntries],
+  const projectPickerEntries = buildSidebarProjectPickerEntries({
+    groups: projectGroups,
+    preferredProjectRef: activeProjectRef,
+  });
+  const projectEntryByKey = new Map(
+    projectPickerEntries.map((entry) => [entry.group.projectKey, entry] as const),
   );
   const activeProjectGroup =
     activeProjectRef === null
@@ -195,20 +167,17 @@ export function DoerDraftHeroHeadline({
   const isScratchDraft =
     activeProject !== null && isScratchProject(activeProject, scratchWorkspaceRoot);
 
-  const pickerItems = useMemo<readonly PickerItem[]>(
-    () => [
-      ...(scratchTargetEnvironmentId !== null
-        ? [{ value: NO_PROJECT_VALUE, label: "No Space" }]
-        : []),
-      ...menuEntries.map(({ group }) => ({ value: group.projectKey, label: group.displayName })),
-      { value: ADD_PROJECT_VALUE, label: "New Space" },
-    ],
-    [menuEntries, scratchTargetEnvironmentId],
-  );
+  const pickerItems: readonly PickerItem[] = [
+    ...(scratchTargetEnvironmentId !== null
+      ? [{ value: NO_PROJECT_VALUE, label: "No Space" }]
+      : []),
+    ...menuEntries.map(({ group }) => ({ value: group.projectKey, label: group.displayName })),
+    { value: ADD_PROJECT_VALUE, label: "New Space" },
+  ];
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState("");
   const pickerFilter = useComboboxFilter();
-  const filteredPickerItems = useMemo(() => {
+  const filteredPickerItems = (() => {
     const query = pickerQuery.trim();
     if (query.length === 0) return pickerItems;
     return pickerItems.filter(
@@ -216,7 +185,7 @@ export function DoerDraftHeroHeadline({
         item.value !== ADD_PROJECT_VALUE &&
         pickerFilter.contains(item, query, (candidate) => candidate.label),
     );
-  }, [pickerFilter, pickerItems, pickerQuery]);
+  })();
   const selectedPickerItem =
     pickerItems.find(
       (item) => item.value === (isScratchDraft ? NO_PROJECT_VALUE : activeProjectKey),
@@ -225,6 +194,7 @@ export function DoerDraftHeroHeadline({
   // The picker can change the draft's target while the no-project home is
   // still being opened; a stale continuation must not retarget it again.
   const latestTargetRef = useRef({ draftId, activeProjectKey, scratchTargetEnvironmentId });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the latest draft target for the async scratch-project continuation to compare against
   useEffect(() => {
     latestTargetRef.current = { draftId, activeProjectKey, scratchTargetEnvironmentId };
   }, [activeProjectKey, scratchTargetEnvironmentId, draftId]);

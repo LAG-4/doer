@@ -185,13 +185,7 @@ function typedRawValue(text: string): string | number | boolean | null {
   return input.value;
 }
 
-/**
- * Evaluate every formula in row-major dependency order and return a display
- * grid: formula cells show computed text, everything else is untouched.
- * Circular references display #CYCLE! (propagated to dependents),
- * unparseable bodies display #ERROR!. Without an engine (failed load), the
- * raw grid passes through so formulas still read as text.
- */
+/** Evaluate formulas in dependency order. Circular refs show #CYCLE!; without an engine grids pass through. */
 export function evaluateSpreadsheetFormulas(
   rows: readonly (readonly string[])[],
   formulas: readonly SpreadsheetFormulaCell[],

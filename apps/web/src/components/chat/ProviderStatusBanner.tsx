@@ -12,7 +12,6 @@ import {
   TECHNICAL_HEALTH_FRIENDLY_DETAIL,
 } from "../settings/providerStatus";
 
-/** Unsupported and broken versions fail mid-turn, so they warn even when ready. */
 function getIncompatibleVersion(status: ServerProvider) {
   const compatibility = status.compatibilityAdvisory;
   if (status.status === "error" && status.auth.status === "unauthenticated") return null;
@@ -34,8 +33,7 @@ export function getProviderStatusBannerKey(status: ServerProvider | null): strin
     ].join("\u0000");
   }
   if (status.status === "ready") return null;
-  // Antigravity checks saved credentials when a session starts. Its local
-  // health check leaves auth unknown after a restart, which is not a failure.
+  // Antigravity validates credentials at session start; unknown restart auth is not failure.
   if (
     status.driver === "antigravity" &&
     status.installed &&
@@ -65,7 +63,6 @@ export function hasProviderSetup(status: ServerProvider): boolean {
   );
 }
 
-/** Broken-version guidance takes precedence over startup failures it can cause. */
 export function getProviderStatusMessage(status: ServerProvider): string {
   if (
     status.auth.status !== "unauthenticated" &&

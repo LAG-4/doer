@@ -1,3 +1,4 @@
+/* oxlint-disable react/no-array-index-key -- Grid rows and columns retain their sheet positions. */
 import { columnIndexToLetters } from "@t3tools/shared/spreadsheetWorkbook";
 import { Plus, X } from "lucide-react";
 import { useState } from "react";
@@ -87,9 +88,9 @@ export function SpreadsheetGridEditor({
             </tr>
           </thead>
           <tbody>
-            {/* Rows are positional data (the header shows row numbers), so the
-                index is the stable identity here. */}
             {grid.map((row, rowIndex) => (
+              // Keyed by sheet position: the header shows row numbers, so the
+              // index is the stable identity here.
               <tr key={rowIndex} className="group/row">
                 <th
                   scope="row"

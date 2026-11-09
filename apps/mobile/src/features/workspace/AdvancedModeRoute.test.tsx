@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 import { act, createElement, useEffect, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
@@ -11,8 +10,8 @@ vi.mock("@react-navigation/native", () => ({ useNavigation: () => ({ navigate: v
 vi.mock("react-native", () => ({
   View: ({ children }: { children?: ReactNode }) => createElement("div", null, children),
 }));
-vi.mock("../../components/ScreenHeader", () => ({ ScreenHeader: () => null }));
-vi.mock("../../components/EmptyState", () => ({
+vi.mock("../../components/ui/AppBar", () => ({ AppBar: () => null }));
+vi.mock("../../components/ui/EmptyState", () => ({
   EmptyState: ({ detail }: { detail: string }) => createElement("p", null, detail),
 }));
 

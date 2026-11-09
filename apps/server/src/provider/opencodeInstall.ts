@@ -1,30 +1,4 @@
-/**
- * OpenCodeInstall — locating and bootstrapping the OpenCode CLI.
- *
- * Doer shells out to an `opencode` binary for version probes, the local
- * server, and CLI inventory. A bare `"opencode"` resolves through PATH, which
- * GUI-launched servers (desktop app, launchd/systemd units) often see
- * sparsely — even when the user installed OpenCode via the official script
- * (it lands in `~/.opencode/bin`, which login shells add to PATH but GUI
- * processes never see). This module lists every location worth checking, in
- * priority order, and knows how to install the CLI into a T3-managed
- * directory (`<baseDir>/tools/opencode`) when nothing is found.
- *
- * Two install methods, tried in order:
- *   1. `npm install --prefix <managedDir>` (needs npm on PATH) — keeps the
- *      binary under T3's home directory, so no sudo, no user-global
- *      mutation, and removal is a directory delete.
- *   2. Direct download of the official release archive with curl, mirroring
- *      the platform mapping of the `https://opencode.ai/install` script —
- *      for machines (most non-developers) with no npm at all. The binary
- *      lands in `<managedDir>/bin`, next to the npm tree, never in
- *      `~/.opencode/bin`.
- *
- * The official install script's `~/.opencode/bin` location stays a read-only
- * detection fallback — T3 never writes there.
- *
- * @module provider/opencodeInstall
- */
+/** Locating and bootstrapping the OpenCode CLI (PATH, `~/.opencode/bin`, T3-managed dir). */
 // @effect-diagnostics nodeBuiltinImport:off - Path helpers here are pure and
 // service-free on purpose (resolution order is unit-tested without a runtime).
 // They only ever join host paths, where node:path matches the host platform.
@@ -117,14 +91,7 @@ export interface OpenCodeBinaryCandidatesInput {
   readonly platform: NodeJS.Platform;
 }
 
-/**
- * Ordered locations to try for an OpenCode binary. A custom `binaryPath` is
- * returned verbatim (the user's explicit choice wins and is never
- * second-guessed); the default resolves through PATH first, then the
- * official script's `~/.opencode/bin`, then the T3-managed installs
- * (standalone first, npm second). A failed npm install can leave a broken shim;
- * the standalone fallback must remain usable on the next startup too.
- */
+/** Ordered binary locations. Custom path wins verbatim; default checks PATH, script dir, then managed installs. */
 export function openCodeBinaryCandidates(
   input: OpenCodeBinaryCandidatesInput,
 ): ReadonlyArray<string> {
@@ -193,14 +160,7 @@ export function openCodeManagedPackageJson(): string {
   )}\n`;
 }
 
-/**
- * Release target triple, mirroring the supported combos of the official
- * install script (`os-arch`), with one deliberate exception: upstream ships
- * no Windows ARM64 asset, so Windows on ARM falls back to the x64 asset,
- * which Windows 11 runs under x64 emulation. `null` means neither the
- * script nor the fallback has an asset for this host — surface the manual
- * install instead.
- */
+/** Release target triple (`os-arch`). Windows ARM64 falls back to x64; `null` means manual install. */
 export type OpenCodeInstallTarget =
   | "darwin-arm64"
   | "darwin-x64"

@@ -14,11 +14,9 @@ export function resolveGmailHostAccess(input: {
   } catch {
     return { reachable: false, onHost: false, guidance: null };
   }
-  // The Google sign-in finishes on the host itself (loopback callback), so a
-  // browser viewing a remote computer must never pretend it can connect here.
-  // A loopback URL alone is not proof: SSH tunnels and forwarded transports
-  // serve remote computers over localhost too. Only the primary local target
-  // over loopback means this browser runs on the host.
+  // Google sign-in finishes on the host (loopback callback); a remote browser
+  // must never pretend it can connect here. Loopback alone is not proof:
+  // tunnels also serve remote hosts as localhost.
   if (input.targetTag === "PrimaryConnectionTarget" && input.isLoopback(hostname)) {
     return { reachable: true, onHost: true, guidance: null };
   }

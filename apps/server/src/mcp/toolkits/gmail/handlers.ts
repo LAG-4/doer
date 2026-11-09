@@ -66,133 +66,127 @@ const make = Effect.gen(function* () {
     return { scope, isAllowed, sender: account.email };
   });
 
-  const review = <A>(
+  const review = Effect.fn("GmailToolkit.review")(function* <A>(
     context: Effect.Success<typeof access>,
     operation: "send" | "change",
     detail: string,
     run: Effect.Effect<A, GmailConnectionError>,
-  ) =>
-    Effect.gen(function* () {
-      const { isAllowed } = context;
-      const confirmation = yield* McpServer.elicit({
-        message: `${operation === "send" ? "Send this email?" : "Apply this Gmail change?"}\n\n${detail}`,
-        schema: Schema.Struct({ approved: Schema.Boolean }),
-      }).pipe(
-        Effect.mapError(
-          () =>
-            new GmailToolError({
-              message: "No Gmail action was performed because the user did not approve it.",
-            }),
-        ),
-      );
-      yield* loadCaller().pipe(
-        Effect.flatMap(assertLiveCaller),
-        Effect.mapError(
-          () =>
-            new GmailToolError({
-              message: "This task stopped while awaiting approval. No Gmail action was performed.",
-            }),
-        ),
-      );
-      if (!confirmation.approved)
-        return yield* new GmailToolError({
-          message: "No Gmail action was performed because the user did not approve it.",
-        });
-      if (!(yield* isAllowed))
-        return yield* new GmailToolError({
-          message:
-            "Gmail access, experimental connections, or this task changed while awaiting approval. No action was performed.",
-        });
-      return yield* run.pipe(
-        Effect.mapError((error) => new GmailToolError({ message: error.message })),
-      );
-    });
+  ) {
+    const { isAllowed } = context;
+    const confirmation = yield* McpServer.elicit({
+      message: `${operation === "send" ? "Send this email?" : "Apply this Gmail change?"}\n\n${detail}`,
+      schema: Schema.Struct({ approved: Schema.Boolean }),
+    }).pipe(
+      Effect.mapError(
+        () =>
+          new GmailToolError({
+            message: "No Gmail action was performed because the user did not approve it.",
+          }),
+      ),
+    );
+    yield* loadCaller().pipe(
+      Effect.flatMap(assertLiveCaller),
+      Effect.mapError(
+        () =>
+          new GmailToolError({
+            message: "This task stopped while awaiting approval. No Gmail action was performed.",
+          }),
+      ),
+    );
+    if (!confirmation.approved)
+      return yield* new GmailToolError({
+        message: "No Gmail action was performed because the user did not approve it.",
+      });
+    if (!(yield* isAllowed))
+      return yield* new GmailToolError({
+        message:
+          "Gmail access, experimental connections, or this task changed while awaiting approval. No action was performed.",
+      });
+    return yield* run.pipe(
+      Effect.mapError((error) => new GmailToolError({ message: error.message })),
+    );
+  });
 
   const mailError = (error: GmailConnectionError) => new GmailToolError({ message: error.message });
   return GmailToolkit.of({
-    gmail_send_email: (input) =>
-      Effect.gen(function* () {
-        const context = yield* access;
-        const message = { to: [...input.to], subject: input.subject, body: input.body };
-        yield* Effect.try({
-          try: () => encodeGmailMessage(message),
-          catch: () =>
-            new GmailToolError({
-              message: "Invalid email. Check recipients, subject and message size.",
-            }),
-        });
-        return yield* review(
-          context,
-          "send",
-          `From: ${context.sender}\nTo: ${message.to.join(", ")}\nSubject: ${message.subject}\n\n${message.body}`,
-          gmail.send(message, context.sender),
-        );
-      }),
-    gmail_search_messages: (input) =>
-      Effect.gen(function* () {
-        yield* access;
-        return yield* gmail
-          .search({
-            query: input.query,
-            ...(input.maxResults !== undefined ? { maxResults: input.maxResults } : {}),
-            ...(input.pageToken !== undefined ? { pageToken: input.pageToken } : {}),
-          })
-          .pipe(Effect.mapError(mailError));
-      }),
-    gmail_read_message: (input) =>
-      Effect.gen(function* () {
-        const context = yield* access;
-        return yield* gmail
-          .readMessage(input.messageId, context.sender)
-          .pipe(Effect.mapError(mailError));
-      }),
-    gmail_list_labels: (input) =>
-      Effect.gen(function* () {
-        yield* access;
-        const result = yield* gmail.listLabels.pipe(Effect.mapError(mailError));
-        return {
-          ...result,
-          labels: input.customOnly
-            ? result.labels.filter((label) => label.id.startsWith("Label_"))
-            : result.labels,
-        };
-      }),
-    gmail_modify_message: (input) =>
-      Effect.gen(function* () {
-        const context = yield* access;
-        const change: MailChange = {
-          messageId: input.messageId,
-          action: input.action,
-          ...(input.labelId !== undefined ? { labelId: input.labelId } : {}),
-        };
-        yield* Effect.try({
-          try: () => validateMailChange(change),
-          catch: () =>
-            new GmailToolError({
-              message:
-                "Invalid Gmail change. Use a message ID and, for labels, a custom label ID from gmail_list_labels.",
-            }),
-        });
-        const message = yield* gmail
-          .readMessage(change.messageId, context.sender)
-          .pipe(Effect.mapError(mailError));
-        let label = "";
-        if (change.labelId) {
-          const labels = yield* gmail.listLabels.pipe(Effect.mapError(mailError));
-          const found = labels.labels.find((item) => item.id === change.labelId);
-          if (!found)
-            return yield* new GmailToolError({
-              message: "Label not found in the available labels. No change was made.",
-            });
-          label = `\nLabel: ${found.name} (${found.id})`;
-        }
-        return yield* review(
-          context,
-          "change",
-          `Account: ${context.sender}\nMessage ID: ${message.id}\nFrom: ${message.from}\nSubject: ${message.subject}\nAction: ${change.action}${label}\n\n${message.snippet}`,
-          gmail.modify(change, context.sender),
-        );
-      }),
+    gmail_send_email: Effect.fn("GmailToolkit.gmail_send_email")(function* (input) {
+      const context = yield* access;
+      const message = { to: [...input.to], subject: input.subject, body: input.body };
+      yield* Effect.try({
+        try: () => encodeGmailMessage(message),
+        catch: () =>
+          new GmailToolError({
+            message: "Invalid email. Check recipients, subject and message size.",
+          }),
+      });
+      return yield* review(
+        context,
+        "send",
+        `From: ${context.sender}\nTo: ${message.to.join(", ")}\nSubject: ${message.subject}\n\n${message.body}`,
+        gmail.send(message, context.sender),
+      );
+    }),
+    gmail_search_messages: Effect.fn("GmailToolkit.gmail_search_messages")(function* (input) {
+      yield* access;
+      return yield* gmail
+        .search({
+          query: input.query,
+          ...(input.maxResults !== undefined ? { maxResults: input.maxResults } : {}),
+          ...(input.pageToken !== undefined ? { pageToken: input.pageToken } : {}),
+        })
+        .pipe(Effect.mapError(mailError));
+    }),
+    gmail_read_message: Effect.fn("GmailToolkit.gmail_read_message")(function* (input) {
+      const context = yield* access;
+      return yield* gmail
+        .readMessage(input.messageId, context.sender)
+        .pipe(Effect.mapError(mailError));
+    }),
+    gmail_list_labels: Effect.fn("GmailToolkit.gmail_list_labels")(function* (input) {
+      yield* access;
+      const result = yield* gmail.listLabels.pipe(Effect.mapError(mailError));
+      return {
+        ...result,
+        labels: input.customOnly
+          ? result.labels.filter((label) => label.id.startsWith("Label_"))
+          : result.labels,
+      };
+    }),
+    gmail_modify_message: Effect.fn("GmailToolkit.gmail_modify_message")(function* (input) {
+      const context = yield* access;
+      const change: MailChange = {
+        messageId: input.messageId,
+        action: input.action,
+        ...(input.labelId !== undefined ? { labelId: input.labelId } : {}),
+      };
+      yield* Effect.try({
+        try: () => validateMailChange(change),
+        catch: () =>
+          new GmailToolError({
+            message:
+              "Invalid Gmail change. Use a message ID and, for labels, a custom label ID from gmail_list_labels.",
+          }),
+      });
+      const message = yield* gmail
+        .readMessage(change.messageId, context.sender)
+        .pipe(Effect.mapError(mailError));
+      let label = "";
+      if (change.labelId) {
+        const labels = yield* gmail.listLabels.pipe(Effect.mapError(mailError));
+        const found = labels.labels.find((item) => item.id === change.labelId);
+        if (!found)
+          return yield* new GmailToolError({
+            message: "Label not found in the available labels. No change was made.",
+          });
+        label = `\nLabel: ${found.name} (${found.id})`;
+      }
+      return yield* review(
+        context,
+        "change",
+        `Account: ${context.sender}\nMessage ID: ${message.id}\nFrom: ${message.from}\nSubject: ${message.subject}\nAction: ${change.action}${label}\n\n${message.snippet}`,
+        gmail.modify(change, context.sender),
+      );
+    }),
   });
 });
 

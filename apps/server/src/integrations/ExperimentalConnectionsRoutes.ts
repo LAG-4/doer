@@ -1,15 +1,4 @@
-/**
- * ExperimentalConnectionsRoutes - Authenticated host setting for the
- * experimental-connections master switch.
- *
- * `GET|POST /api/doer-experimental-connections` backs the single toggle in
- * Settings → Tools (web, desktop, paired clients) without touching the typed
- * wire contracts: raw routes with a fork-owned schema from
- * `@t3tools/shared/experimentalConnections` and the standard environment auth
- * scopes (read for status, operate for changes).
- *
- * @module ExperimentalConnectionsRoutes
- */
+/** Authenticated host setting for the experimental-connections master switch. */
 import { AuthAccessWriteScope, AuthOrchestrationReadScope } from "@t3tools/contracts";
 import {
   EXPERIMENTAL_CONNECTIONS_ROUTE_PATH,

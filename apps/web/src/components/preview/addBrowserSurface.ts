@@ -16,7 +16,6 @@ const DEFAULT_MANUAL_BROWSER_URL = "https://www.google.com";
 export async function addBrowserSurface<E>(input: {
   readonly threadRef: ScopedThreadRef;
   readonly openPreview: OpenPreviewMutation<E>;
-  /** Omit to use the configured default profile. */
   readonly profileId?: string | undefined;
   /** Omit to open the default homepage. */
   readonly url?: string | undefined;

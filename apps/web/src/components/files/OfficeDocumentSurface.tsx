@@ -26,6 +26,7 @@ export function OfficeDocumentSurface(props: {
     sections: readonly { id: string; title: string; text: { id: string; value: string }[] }[];
     error: string | null;
   } | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- parses the downloaded office binary off-render; async JSZip work cannot run during render
   useEffect(() => {
     let cancelled = false;
     const data = file.data;

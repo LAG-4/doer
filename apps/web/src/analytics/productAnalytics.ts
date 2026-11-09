@@ -1,17 +1,8 @@
 /**
  * Browser product analytics backed by the operator's own PostHog instance.
- *
- * The ingest host and project key are fetched at runtime from
- * `GET /api/telemetry/config` (resolved against the connected environment, so
- * desktop, remote, and tunneled clients all work) instead of being baked into
- * the build. When the server reports telemetry disabled or unconfigured — or
- * the fetch fails — this module stays completely silent and the app behaves
- * exactly as if analytics did not exist.
- *
- * What the SDK captures once enabled: autocaptured interactions, pageviews,
- * session recordings (form inputs masked), and unhandled errors. Pairing
- * tokens and other URL query/hash material are scrubbed from every event
- * before it leaves the browser.
+ * Config comes from `GET /api/telemetry/config` at runtime; when telemetry
+ * is disabled or unreachable this module stays silent. Pairing tokens and
+ * other URL secrets are scrubbed before anything leaves the browser.
  */
 import { APP_VERSION } from "../branding";
 import { isElectron } from "../env";

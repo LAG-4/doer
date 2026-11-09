@@ -119,26 +119,24 @@ export const layer = Layer.effect(
     const pending = new Map<string, { verifier: string; createdAt: number }>();
     const decoder = new TextDecoder();
 
-    const save = (connection: StoredConnection) =>
-      Effect.gen(function* () {
-        if (!encryptionKey)
-          return yield* new GmailConnectionError({
-            message: "Secure Gmail storage is unavailable on this computer.",
-          });
-        const encrypted = yield* Effect.try({
-          try: () => encryptTokens(encodeStoredConnection(connection), encryptionKey),
-          catch: () =>
-            new GmailConnectionError({ message: "Could not protect Gmail credentials." }),
+    const save = Effect.fn("GmailConnection.save")(function* (connection: StoredConnection) {
+      if (!encryptionKey)
+        return yield* new GmailConnectionError({
+          message: "Secure Gmail storage is unavailable on this computer.",
         });
-        yield* secrets
-          .set(SECRET_NAME, encrypted)
-          .pipe(
-            Effect.mapError(
-              () =>
-                new GmailConnectionError({ message: "Could not save Gmail credentials securely." }),
-            ),
-          );
+      const encrypted = yield* Effect.try({
+        try: () => encryptTokens(encodeStoredConnection(connection), encryptionKey),
+        catch: () => new GmailConnectionError({ message: "Could not protect Gmail credentials." }),
       });
+      yield* secrets
+        .set(SECRET_NAME, encrypted)
+        .pipe(
+          Effect.mapError(
+            () =>
+              new GmailConnectionError({ message: "Could not save Gmail credentials securely." }),
+          ),
+        );
+    });
 
     const read = Effect.gen(function* () {
       const stored = yield* secrets.get(SECRET_NAME);
@@ -211,81 +209,80 @@ export const layer = Layer.effect(
       return attempt.authorizationUrl;
     }).pipe(mutex.withPermit);
 
-    const complete = (state: string, code: string) =>
-      Effect.gen(function* () {
-        if (!clientId || !clientSecret || !redirectUri || !encryptionKey)
-          return yield* new GmailConnectionError({ message: "Gmail sign-in is not configured." });
-        const attempt = pending.get(state);
-        pending.delete(state);
-        const now = yield* Clock.currentTimeMillis;
-        if (!attempt || now - attempt.createdAt > ATTEMPT_LIFETIME_MS) {
-          return yield* new GmailConnectionError({
-            message: "Gmail sign-in expired. Start again in Doer.",
-          });
-        }
-        if (yield* read)
-          return yield* new GmailConnectionError({
-            message: "Gmail is already connected. Disconnect before changing accounts.",
-          });
-        const tokens = yield* Effect.tryPromise({
-          try: () =>
-            exchangeGmailCode({
-              clientId,
-              clientSecret,
-              redirectUri,
-              code,
-              verifier: attempt.verifier,
-            }),
-          catch: (cause) =>
-            new GmailConnectionError({
-              message:
-                cause instanceof Error && cause.message.startsWith("Google token request failed")
-                  ? cause.message
-                  : "Google token service could not be reached.",
-            }),
+    const complete = Effect.fn("GmailConnection.complete")(function* (state: string, code: string) {
+      if (!clientId || !clientSecret || !redirectUri || !encryptionKey)
+        return yield* new GmailConnectionError({ message: "Gmail sign-in is not configured." });
+      const attempt = pending.get(state);
+      pending.delete(state);
+      const now = yield* Clock.currentTimeMillis;
+      if (!attempt || now - attempt.createdAt > ATTEMPT_LIFETIME_MS) {
+        return yield* new GmailConnectionError({
+          message: "Gmail sign-in expired. Start again in Doer.",
         });
-        if (
-          !tokens.scopes.includes(GMAIL_SEND_SCOPE) &&
-          !tokens.scopes.includes(GMAIL_MODIFY_SCOPE)
-        ) {
-          yield* Effect.tryPromise({
-            try: () => revokeGmailToken(tokens.refreshToken ?? tokens.accessToken),
-            catch: () =>
-              new GmailConnectionError({
-                message:
-                  "Permission was declined. Remove Doer from your Google account's third-party connections.",
-              }),
-          });
-          return yield* new GmailConnectionError({
+      }
+      if (yield* read)
+        return yield* new GmailConnectionError({
+          message: "Gmail is already connected. Disconnect before changing accounts.",
+        });
+      const tokens = yield* Effect.tryPromise({
+        try: () =>
+          exchangeGmailCode({
+            clientId,
+            clientSecret,
+            redirectUri,
+            code,
+            verifier: attempt.verifier,
+          }),
+        catch: (cause) =>
+          new GmailConnectionError({
             message:
-              "Gmail send permission was not granted. Connect again when you want to enable sending.",
-          });
-        }
-        const revokeUnusedGrant = Effect.tryPromise({
+              cause instanceof Error && cause.message.startsWith("Google token request failed")
+                ? cause.message
+                : "Google token service could not be reached.",
+          }),
+      });
+      if (
+        !tokens.scopes.includes(GMAIL_SEND_SCOPE) &&
+        !tokens.scopes.includes(GMAIL_MODIFY_SCOPE)
+      ) {
+        yield* Effect.tryPromise({
           try: () => revokeGmailToken(tokens.refreshToken ?? tokens.accessToken),
           catch: () =>
             new GmailConnectionError({
               message:
-                "Remove Doer from your Google account's third-party connections before retrying.",
+                "Permission was declined. Remove Doer from your Google account's third-party connections.",
             }),
         });
-        if (!tokens.refreshToken) {
-          yield* revokeUnusedGrant;
-          return yield* new GmailConnectionError({
-            message: "Google did not grant background access. Disconnect and try again.",
-          });
-        }
-        const email = yield* Effect.tryPromise({
-          try: () => readGmailAccount(tokens.accessToken),
-          catch: () =>
-            new GmailConnectionError({ message: "Google did not return the connected account." }),
-        }).pipe(Effect.tapError(() => revokeUnusedGrant));
-        yield* save({ ...tokens, refreshToken: tokens.refreshToken, email, clientId }).pipe(
-          Effect.tapError(() => revokeUnusedGrant),
-        );
-        pending.clear();
-        return email;
-      }).pipe(mutex.withPermit);
+        return yield* new GmailConnectionError({
+          message:
+            "Gmail send permission was not granted. Connect again when you want to enable sending.",
+        });
+      }
+      const revokeUnusedGrant = Effect.tryPromise({
+        try: () => revokeGmailToken(tokens.refreshToken ?? tokens.accessToken),
+        catch: () =>
+          new GmailConnectionError({
+            message:
+              "Remove Doer from your Google account's third-party connections before retrying.",
+          }),
+      });
+      if (!tokens.refreshToken) {
+        yield* revokeUnusedGrant;
+        return yield* new GmailConnectionError({
+          message: "Google did not grant background access. Disconnect and try again.",
+        });
+      }
+      const email = yield* Effect.tryPromise({
+        try: () => readGmailAccount(tokens.accessToken),
+        catch: () =>
+          new GmailConnectionError({ message: "Google did not return the connected account." }),
+      }).pipe(Effect.tapError(() => revokeUnusedGrant));
+      yield* save({ ...tokens, refreshToken: tokens.refreshToken, email, clientId }).pipe(
+        Effect.tapError(() => revokeUnusedGrant),
+      );
+      pending.clear();
+      return email;
+    }, mutex.withPermit);
 
     const disconnect = Effect.gen(function* () {
       // Publish the same switch change to every client before revoking access.
@@ -328,71 +325,70 @@ export const layer = Layer.effect(
       );
     }).pipe(mutex.withPermit);
 
-    const withToken = <A>(
+    const withToken = Effect.fn("GmailConnection.withToken")(function* <A>(
       permission: "send" | "read" | "modify",
       operation: (token: string) => Promise<A>,
       failureMessage: string,
       expectedEmail?: string,
-    ) =>
-      Effect.gen(function* () {
-        if (!clientId || !clientSecret || !encryptionKey)
-          return yield* new GmailConnectionError({ message: "Gmail is not configured." });
-        let connection = yield* read;
-        if (!connection)
-          return yield* new GmailConnectionError({ message: "Connect Gmail in Settings first." });
-        if (
-          (connection.clientId && connection.clientId !== clientId) ||
-          (expectedEmail && connection.email !== expectedEmail)
-        ) {
-          return yield* new GmailConnectionError({
-            message: "The Gmail account changed. Reconnect or review a new Gmail request.",
-          });
-        }
-        const now = yield* Clock.currentTimeMillis;
-        if (connection.expiresAt - now <= TOKEN_REFRESH_MARGIN_MS) {
-          const refreshToken = connection.refreshToken;
-          const email = connection.email;
-          const refreshed = yield* Effect.tryPromise({
-            try: () => refreshGmailToken(clientId, clientSecret, refreshToken),
-            catch: (cause) =>
-              new GmailConnectionError({
-                message:
-                  cause instanceof Error && cause.message.includes("invalid_grant")
-                    ? "Gmail access expired or was revoked. Disconnect and reconnect in Settings."
-                    : "Google could not refresh Gmail access. Check your connection and try again.",
-              }),
-          }).pipe(
-            Effect.tapError((error) =>
-              error.message.startsWith("Gmail access expired")
-                ? secrets.remove(SECRET_NAME).pipe(Effect.ignore)
-                : Effect.void,
-            ),
-          );
-          connection = {
-            ...connection,
-            ...refreshed,
-            email,
-            scopes: refreshed.scopes.length > 0 ? refreshed.scopes : connection.scopes,
-          };
-          yield* save(connection);
-        }
-        const scopes = connection.scopes ?? [];
-        const permitted =
-          scopes.includes(GMAIL_MODIFY_SCOPE) ||
-          (permission === "send" &&
-            (scopes.includes(GMAIL_SEND_SCOPE) || connection.scopes === undefined)) ||
-          (permission === "read" &&
-            scopes.includes("https://www.googleapis.com/auth/gmail.readonly"));
-        if (!permitted)
-          return yield* new GmailConnectionError({
-            message: `Gmail ${permission} permission is missing. Disconnect and reconnect Gmail in Settings to grant read and organize access.`,
-          });
-        const accessToken = connection.accessToken;
-        return yield* Effect.tryPromise({
-          try: () => operation(accessToken),
-          catch: () => new GmailConnectionError({ message: failureMessage }),
+    ) {
+      if (!clientId || !clientSecret || !encryptionKey)
+        return yield* new GmailConnectionError({ message: "Gmail is not configured." });
+      let connection = yield* read;
+      if (!connection)
+        return yield* new GmailConnectionError({ message: "Connect Gmail in Settings first." });
+      if (
+        (connection.clientId && connection.clientId !== clientId) ||
+        (expectedEmail && connection.email !== expectedEmail)
+      ) {
+        return yield* new GmailConnectionError({
+          message: "The Gmail account changed. Reconnect or review a new Gmail request.",
         });
-      }).pipe(mutex.withPermit);
+      }
+      const now = yield* Clock.currentTimeMillis;
+      if (connection.expiresAt - now <= TOKEN_REFRESH_MARGIN_MS) {
+        const refreshToken = connection.refreshToken;
+        const email = connection.email;
+        const refreshed = yield* Effect.tryPromise({
+          try: () => refreshGmailToken(clientId, clientSecret, refreshToken),
+          catch: (cause) =>
+            new GmailConnectionError({
+              message:
+                cause instanceof Error && cause.message.includes("invalid_grant")
+                  ? "Gmail access expired or was revoked. Disconnect and reconnect in Settings."
+                  : "Google could not refresh Gmail access. Check your connection and try again.",
+            }),
+        }).pipe(
+          Effect.tapError((error) =>
+            error.message.startsWith("Gmail access expired")
+              ? secrets.remove(SECRET_NAME).pipe(Effect.ignore)
+              : Effect.void,
+          ),
+        );
+        connection = {
+          ...connection,
+          ...refreshed,
+          email,
+          scopes: refreshed.scopes.length > 0 ? refreshed.scopes : connection.scopes,
+        };
+        yield* save(connection);
+      }
+      const scopes = connection.scopes ?? [];
+      const permitted =
+        scopes.includes(GMAIL_MODIFY_SCOPE) ||
+        (permission === "send" &&
+          (scopes.includes(GMAIL_SEND_SCOPE) || connection.scopes === undefined)) ||
+        (permission === "read" &&
+          scopes.includes("https://www.googleapis.com/auth/gmail.readonly"));
+      if (!permitted)
+        return yield* new GmailConnectionError({
+          message: `Gmail ${permission} permission is missing. Disconnect and reconnect Gmail in Settings to grant read and organize access.`,
+        });
+      const accessToken = connection.accessToken;
+      return yield* Effect.tryPromise({
+        try: () => operation(accessToken),
+        catch: () => new GmailConnectionError({ message: failureMessage }),
+      });
+    }, mutex.withPermit);
 
     const send = (message: GmailMessage, expectedEmail?: string) =>
       withToken(

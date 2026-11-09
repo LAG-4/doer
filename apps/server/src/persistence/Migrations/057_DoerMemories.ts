@@ -1,14 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
-/**
- * Migration 057: explicit saved memories ("What Doer remembers").
- *
- * One row per memory. Row-level INSERT/UPDATE/DELETE keeps concurrent
- * save/update/delete operations safe — nothing ever rewrites a whole JSON
- * document. About-you rows carry a null project_id; Space rows carry the
- * authoritative project id.
- */
+/** Migration 057: explicit saved memories. One row per memory; null project_id means About-you. */
 export default Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   yield* sql`

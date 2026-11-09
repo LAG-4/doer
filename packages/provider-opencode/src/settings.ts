@@ -1,13 +1,9 @@
-/**
- * OpenCode instance settings. Shared by the server driver and the client
- * settings form, so it holds only browser-safe schema code.
- *
- * @module provider-opencode/settings
- */
+// Shared with the client settings form; keep schema code browser-safe.
 import {
   CustomModelSetting,
   makeBinaryPathSetting,
   makeProviderSettingsSchema,
+  secretSetting,
   TrimmedString,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -16,6 +12,7 @@ import * as Schema from "effect/Schema";
 export const OpenCodeSettings = makeProviderSettingsSchema(
   {
     // Doer starts with OpenCode's free models; saved opt-outs stay disabled.
+
     enabled: Schema.Boolean.pipe(
       Schema.withDecodingDefault(Effect.succeed(true)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
@@ -42,10 +39,11 @@ export const OpenCodeSettings = makeProviderSettingsSchema(
       }),
     ),
     serverPassword: TrimmedString.pipe(
+      secretSetting,
       Schema.withDecodingDefault(Effect.succeed("")),
       Schema.annotateKey({
         title: "Server password",
-        description: "Stored in plain text on disk.",
+        description: "Stored separately on the host.",
         providerSettingsForm: {
           control: "password",
           placeholder: "Optional",

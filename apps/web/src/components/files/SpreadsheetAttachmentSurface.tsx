@@ -4,7 +4,7 @@ import {
   parseSpreadsheet,
   type ParsedSpreadsheet,
 } from "@t3tools/shared/spreadsheetWorkbook";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useAssetUrlState } from "~/assets/assetUrls";
 import { Spinner } from "~/components/ui/spinner";
 
@@ -22,16 +22,13 @@ export function SpreadsheetAttachmentSurface({
   readonly environmentId: EnvironmentId;
   readonly attachment: ChatFileAttachment;
 }) {
-  const resource = useMemo(
-    () => ({
-      _tag: "attachment" as const,
-      attachmentId: attachment.id,
-      fileName: attachment.name,
-      mimeType: attachment.mimeType,
-      disposition: "inline" as const,
-    }),
-    [attachment.id, attachment.mimeType, attachment.name],
-  );
+  const resource = {
+    _tag: "attachment" as const,
+    attachmentId: attachment.id,
+    fileName: attachment.name,
+    mimeType: attachment.mimeType,
+    disposition: "inline" as const,
+  };
   const assetUrl = useAssetUrlState(environmentId, resource);
   const currentUrl = assetUrl._tag === "Success" ? assetUrl.url : null;
   const [sheetIndex, setSheetIndex] = useState(0);
@@ -42,6 +39,7 @@ export function SpreadsheetAttachmentSurface({
     error: string | null;
   } | null>(null);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads the attachment bytes from its object URL while mounted
   useEffect(() => {
     if (currentUrl === null) return;
     const url = currentUrl;

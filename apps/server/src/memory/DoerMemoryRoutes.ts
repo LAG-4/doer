@@ -1,17 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
 /**
- * DoerMemoryRoutes - Authenticated Settings UI routes for saved memories.
- *
- * `GET|POST /api/doer-memory` and `PATCH|DELETE /api/doer-memory?id=`
- * back the "What Doer remembers" controls in Settings (web, desktop, mobile)
- * without touching the typed wire contracts: these raw routes use
- * fork-owned schemas from `@t3tools/shared/doerMemory` and the standard
- * environment auth scopes (read for listing, operate for mutations).
- *
- * Space writes always carry the entry's project id and are rejected when it
- * does not match, so a caller cannot read or write another Space by id.
- *
- * @module DoerMemoryRoutes
+ * Authenticated Settings UI routes for saved memories (`/api/doer-memory`).
+ * Space writes carry the entry's project id and are rejected on mismatch.
  */
 import * as NodeCrypto from "node:crypto";
 import {

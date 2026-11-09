@@ -30,11 +30,19 @@ function stubFetchJson(body: unknown) {
   return fetchMock;
 }
 
-async function flushAnalyticsStart() {
-  // initProductAnalytics boots through fetch + a dynamic import; two macrotask
-  // turns settle both legs deterministically.
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  await new Promise((resolve) => setTimeout(resolve, 0));
+async function awaitPosthogInit(posthog: { init: ReturnType<typeof vi.fn> }) {
+  await vi.waitFor(() => expect(posthog.init).toHaveBeenCalled());
+}
+
+// Negative paths have no completion signal: after the fetch leg settles, the
+// rest of boot is a short microtask chain, so drain it and assert silence.
+async function settleSilentStart(fetchMock?: ReturnType<typeof vi.fn>) {
+  if (fetchMock !== undefined) {
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  }
+  for (let i = 0; i < 20; i += 1) {
+    await Promise.resolve();
+  }
 }
 
 beforeEach(() => {
@@ -49,27 +57,25 @@ afterEach(() => {
 
 describe("productAnalytics", () => {
   it("stays silent when the server reports telemetry disabled", async () => {
-    stubFetchJson({ enabled: false, host: "", key: "" });
+    const fetchMock = stubFetchJson({ enabled: false, host: "", key: "" });
     const { analytics, posthog } = await loadModule();
 
     analytics.initProductAnalytics();
-    await flushAnalyticsStart();
+    await settleSilentStart(fetchMock);
 
     expect(posthog.init).not.toHaveBeenCalled();
     expect(posthog.register).not.toHaveBeenCalled();
   });
 
   it("stays silent when the config fetch fails", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => {
-        throw new Error("network down");
-      }),
-    );
+    const fetchMock = vi.fn(async (): Promise<Response> => {
+      throw new Error("network down");
+    });
+    vi.stubGlobal("fetch", fetchMock);
     const { analytics, posthog } = await loadModule();
 
     analytics.initProductAnalytics();
-    await flushAnalyticsStart();
+    await settleSilentStart(fetchMock);
 
     expect(posthog.init).not.toHaveBeenCalled();
   });
@@ -81,7 +87,7 @@ describe("productAnalytics", () => {
     const { analytics, posthog } = await loadModule();
 
     analytics.initProductAnalytics();
-    await flushAnalyticsStart();
+    await settleSilentStart();
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(posthog.init).not.toHaveBeenCalled();
@@ -96,7 +102,7 @@ describe("productAnalytics", () => {
     const { analytics, posthog } = await loadModule();
 
     analytics.initProductAnalytics();
-    await flushAnalyticsStart();
+    await awaitPosthogInit(posthog);
 
     expect(posthog.init).toHaveBeenCalledOnce();
     const [key, options] = posthog.init.mock.calls[0] as [string, Record<string, unknown>];
@@ -123,7 +129,7 @@ describe("productAnalytics", () => {
     const { analytics, posthog } = await loadModule();
 
     analytics.initProductAnalytics();
-    await flushAnalyticsStart();
+    await awaitPosthogInit(posthog);
 
     const options = posthog.init.mock.calls[0]?.[1] as {
       sanitize_properties: (

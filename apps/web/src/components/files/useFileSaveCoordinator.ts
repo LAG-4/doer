@@ -1,5 +1,5 @@
 import { AuthFilesystemWriteScope, type EnvironmentId } from "@t3tools/contracts";
-import { createRef, useEffect, useMemo } from "react";
+import { createRef, useEffect } from "react";
 
 import { projectEnvironment } from "~/state/projects";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
@@ -34,57 +34,51 @@ export function useFileSaveCoordinator({
 }: FileSaveOptions): Pick<FileSaveCoordinator, "change" | "save"> {
   const canWriteFiles = useEnvironmentScope(environmentId, AuthFilesystemWriteScope);
   const writeFile = useAtomCommand(projectEnvironment.writeFile);
-  const session = useMemo(() => {
-    const coordinatorRef = createRef<FileSaveCoordinator>();
-    return {
-      change: (contents: string) => coordinatorRef.current?.change(contents),
-      save: (contents: string) => coordinatorRef.current?.save(contents),
-      setup: () => {
-        const coordinator = new FileSaveCoordinator({
-          debounceMs: FILE_SAVE_DEBOUNCE_MS,
-          canPersist: () => readEnvironmentScope(environmentId, AuthFilesystemWriteScope),
-          onPendingChange: (pending) => onPendingChange(relativePath, pending),
-          persist: async (nextContents) => {
-            const result = await writeFile({
-              environmentId,
-              input: {
-                cwd,
-                relativePath,
-                contents: nextContents,
-                ...(binaryEncoding ? { encoding: binaryEncoding } : {}),
-              },
-            });
-            if (result._tag === "Failure") onSaveError?.();
-            return result;
-          },
-          onConfirmed: (confirmedContents) => {
-            onSaved?.(confirmedContents);
-            return binaryEncoding
-              ? true
-              : confirmProjectFileQueryData(environmentId, cwd, relativePath, confirmedContents);
-          },
-        });
-        coordinatorRef.current = coordinator;
-        return () => {
-          coordinatorRef.current = null;
-          coordinator.dispose();
-        };
-      },
-    };
-  }, [
-    cwd,
-    environmentId,
-    onPendingChange,
-    relativePath,
-    writeFile,
-    binaryEncoding,
-    onSaved,
-    onSaveError,
-  ]);
+  const session: Pick<FileSaveCoordinator, "change" | "save"> & { setup: () => () => void } =
+    (() => {
+      const coordinatorRef = createRef<FileSaveCoordinator>();
+      return {
+        change: (contents: string) => coordinatorRef.current?.change(contents),
+        save: (contents: string) => coordinatorRef.current?.save(contents),
+        setup: () => {
+          const coordinator = new FileSaveCoordinator({
+            debounceMs: FILE_SAVE_DEBOUNCE_MS,
+            canPersist: () => readEnvironmentScope(environmentId, AuthFilesystemWriteScope),
+            onPendingChange: (pending) => onPendingChange(relativePath, pending),
+            persist: async (nextContents) => {
+              const result = await writeFile({
+                environmentId,
+                input: {
+                  cwd,
+                  relativePath,
+                  contents: nextContents,
+                  ...(binaryEncoding ? { encoding: binaryEncoding } : {}),
+                },
+              });
+              if (result._tag === "Failure") onSaveError?.();
+              return result;
+            },
+            onConfirmed: (confirmedContents) => {
+              onSaved?.(confirmedContents);
+              return binaryEncoding
+                ? true
+                : confirmProjectFileQueryData(environmentId, cwd, relativePath, confirmedContents);
+            },
+          });
+          coordinatorRef.current = coordinator;
+          return () => {
+            coordinatorRef.current = null;
+            coordinator.dispose();
+          };
+        },
+      };
+    })();
 
   // StrictMode replays effect setup. Retired file sessions stay inert, while the
   // replay gets a fresh coordinator instead of reusing a disposed one.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- owns the FileSaveCoordinator lifetime (timers, pending writes) for this file session
   useEffect(session.setup, [session]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- replays unsaved query data into the coordinator after remount
   useEffect(() => {
     if (!canWriteFiles) return;
     let cancelled = false;

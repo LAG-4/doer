@@ -45,6 +45,7 @@ function getProviderSnapshot(
 // instance is absent, fall back to a live enabled provider instead of
 // inferring a driver from the missing instance id. OpenCode leads so fresh
 // installs land on the OpenCode free model.
+
 export function resolveSelectableProvider(
   providers: ReadonlyArray<ServerProvider>,
   provider: ProviderDriverKind | ProviderInstanceId | null | undefined,
@@ -71,11 +72,6 @@ export function getProviderModelCapabilities(
   return withoutPlanAgentOption(caps);
 }
 
-// The opencode "plan" agent is only reachable while legacy plan mode is on.
-// With it off, drop the option so it cannot be selected or dispatched, and
-// drop the descriptor entirely when nothing remains selectable. currentValue
-// is re-resolved against the surviving options so a stale or defaulted "plan"
-// value cannot leak back into dispatch.
 function withoutPlanAgentOption(caps: ModelCapabilities): ModelCapabilities {
   return {
     ...caps,

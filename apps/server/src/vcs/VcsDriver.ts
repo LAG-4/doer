@@ -2,13 +2,10 @@ import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 
 import type {
-  VcsDriverCapabilities,
   VcsError,
   VcsInitInput,
   VcsListRemotesResult,
   VcsListWorkspaceFilesResult,
-  ReviewDiffPreviewInput,
-  ReviewDiffPreviewResult,
   VcsRepositoryIdentity,
 } from "@t3tools/contracts";
 import { CheckpointRef } from "@t3tools/contracts";
@@ -30,6 +27,8 @@ export interface VcsRestoreCheckpointInput {
   }[];
 }
 
+export const CHECKPOINT_DIFF_MAX_OUTPUT_BYTES = 10_000_000;
+
 export interface VcsDiffCheckpointsInput {
   readonly cwd: string;
   readonly fromCheckpointRef: CheckpointRef;
@@ -37,7 +36,9 @@ export interface VcsDiffCheckpointsInput {
   readonly fallbackFromToHead?: boolean;
   readonly ignoreWhitespace: boolean;
   readonly format?: "patch" | "numstat";
-  /** Limits the diff to these exact paths. An empty list yields an empty diff. */
+  /** Maximum bytes collected from the diff command. */
+  readonly maxOutputBytes?: number;
+  /** An empty list yields an empty diff. */
   readonly filePaths?: ReadonlyArray<string>;
 }
 
@@ -72,11 +73,10 @@ export interface VcsCheckpointOps {
 export class VcsDriver extends Context.Service<
   VcsDriver,
   {
-    readonly capabilities: VcsDriverCapabilities;
     readonly execute: (
       input: Omit<VcsProcess.VcsProcessInput, "command">,
     ) => Effect.Effect<VcsProcess.VcsProcessOutput, VcsError>;
-    readonly checkpoints?: VcsCheckpointOps;
+    readonly checkpoints: VcsCheckpointOps;
     readonly detectRepository: (
       cwd: string,
     ) => Effect.Effect<VcsRepositoryIdentity | null, VcsError>;
@@ -90,8 +90,5 @@ export class VcsDriver extends Context.Service<
       relativePaths: ReadonlyArray<string>,
     ) => Effect.Effect<ReadonlyArray<string>, VcsError>;
     readonly initRepository: (input: VcsInitInput) => Effect.Effect<void, VcsError>;
-    readonly getDiffPreview?: (
-      input: ReviewDiffPreviewInput,
-    ) => Effect.Effect<ReviewDiffPreviewResult, VcsError>;
   }
 >()("@lag4/doer-cli/vcs/VcsDriver") {}

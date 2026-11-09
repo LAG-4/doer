@@ -1,18 +1,6 @@
 import * as Schema from "effect/Schema";
 
-/**
- * Fork-owned experimental-connections opt-in (Doer launch hardening).
- *
- * Google/Microsoft/plugin connections (Gmail, Microsoft account, local
- * spreadsheet/presentation tools) stay hidden and disabled until the user
- * flips one explicit host-wide toggle. The toggle defaults off for new and
- * existing installations; each connection still needs its own opt-in once
- * the master switch is on.
- *
- * This module lives in `@t3tools/shared` (fork-owned) so the server, web,
- * mobile, and tests share one definition without touching
- * `packages/contracts`.
- */
+/** Fork-owned experimental-connections opt-in (Doer). Master toggle defaults off; each connection needs its own opt-in. */
 
 /** Authenticated host-scoped setting endpoint backing the toggle. */
 export const EXPERIMENTAL_CONNECTIONS_ROUTE_PATH = "/api/doer-experimental-connections";

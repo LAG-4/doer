@@ -1,14 +1,7 @@
 /**
- * InboxProvisioning - ensures the Codex-style no-folder workspace exists.
- *
- * On every startup the server reuses the active project rooted at the inbox
- * root (`~/Documents/Doer`, see `InboxWorkspace`), or creates it (including
- * the directory itself) when missing. The resolved ids flow into the welcome
- * payload so clients can treat an inbox-only workspace as fresh for
- * first-run purposes and land new chats there without asking for a folder.
- * Provisioning failures degrade to "no inbox" instead of failing startup.
- *
- * @module InboxProvisioning
+ * Ensures the inbox workspace (`~/Documents/Doer`) exists on startup.
+ * Reuses the active project at the inbox root or creates it when missing.
+ * Failures degrade to "no inbox" instead of failing startup.
  */
 
 import { CommandId, ProjectId } from "@t3tools/contracts";

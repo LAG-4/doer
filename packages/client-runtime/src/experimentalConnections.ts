@@ -6,10 +6,8 @@ import {
 /**
  * Shared experimental-connections HTTP client for web, desktop, and mobile.
  *
- * Mirrors `doerMemory.ts`: the caller supplies the environment base URL plus
- * an authenticated fetch. Web passes plain `fetch` (session cookies travel
- * automatically); mobile passes a wrapper adding its environment bearer
- * token. Host-scoped: every client of one computer reads the same value.
+ * The caller supplies the base URL plus an authenticated fetch (plain
+ * `fetch` on web, bearer wrapper on mobile, like `doerMemory.ts`).
  */
 export interface ExperimentalConnectionsTransport {
   /** Environment origin, e.g. `http://192.168.1.5:13773` — no trailing slash. */

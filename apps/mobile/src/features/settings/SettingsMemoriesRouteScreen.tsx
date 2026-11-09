@@ -97,7 +97,9 @@ function MemorySettingsSection(props: {
     }
   }, [load]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reloads saved memories from the connected environment when connection, scope, or projects change
   useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- a new connection, scope, or project set clears the stale list before reloading.
     setEntries(null);
     void refresh();
   }, [refresh]);
@@ -242,9 +244,11 @@ function MemorySettingsSection(props: {
                         onPress={() =>
                           void mutate(
                             () =>
-                              forgetDoerMemory(resolved, entry.id, {
-                                ...(entry.projectId ? { projectId: entry.projectId } : {}),
-                              }).then(() => setConfirmingId(null)),
+                              forgetDoerMemory(
+                                resolved,
+                                entry.id,
+                                entry.projectId === undefined ? {} : { projectId: entry.projectId },
+                              ).then(() => setConfirmingId(null)),
                             "Forgotten. It will not appear in future messages.",
                           )
                         }
@@ -298,7 +302,7 @@ function MemorySettingsSection(props: {
         />
       </View>
       <Text className="text-sm text-foreground-muted">
-        Memories cannot keep secrets safe — never store passwords, keys, or sign-in codes.{" "}
+        Memories cannot keep secrets safe. Never store passwords, keys, or sign-in codes.{" "}
         {DOER_MEMORY_COPY.localDisclosure}
       </Text>
       {notice !== null ? <Text className="text-base text-foreground-muted">{notice}</Text> : null}
@@ -375,7 +379,7 @@ export function SettingsMemoriesRouteScreen() {
                     key={`${connection.environmentId}:about-you`}
                     connection={connection}
                     title={`About you · ${connection.environmentLabel}`}
-                    description="Used across your Spaces on this computer. You choose what Doer remembers — ask in chat or add it here."
+                    description="Used across your Spaces on this computer. You choose what Doer remembers. Ask in chat or add it here."
                     scope="about-you"
                   />
                   {members.map((member) => (

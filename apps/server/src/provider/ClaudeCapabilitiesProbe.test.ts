@@ -59,6 +59,18 @@ it("isolates Claude capability probes without dropping workspace setting sources
   assert.equal(options.env?.CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL, "1");
 });
 
+it.effect("reports a deleted worktree's scan as finished, not pending", () =>
+  Effect.gen(function* () {
+    const snapshot = yield* probeClaudeWorkspaceSnapshot(
+      decodeClaudeSettings({}),
+      { skills: [], slashCommands: [] } as unknown as ServerProvider,
+      "/nonexistent/t3-deleted-worktree",
+      { HOME: "/nonexistent/t3-home" },
+    );
+    assert.strictEqual(snapshot.slashCommandsPending, false);
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
 it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
   it.effect(
     "discovers commands and skills separately for each cwd without replacing machine metadata",

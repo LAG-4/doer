@@ -40,6 +40,7 @@ import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import type { McpInvocationScope } from "./McpInvocationContext.ts";
 import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
+import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
 
 const layerOrchestratorService = OrchestratorMcpService.layer.pipe(
   Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
@@ -53,9 +54,6 @@ const layerEnabledProvider = ServerSettings.layerTest({
   providerInstances: { [instanceId]: { driver, enabled: true } },
 });
 
-// A delegated Claude child ends its turn while a background native subagent it
-// started keeps running (#17154). Cancelling the task stops the child, which
-// ends that subagent's process, so the task must end instead of waiting on it.
 it.effect("task_cancel ends a delegated child's background native subagent", () =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -162,6 +160,7 @@ it.effect("task_cancel ends a delegated child's background native subagent", () 
             Layer.mock(ProjectService.ProjectService)({}),
             Layer.mock(SecretRequests.SecretRequests)({}),
             layerEnabledProvider,
+            Layer.mock(RemoteDelegation.RemoteDelegation)({}),
             Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
             NodeServices.layer,
           ),
@@ -236,7 +235,6 @@ it.effect("task_cancel ends a delegated child's background native subagent", () 
         const childTurn = (yield* orchestrator.getThreadProjection(task.childThreadId!))
           .providerTurns[0]!;
 
-        // The child starts a background native subagent, then ends its turn.
         const now = yield* DateTime.now;
         const subagentId = NodeId.make("node:native-subagent");
         const native = {
@@ -367,7 +365,7 @@ it.effect("task_cancel ends a delegated child's background native subagent", () 
           childAfter.turnItems.find((item) => item.type === "subagent")?.status,
           "interrupted",
         );
-        // The child's own turn had completed, so the task keeps that result.
+
         const after = yield* service.taskStatus(scope, task.id);
         assert.equal(after.status, "completed");
         assert.notEqual(after.workState, "waiting_for_children");

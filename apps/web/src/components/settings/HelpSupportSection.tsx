@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
 
 import { APP_VERSION } from "../../branding";
 import { buildSupportSummary } from "../../support/buildSupportSummary";
@@ -25,7 +25,7 @@ export function HelpSupportSection({ connection = "unknown" }: { readonly connec
     connection,
   });
 
-  const handleCopy = useCallback(async () => {
+  const handleCopy = async () => {
     try {
       const clipboard = navigator.clipboard;
       if (!clipboard || typeof clipboard.writeText !== "function") {
@@ -33,12 +33,12 @@ export function HelpSupportSection({ connection = "unknown" }: { readonly connec
       }
       await clipboard.writeText(summary);
       setCopyFailed(false);
-      setFeedback("Summary copied. Paste it into your issue — nothing was sent automatically.");
+      setFeedback("Summary copied. Paste it into your issue. Nothing was sent automatically.");
     } catch {
       setCopyFailed(true);
-      setFeedback("Copy failed. Select the summary text yourself instead — nothing was sent.");
+      setFeedback("Copy failed. Select the summary text yourself instead. Nothing was sent.");
     }
-  }, [summary]);
+  };
 
   return (
     <SettingsSectionBody className="gap-4">
@@ -74,7 +74,7 @@ export function HelpSupportSection({ connection = "unknown" }: { readonly connec
             Open a Doer issue on GitHub
           </a>{" "}
           and, only if you choose to share it, copy this summary. It holds just the app version,
-          platform, and connection status — never tokens, logs, file contents, or your messages.
+          platform, and connection status (never tokens, logs, file contents, or your messages).
         </p>
         <pre
           aria-label="Diagnostic summary preview"

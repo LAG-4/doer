@@ -1,5 +1,4 @@
 import * as McpToolAccessTestkit from "./McpToolAccess.testkit.ts";
-import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import { expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";

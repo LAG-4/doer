@@ -74,97 +74,89 @@ const errorMessage = (error: unknown): string => {
 };
 
 const handlers = {
-  computer_status: (input) =>
-    Effect.gen(function* () {
-      yield* requireComputerAccess;
-      const computers = yield* ComputerService.ComputerService;
-      const state = yield* failAsUnavailable(computers.status);
-      return {
-        supported: state.supported,
-        platform: state.platform,
-        cliInstalled: state.cliInstalled,
-        ...(state.cliVersion === undefined ? {} : { cliVersion: state.cliVersion }),
-        ...(state.permissions === undefined ? {} : { permissions: state.permissions }),
-        onboardingNeeded: state.onboardingNeeded,
-        allowedApps: [...state.allowedApps],
-        ...(input?.app === undefined
-          ? {}
-          : { appApproved: yield* failAsUnavailable(computers.isAllowed(input.app)) }),
-      };
-    }),
-  computer_start: (input) =>
-    Effect.gen(function* () {
-      yield* requireComputerAccess;
-      const computers = yield* ComputerService.ComputerService;
-      // Resolve consent (per-app approval) before installing or launching anything.
-      const started = yield* failAsUnavailable(
-        computers.start(input?.app === undefined ? {} : { app: input.app }),
-      );
-      const config = yield* ServerConfig;
-      const path = yield* Path.Path;
-      const platform = yield* HostProcess.Platform;
-      const shimDir = yield* ensureComputerShim({
-        entryPath: started.entryPath,
-        stateDir: config.stateDir,
-        allowlistPath: path.join(config.stateDir, "computer", "allowed-apps.json"),
-      }).pipe(
-        Effect.mapError(
-          () =>
-            new ComputerToolUnavailableError({
-              reason: "Could not prepare the computer-use launcher.",
-            }),
-        ),
-      );
-      const command = path.join(
-        shimDir,
-        platform === "win32" ? "computer-use.cmd" : "computer-use",
-      );
-      return {
-        computerUse: { command, targetArgs: [] as ReadonlyArray<string> },
-        needsPermission: started.needsPermission,
-        appAllowed: started.appAllowed,
-        platformNote: started.platformNote,
-        quickStart: computerUseQuickStart(command, started.needsPermission),
-      };
-    }),
-  computer_allow: (input) =>
-    Effect.gen(function* () {
-      yield* requireComputerAccess;
-      const computers = yield* ComputerService.ComputerService;
-      const allowedApps = yield* failAsUnavailable(computers.allow(input.app));
-      return { app: input.app.trim(), allowedApps: [...allowedApps] };
-    }),
-  computer_forget: (input) =>
-    Effect.gen(function* () {
-      yield* requireComputerAccess;
-      const computers = yield* ComputerService.ComputerService;
-      const allowedApps = yield* failAsUnavailable(
-        computers.forget(input?.app === undefined ? {} : { app: input.app }),
-      );
-      return { allowedApps: [...allowedApps] };
-    }),
-  computer_observe: (input) =>
-    Effect.gen(function* () {
-      yield* requireComputerAccess;
-      const computers = yield* ComputerService.ComputerService;
-      const seen = yield* failAsUnavailable(
-        computers.observe({
-          app: input.app,
-          ...(input.textLimit === undefined ? {} : { textLimit: input.textLimit }),
-          ...(input.maxTreeNodes === undefined ? {} : { maxTreeNodes: input.maxTreeNodes }),
-          ...(input.maxTreeDepth === undefined ? {} : { maxTreeDepth: input.maxTreeDepth }),
-        }),
-      );
-      return {
-        app: seen.app,
-        tree: seen.tree,
-        screenshot: {
-          mimeType: "image/png" as const,
-          data: Buffer.from(seen.png).toString("base64"),
-          ...pngDimensions(seen.png),
-        },
-      };
-    }),
+  computer_status: Effect.fn("Computer.computer_status")(function* (input) {
+    yield* requireComputerAccess;
+    const computers = yield* ComputerService.ComputerService;
+    const state = yield* failAsUnavailable(computers.status);
+    return {
+      supported: state.supported,
+      platform: state.platform,
+      cliInstalled: state.cliInstalled,
+      ...(state.cliVersion === undefined ? {} : { cliVersion: state.cliVersion }),
+      ...(state.permissions === undefined ? {} : { permissions: state.permissions }),
+      onboardingNeeded: state.onboardingNeeded,
+      allowedApps: [...state.allowedApps],
+      ...(input?.app === undefined
+        ? {}
+        : { appApproved: yield* failAsUnavailable(computers.isAllowed(input.app)) }),
+    };
+  }),
+  computer_start: Effect.fn("Computer.computer_start")(function* (input) {
+    yield* requireComputerAccess;
+    const computers = yield* ComputerService.ComputerService;
+    // Resolve consent (per-app approval) before installing or launching anything.
+    const started = yield* failAsUnavailable(
+      computers.start(input?.app === undefined ? {} : { app: input.app }),
+    );
+    const config = yield* ServerConfig;
+    const path = yield* Path.Path;
+    const platform = yield* HostProcess.Platform;
+    const shimDir = yield* ensureComputerShim({
+      entryPath: started.entryPath,
+      stateDir: config.stateDir,
+      allowlistPath: path.join(config.stateDir, "computer", "allowed-apps.json"),
+    }).pipe(
+      Effect.mapError(
+        () =>
+          new ComputerToolUnavailableError({
+            reason: "Could not prepare the computer-use launcher.",
+          }),
+      ),
+    );
+    const command = path.join(shimDir, platform === "win32" ? "computer-use.cmd" : "computer-use");
+    return {
+      computerUse: { command, targetArgs: [] as ReadonlyArray<string> },
+      needsPermission: started.needsPermission,
+      appAllowed: started.appAllowed,
+      platformNote: started.platformNote,
+      quickStart: computerUseQuickStart(command, started.needsPermission),
+    };
+  }),
+  computer_allow: Effect.fn("Computer.computer_allow")(function* (input) {
+    yield* requireComputerAccess;
+    const computers = yield* ComputerService.ComputerService;
+    const allowedApps = yield* failAsUnavailable(computers.allow(input.app));
+    return { app: input.app.trim(), allowedApps: [...allowedApps] };
+  }),
+  computer_forget: Effect.fn("Computer.computer_forget")(function* (input) {
+    yield* requireComputerAccess;
+    const computers = yield* ComputerService.ComputerService;
+    const allowedApps = yield* failAsUnavailable(
+      computers.forget(input?.app === undefined ? {} : { app: input.app }),
+    );
+    return { allowedApps: [...allowedApps] };
+  }),
+  computer_observe: Effect.fn("Computer.computer_observe")(function* (input) {
+    yield* requireComputerAccess;
+    const computers = yield* ComputerService.ComputerService;
+    const seen = yield* failAsUnavailable(
+      computers.observe({
+        app: input.app,
+        ...(input.textLimit === undefined ? {} : { textLimit: input.textLimit }),
+        ...(input.maxTreeNodes === undefined ? {} : { maxTreeNodes: input.maxTreeNodes }),
+        ...(input.maxTreeDepth === undefined ? {} : { maxTreeDepth: input.maxTreeDepth }),
+      }),
+    );
+    return {
+      app: seen.app,
+      tree: seen.tree,
+      screenshot: {
+        mimeType: "image/png" as const,
+        data: Buffer.from(seen.png).toString("base64"),
+        ...pngDimensions(seen.png),
+      },
+    };
+  }),
 } satisfies Parameters<typeof ComputerToolkit.toLayer>[0];
 
 const guarded = {

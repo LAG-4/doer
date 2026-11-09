@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   MicrosoftAction,
   MicrosoftSignIn,
@@ -12,6 +12,7 @@ import { connectionAtomRuntime } from "~/connection/runtime";
 import { EnvironmentSupervisor } from "@t3tools/client-runtime/connection";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as Option from "effect/Option";
+import { useStableCallback } from "../../hooks/useStableCallback";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { SettingsSection, SettingsSectionBody } from "./settingsLayout";
@@ -19,18 +20,17 @@ import { Button } from "../ui/button";
 
 const requestMicrosoft = createEnvironmentCommand(connectionAtomRuntime, {
   label: "connected-apps:microsoft",
-  execute: (action: typeof MicrosoftAction.Type) =>
-    Effect.gen(function* () {
-      const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
-      const prepared = Option.getOrNull(yield* SubscriptionRef.get(supervisor.prepared));
-      if (!prepared)
-        return {
-          kind: "error" as const,
-          message: "Reconnect this computer to manage your Microsoft account.",
-        };
-      const client = yield* ConnectedAppsHttp;
-      return yield* client.microsoft(prepared, action);
-    }),
+  execute: Effect.fn("connected-apps:microsoft")(function* (action: typeof MicrosoftAction.Type) {
+    const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+    const prepared = Option.getOrNull(yield* SubscriptionRef.get(supervisor.prepared));
+    if (!prepared)
+      return {
+        kind: "error" as const,
+        message: "Reconnect this computer to manage your Microsoft account.",
+      };
+    const client = yield* ConnectedAppsHttp;
+    return yield* client.microsoft(prepared, action);
+  }),
 });
 export function MicrosoftConnectionCard({
   connectionsVisible = false,
@@ -63,6 +63,7 @@ function HiddenConnection({ environmentId }: { environmentId: EnvironmentId | nu
   const [loadedEnvironmentId, setLoadedEnvironmentId] = useState<EnvironmentId | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads this computer's Microsoft status from the host when the environment changes
   useEffect(() => {
     if (!environmentId) return;
     let cancelled = false;
@@ -127,41 +128,31 @@ function Connection({ environmentId }: { environmentId: EnvironmentId | null }) 
   const [sharePoint, setSharePoint] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const mounted = useRef(true);
   const inFlight = useRef(false);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
-  const run = useCallback(
-    async (action: typeof MicrosoftAction.Type) => {
-      if (!environmentId || inFlight.current) return;
-      inFlight.current = true;
-      setBusy(true);
-      setMessage(null);
-      try {
-        const result = await request({ environmentId, input: action });
-        if (!mounted.current) return;
-        if (result._tag === "Failure") {
-          setMessage("Could not reach this computer. Reconnect and try again; your Task is kept.");
-          return;
-        }
-        const response = result.value;
-        if (response.kind === "status") {
-          setStatus(response.status);
-          setSharePoint(response.status.sharePoint);
-          setSignIn(null);
-        } else if (response.kind === "sign-in") setSignIn(response.signIn);
-        else setMessage(response.message);
-      } finally {
-        inFlight.current = false;
-        if (mounted.current) setBusy(false);
+  const run = useStableCallback(async (action: typeof MicrosoftAction.Type) => {
+    if (!environmentId || inFlight.current) return;
+    inFlight.current = true;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const result = await request({ environmentId, input: action });
+      if (result._tag === "Failure") {
+        setMessage("Could not reach this computer. Reconnect and try again; your Task is kept.");
+        return;
       }
-    },
-    [environmentId, request],
-  );
+      const response = result.value;
+      if (response.kind === "status") {
+        setStatus(response.status);
+        setSharePoint(response.status.sharePoint);
+        setSignIn(null);
+      } else if (response.kind === "sign-in") setSignIn(response.signIn);
+      else setMessage(response.message);
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- fetches this computer's Microsoft status from the host on mount (remounts per computer via key)
   useEffect(() => {
     void run({ action: "status" });
   }, [run]);

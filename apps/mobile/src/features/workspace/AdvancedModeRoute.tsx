@@ -2,8 +2,8 @@ import { useNavigation } from "@react-navigation/native";
 import type { ComponentType } from "react";
 import { View } from "react-native";
 
-import { EmptyState } from "../../components/EmptyState";
-import { ScreenHeader } from "../../components/ScreenHeader";
+import { EmptyState } from "../../components/ui/EmptyState";
+import { AppBar } from "../../components/ui/AppBar";
 import { useSimpleModeEnabled } from "../threads/use-simple-mode-enabled";
 
 /** Register once with the navigator so hidden routes cannot mount their controls or queries. */
@@ -14,7 +14,7 @@ export function withAdvancedMode<Props extends object>(Screen: ComponentType<Pro
     if (!simple) return <Screen {...props} />;
     return (
       <View className="flex-1 bg-screen">
-        <ScreenHeader title="Advanced mode" />
+        <AppBar title="Advanced mode" />
         <View className="flex-1 items-center justify-center">
           <EmptyState
             variant="plain"

@@ -1,23 +1,5 @@
 // electron-builder afterPack hook for UNSIGNED macOS builds (plain Node, no
 // dependencies, so it loads inside electron-builder's own runtime).
-//
-// Background: an unsigned Doer build must still carry a complete ad-hoc
-// signature seal. Electron's prebuilt binaries ship with linker ad-hoc
-// signatures but no bundle seal, and electron-builder adds files (Info.plist,
-// app.asar, resources) without sealing. Apple Silicon Gatekeeper reads that
-// half-sealed state as tampering and refuses to launch with "damaged, move to
-// Bin" and no Open Anyway recourse. Shipping fully unsigned is worse: recent
-// macOS denies execution of unsigned code entirely (kernel ASP:
-// "Security policy would not allow process"), even after Open Anyway.
-//
-// So this hook ad-hoc seals the finished bundle, mirroring the dev flow
-// (apps/desktop/scripts/electron-launcher.mjs): first every Mach-O gets its
-// own ad-hoc signature (`codesign --deep` does NOT cover loose dylibs such as
-// Electron Framework's libffmpeg — without one dyld refuses to load it into
-// the signed process), then each .app gets a `--deep` seal binding everything.
-// The result is the standard unidentified-developer warning with a working
-// Open Anyway path. Only wired for unsigned mac builds; signed builds keep
-// their real signatures.
 "use strict";
 
 const { execFileSync, spawnSync } = require("node:child_process");
@@ -90,11 +72,8 @@ function adhocSignFile(filePath) {
 }
 
 /**
- * Order Mach-O files deepest-first so nested components are signed before
- * the binaries that enclose them (inside-out). codesign refuses to sign an
- * enclosing binary while a nested component is still unsigned ("code object
- * is not signed at all / In subcomponent: .../Helpers/chrome_crashpad_handler"),
- * which broke the macOS x64 build while arm64 passed by luck of readdir order.
+ * Order Mach-O files deepest-first (inside-out): codesign refuses an
+ * enclosing binary while a nested component is still unsigned.
  */
 function sortMachOFilesDeepestFirst(files) {
   const depthOf = (filePath) => filePath.split(/[/\\]/).length;

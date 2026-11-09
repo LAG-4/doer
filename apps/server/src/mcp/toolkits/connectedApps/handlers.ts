@@ -66,89 +66,85 @@ const make = Effect.gen(function* () {
   const snapshots = yield* ProjectionSnapshotQuery;
   const files = yield* WorkspaceFileSystem;
   return ConnectedAppsToolkit.of({
-    read_connected_sources: (input) =>
-      Effect.gen(function* () {
-        yield* requireDoerThreadScope;
-        // Master switch first: a saved Microsoft token never bypasses it.
-        if (!(yield* experimentalConnections.get))
-          return yield* new ConnectedAppReadError({
-            detail: EXPERIMENTAL_CONNECTIONS_COPY.toolDenied,
-          });
-        return yield* Effect.tryPromise({
-          try: async () => {
-            const response = await connection.graph(connectedSourcePath(input));
-            const contents = JSON.stringify(response);
-            return {
-              retrievedAt: new Date().toISOString(),
-              sources: contents.slice(0, 60_000),
-              truncated:
-                contents.length > 60_000 ||
-                (typeof response === "object" &&
-                  response !== null &&
-                  "@odata.nextLink" in response),
-            };
-          },
-          catch: (error) =>
-            new ConnectedAppReadError({
-              detail:
-                error instanceof MicrosoftAccountError
-                  ? error.message
-                  : "Could not read the Microsoft source. Your completed work is kept. Try again or attach an exported file.",
-            }),
+    read_connected_sources: Effect.fn("ConnectedApps.read_connected_sources")(function* (input) {
+      yield* requireDoerThreadScope;
+      // Master switch first: a saved Microsoft token never bypasses it.
+      if (!(yield* experimentalConnections.get))
+        return yield* new ConnectedAppReadError({
+          detail: EXPERIMENTAL_CONNECTIONS_COPY.toolDenied,
         });
-      }),
-    download_connected_file: (input) =>
-      Effect.gen(function* () {
-        const scope = yield* requireDoerThreadScope;
-        if (!(yield* experimentalConnections.get))
-          return yield* new ConnectedAppReadError({
-            detail: EXPERIMENTAL_CONNECTIONS_COPY.toolDenied,
-          });
-        const context = yield* snapshots.getThreadCheckpointContext(scope.threadId).pipe(
+      return yield* Effect.tryPromise({
+        try: async () => {
+          const response = await connection.graph(connectedSourcePath(input));
+          const contents = JSON.stringify(response);
+          return {
+            retrievedAt: new Date().toISOString(),
+            sources: contents.slice(0, 60_000),
+            truncated:
+              contents.length > 60_000 ||
+              (typeof response === "object" && response !== null && "@odata.nextLink" in response),
+          };
+        },
+        catch: (error) =>
+          new ConnectedAppReadError({
+            detail:
+              error instanceof MicrosoftAccountError
+                ? error.message
+                : "Could not read the Microsoft source. Your completed work is kept. Try again or attach an exported file.",
+          }),
+      });
+    }),
+    download_connected_file: Effect.fn("ConnectedApps.download_connected_file")(function* (input) {
+      const scope = yield* requireDoerThreadScope;
+      if (!(yield* experimentalConnections.get))
+        return yield* new ConnectedAppReadError({
+          detail: EXPERIMENTAL_CONNECTIONS_COPY.toolDenied,
+        });
+      const context = yield* snapshots.getThreadCheckpointContext(scope.threadId).pipe(
+        Effect.mapError(
+          () =>
+            new ConnectedAppReadError({
+              detail: "This Task's Space could not be loaded. Reconnect and retry.",
+            }),
+        ),
+      );
+      if (Option.isNone(context))
+        return yield* new ConnectedAppReadError({ detail: "This Task is no longer available." });
+      const bytes = yield* Effect.tryPromise({
+        try: () => connection.downloadFile(input.id, input.driveId),
+        catch: (cause) =>
+          new ConnectedAppReadError({
+            detail:
+              cause instanceof MicrosoftAccountError
+                ? cause.message
+                : "The file download failed. Your completed work is kept; retry or attach an exported copy.",
+          }),
+      });
+      const name =
+        input.fileName
+          .normalize("NFKC")
+          .replace(/[^\p{L}\p{N} ._-]/gu, "")
+          .replace(/^\.+/, "")
+          .trim() || "Source";
+      const relativePath = `Sources/${NodeCrypto.randomUUID().slice(0, 8)}-${name}`;
+      yield* files
+        .writeFile({
+          cwd: context.value.worktreePath ?? context.value.workspaceRoot,
+          relativePath,
+          encoding: "base64",
+          contents: Buffer.from(bytes).toString("base64"),
+        })
+        .pipe(
           Effect.mapError(
             () =>
               new ConnectedAppReadError({
-                detail: "This Task's Space could not be loaded. Reconnect and retry.",
+                detail:
+                  "The downloaded file could not be saved in this Space. Check folder access and storage.",
               }),
           ),
         );
-        if (Option.isNone(context))
-          return yield* new ConnectedAppReadError({ detail: "This Task is no longer available." });
-        const bytes = yield* Effect.tryPromise({
-          try: () => connection.downloadFile(input.id, input.driveId),
-          catch: (cause) =>
-            new ConnectedAppReadError({
-              detail:
-                cause instanceof MicrosoftAccountError
-                  ? cause.message
-                  : "The file download failed. Your completed work is kept; retry or attach an exported copy.",
-            }),
-        });
-        const name =
-          input.fileName
-            .normalize("NFKC")
-            .replace(/[^\p{L}\p{N} ._-]/gu, "")
-            .replace(/^\.+/, "")
-            .trim() || "Source";
-        const relativePath = `Sources/${NodeCrypto.randomUUID().slice(0, 8)}-${name}`;
-        yield* files
-          .writeFile({
-            cwd: context.value.worktreePath ?? context.value.workspaceRoot,
-            relativePath,
-            encoding: "base64",
-            contents: Buffer.from(bytes).toString("base64"),
-          })
-          .pipe(
-            Effect.mapError(
-              () =>
-                new ConnectedAppReadError({
-                  detail:
-                    "The downloaded file could not be saved in this Space. Check folder access and storage.",
-                }),
-            ),
-          );
-        return { relativePath, retrievedAt: new Date().toISOString() };
-      }),
+      return { relativePath, retrievedAt: new Date().toISOString() };
+    }),
   });
 });
 export const ConnectedAppsToolkitHandlersLive = ConnectedAppsToolkit.toLayer(make);

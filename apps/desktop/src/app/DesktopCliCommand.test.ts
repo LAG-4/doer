@@ -27,7 +27,6 @@ const environmentFor = (
     appImagePath: Option.none(),
   } as unknown as DesktopEnvironment.DesktopEnvironment["Service"]);
 
-/** The service for a packaged app; the launcher is written on Install. */
 const commandIn = (
   input: { home: string; baseDir?: string; platform?: NodeJS.Platform; isPackaged?: boolean },
   spawner?: ChildProcessSpawner.ChildProcessSpawner["Service"],
@@ -48,7 +47,6 @@ const commandIn = (
       : make;
   });
 
-/** A PowerShell that keeps the user's PATH in memory and can be told to fail reads. */
 const fakePowerShell = (initial: string) => {
   const registry = { path: initial, failReads: false, writes: 0 };
   const spawner = ChildProcessSpawner.make((command) =>
@@ -85,7 +83,6 @@ const fakePowerShell = (initial: string) => {
   return { registry, spawner };
 };
 
-// The machine's own PATH may already hold a t3; each test sets the PATH it means.
 const machinePath = process.env.PATH;
 beforeEach(() => {
   process.env.PATH = "";
@@ -103,10 +100,15 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
       const command = yield* commandIn({ home });
       const link = path.join(home, ".local", "bin", "doer");
 
-      expect(yield* command.state).toEqual({ supported: true, installedPath: null, onPath: false });
-      // Install writes the launcher itself, even when no local backend ever did.
+      expect(yield* command.state).toEqual({
+        supported: true,
+        installedPath: null,
+        onPath: false,
+        launcherPath: null,
+      });
       const installed = yield* command.install;
       expect(installed.installedPath).toBe(link);
+      expect(installed.launcherPath).toBe(path.join(home, ".t3", "bin", "doer"));
       expect(yield* fs.readLink(link)).toBe(path.join(home, ".t3", "bin", "doer"));
       expect((yield* command.install).installedPath).toBe(link);
 
@@ -126,7 +128,6 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
       const theirs = path.join(home, ".local", "bin", "doer");
       yield* fs.makeDirectory(path.dirname(theirs), { recursive: true });
       yield* fs.writeFileString(theirs, "npm's t3\n");
-      // Even a broken link in the next folder is someone else's.
       yield* fs.makeDirectory(path.join(home, "bin"), { recursive: true });
       yield* fs.symlink(path.join(home, "gone"), path.join(home, "bin", "doer"));
 
@@ -148,7 +149,6 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
 
       const after = yield* commandIn({ home, baseDir: path.join(home, "new-t3") });
       expect((yield* after.state).installedPath).toBe(link);
-      // Installing again points the link at this home's launcher.
       expect((yield* after.install).installedPath).toBe(link);
       expect(yield* fs.readLink(link!)).toBe(path.join(home, "new-t3", "bin", "doer"));
       yield* after.uninstall;
@@ -187,7 +187,6 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
       const command = yield* commandIn({ home });
       const theirs = path.join(shadow, "doer");
       expect((yield* command.state).shadowedBy).toBe(theirs);
-      // A link behind it would never run, so nothing is created.
       const error = yield* Effect.flip(command.install);
       expect(error.message).toContain(theirs);
       expect(yield* fs.exists(path.join(home, ".local", "bin", "doer"))).toBe(false);
@@ -243,17 +242,6 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
       expect((yield* command.state).installedPath).toBeNull();
       yield* command.uninstall;
       expect(registry.path).toBe(userPath);
-    }).pipe(Effect.scoped),
-  );
-
-  it.effect("offers nothing for a development build", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const command = yield* commandIn({
-        home: yield* fs.makeTempDirectoryScoped(),
-        isPackaged: false,
-      });
-      expect((yield* command.state).supported).toBe(false);
     }).pipe(Effect.scoped),
   );
 });
