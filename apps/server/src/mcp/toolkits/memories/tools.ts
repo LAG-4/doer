@@ -148,7 +148,7 @@ const RememberedMemory = Schema.Struct({
 
 const RememberMemoryTool = Tool.make("remember_memory", {
   description:
-    "Save something the user explicitly asked Doer to remember, after they said it or confirmed your suggestion. Saves to This Space by default; pass scope 'about-you' only for facts about the person that belong everywhere. Never save guesses, document content, or secrets (passwords, keys, tokens, codes). The result confirms what was actually saved — report that, never invent a save.",
+    "Save something the user explicitly asked Doer to remember, after they said it or confirmed your suggestion. Saves to This Space by default; pass scope 'about-you' only for facts about the person that belong everywhere. Never save guesses, document content, or secrets (passwords, keys, tokens, codes). The result confirms what was actually saved. Report that, never invent a save.",
   parameters: RememberMemoryInput,
   success: RememberedMemory,
   failure: Schema.Union([MemoryToolError, OrchestratorMcpFailure]),
@@ -162,7 +162,7 @@ const RememberMemoryTool = Tool.make("remember_memory", {
 
 const ListMemoriesTool = Tool.make("list_memories", {
   description:
-    "List what this Task can see: About you plus This Space. Never another Space's memories. Call it before updating or forgetting, and when the user asks what Doer remembers.",
+    "List what this Task can see: About you plus This Space. Never another Space's memories. Call it before updating or forgetting.",
   parameters: ListMemoriesInput,
   success: Schema.Struct({ memories: Schema.Array(DoerMemory) }),
   failure: Schema.Union([MemoryToolError, OrchestratorMcpFailure]),
@@ -193,7 +193,7 @@ const SearchMemoriesTool = Tool.make("search_memories", {
 
 const UpdateMemoryTool = Tool.make("update_memory", {
   description:
-    "Correct a saved memory by id when the user says it changed or is wrong. Only memories this Task can see (About you plus This Space) can be updated. The result confirms the corrected version — earlier conversation may still contain the old wording.",
+    "Correct a saved memory by id when the user says it changed or is wrong. Only memories this Task can see can be updated. The result confirms the corrected version.",
   parameters: UpdateMemoryInput,
   success: RememberedMemory,
   failure: Schema.Union([MemoryToolError, OrchestratorMcpFailure]),
@@ -207,7 +207,7 @@ const UpdateMemoryTool = Tool.make("update_memory", {
 
 const ForgetMemoryTool = Tool.make("forget_memory", {
   description:
-    "Forget a saved memory by id when the user asks to forget it. Only memories this Task can see (About you plus This Space) can be forgotten. It stops future recall; earlier conversation with a provider may still contain it, so do not promise full erasure.",
+    "Forget a saved memory by id when the user asks to forget it. Only memories this Task can see can be forgotten. It stops future recall.",
   parameters: MemoryRefInput,
   success: Schema.Struct({
     memoryId: Schema.String,

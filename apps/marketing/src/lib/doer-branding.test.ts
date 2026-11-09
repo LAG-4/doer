@@ -3,11 +3,9 @@ import * as NodeURL from "node:url";
 import * as NodePath from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 
-// FORK (Doer): pins the fork's marketing identity. Upstream's marketing pages
-// constantly gain T3-branded content (hero copy, endorsement marquee, store
-// links, t3.codes canonical URLs) that must never ship on doer.lagaryan.click.
-// Every upstream catch-up merge touches apps/marketing, so this test fails
-// loudly when a conflict resolution accidentally keeps the upstream side.
+// FORK (Doer): pins the fork's marketing identity. Every upstream catch-up
+// merge touches apps/marketing, so this test fails loudly when a conflict
+// resolution accidentally keeps the upstream side.
 
 const marketingDir = NodePath.join(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
@@ -21,7 +19,8 @@ function readSource(relativePath: string): string {
 
 describe("doer marketing identity", () => {
   it("serves the Doer homepage, not the upstream T3 page", () => {
-    const index = readSource("src/pages/index.astro");
+    // Upstream moved to i18n [...locale]/index.astro (no top-level index.astro).
+    const index = readSource("src/pages/[...locale]/index.astro");
     expect(index).toContain("boring work");
     expect(index).toContain("Doer is free forever");
     expect(index).toContain("What can you hand to Doer?");
@@ -62,7 +61,8 @@ describe("doer marketing identity", () => {
   });
 
   it("keeps the download page fork-specific, without store listings", () => {
-    const download = readSource("src/pages/download.astro");
+    // Upstream moved to i18n [...locale]/download.astro (no top-level download.astro).
+    const download = readSource("src/pages/[...locale]/download.astro");
     expect(download).toContain("Download Doer");
     expect(download).toContain("@lag4/doer-cli");
     expect(download).not.toContain("apps.apple.com");

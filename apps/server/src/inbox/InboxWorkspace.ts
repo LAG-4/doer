@@ -1,11 +1,7 @@
 /**
- * InboxWorkspace - path conventions for the no-folder workspace ("My Stuff").
+ * InboxWorkspace: path conventions for the no-folder workspace ("My Stuff").
  *
- * One shared folder backs every chat started without picking a project:
- * when no project is selected, that folder is used. All functions are pure
- * over explicit inputs so both the server runtime and unit tests share them.
- *
- * @module InboxWorkspace
+ * All functions are pure over explicit inputs for shared server/test use.
  */
 
 /** Folder name of the auto-provisioned inbox under `~/Documents`. */

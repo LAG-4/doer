@@ -1,13 +1,8 @@
 // Microsoft Store tile/logo assets (dependency-free spec + presence check).
 //
-// electron-builder v26 AppxTarget.computeUserAssets falls back to its vendored
-// Electron sample images for every required logo the build resources do not
-// provide, and those defaults fail the required WACK branding checks. The
-// Store build therefore renders its own logos from the production Doer icon
-// into the buildResources-relative "appx" dir during staging (see
-// stageStoreAppxAssets); nothing is committed and no image code runs in
-// tests. This module only describes the required set so the build, the CI
-// unpack check, and the tests share one contract.
+// electron-builder falls back to vendored Electron sample images that fail
+// WACK branding checks, so the Store build renders its own logos from the
+// production Doer icon into the buildResources-relative "appx" dir.
 
 export interface StoreAppxAssetSpec {
   readonly name: string;

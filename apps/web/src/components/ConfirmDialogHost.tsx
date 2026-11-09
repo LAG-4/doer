@@ -5,7 +5,7 @@ import {
   readConfirmDialogState,
   registerConfirmDialogHost,
   respondToConfirmDialog,
-  subscribeConfirmDialog,
+  subscribeConfirmDialogHost,
 } from "../confirmDialog";
 import {
   AlertDialog,
@@ -54,11 +54,12 @@ function resolveConfirmDialogCopy(message: string): ConfirmationCopy {
 
 export function ConfirmDialogHost() {
   const state = useSyncExternalStore(
-    subscribeConfirmDialog,
+    subscribeConfirmDialogHost,
     readConfirmDialogState,
     readConfirmDialogState,
   );
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers this host in the confirm-dialog module registry until unmount
   useEffect(() => registerConfirmDialogHost(), []);
 
   const activeMessage = state.status === "idle" ? "" : state.message;
@@ -67,11 +68,13 @@ export function ConfirmDialogHost() {
   const dontAskAgainLabel = state.status === "idle" ? null : state.dontAskAgainLabel;
 
   const [dontAskAgainChecked, setDontAskAgainChecked] = useState(false);
-  useEffect(() => {
-    if (state.status === "confirming") {
-      setDontAskAgainChecked(false);
-    }
-  }, [state.status, activeMessage]);
+  // A new confirmation arrives via the external store, so reset the opt-out
+  // during render instead of syncing it back in an effect.
+  const [seenDialog, setSeenDialog] = useState({ status: state.status, message: activeMessage });
+  if (seenDialog.status !== state.status || seenDialog.message !== activeMessage) {
+    setSeenDialog({ status: state.status, message: activeMessage });
+    setDontAskAgainChecked(false);
+  }
 
   const onCancel = () => respondToConfirmDialog(false);
   const onConfirm = () => respondToConfirmDialog(true, dontAskAgainChecked);

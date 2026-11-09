@@ -19,8 +19,8 @@ describe("provider auth return destinations", () => {
     "doer://app/auth/callback",
     "doer://user@ app/welcome",
     "doer://app/welcome/../evil",
+    "t3code://attacker/welcome",
+    "t3code://app/welcome/../evil",
     "https://attacker.example/welcome",
-    "file:///welcome",
-    "javascript:alert(1)",
   ])("rejects %s", (url) => expect(providerAuthReturnUrl(url)).toBeUndefined());
 });

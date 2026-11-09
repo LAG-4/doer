@@ -47,13 +47,31 @@ describe("Doer upgrade", () => {
       yield* seedAutomations;
       yield* sql`INSERT INTO doer_memories VALUES ('memory', 'about-you', NULL, 'My preference', 'thread', '2026-10-01T00:00:00.000Z', '2026-10-01T00:00:00.000Z')`;
       const executed = yield* runMigrations();
-      expect(executed.slice(-2)).toEqual([
+      expect(executed.slice(-20)).toEqual([
         [61, "PullRequestReviewGuides"],
         [62, "ThreadFailureLookupIndex"],
+        [63, "DropUnusedV1Projections"],
+        [64, "CanonicalizeThreadPullRequestLinks"],
+        [65, "CodexUsageNativeTurnIndex"],
+        [66, "RepairClientSettlementTimestamps"],
+        [67, "WebhookDedupe"],
+        [68, "ShellStopRequestIndex"],
+        [69, "ThreadMessageSearch"],
+        [70, "PeerLinks"],
+        [71, "PeerLinkFence"],
+        [72, "WaitingLinkRequestIndex"],
+        [73, "ActiveTurnItemIndexes"],
+        [74, "ExcludeAttachmentPlaceholdersFromSearch"],
+        [75, "SubagentDeliveryState"],
+        [76, "ProjectionProjectsPinArchive"],
+        [77, "RepairBooleanSettledOverride"],
+        [78, "DropOrchestrationEventCorrelationIndex"],
+        [79, "DelegatedRecoveryIndexes"],
+        [80, "ScheduledTaskThreadMode"],
       ]);
       // The canonical return carries no fork entry: the import tracks itself
       // in doer_schema_migrations.
-      expect(executed.every(([id]) => id <= 62)).toBe(true);
+      expect(executed.every(([id]) => id <= 80)).toBe(true);
       expect(yield* runMigrations()).toEqual([]);
       const rows = yield* sql<{
         task_id: string;
@@ -80,7 +98,7 @@ describe("Doer upgrade", () => {
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
-  it.effect("moves a recorded 61 DoerLegacySchedules aside so upstream 61/62 run", () =>
+  it.effect("moves a recorded 61 DoerLegacySchedules aside so upstream 61..80 run", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       // Simulate a database written by a Doer release: canonical schema
@@ -100,6 +118,24 @@ describe("Doer upgrade", () => {
       expect(executed).toEqual([
         [61, "PullRequestReviewGuides"],
         [62, "ThreadFailureLookupIndex"],
+        [63, "DropUnusedV1Projections"],
+        [64, "CanonicalizeThreadPullRequestLinks"],
+        [65, "CodexUsageNativeTurnIndex"],
+        [66, "RepairClientSettlementTimestamps"],
+        [67, "WebhookDedupe"],
+        [68, "ShellStopRequestIndex"],
+        [69, "ThreadMessageSearch"],
+        [70, "PeerLinks"],
+        [71, "PeerLinkFence"],
+        [72, "WaitingLinkRequestIndex"],
+        [73, "ActiveTurnItemIndexes"],
+        [74, "ExcludeAttachmentPlaceholdersFromSearch"],
+        [75, "SubagentDeliveryState"],
+        [76, "ProjectionProjectsPinArchive"],
+        [77, "RepairBooleanSettledOverride"],
+        [78, "DropOrchestrationEventCorrelationIndex"],
+        [79, "DelegatedRecoveryIndexes"],
+        [80, "ScheduledTaskThreadMode"],
       ]);
       expect(yield* runMigrations()).toEqual([]);
 
@@ -120,6 +156,24 @@ describe("Doer upgrade", () => {
       expect(history).toEqual([
         { migration_id: 61, name: "PullRequestReviewGuides" },
         { migration_id: 62, name: "ThreadFailureLookupIndex" },
+        { migration_id: 63, name: "DropUnusedV1Projections" },
+        { migration_id: 64, name: "CanonicalizeThreadPullRequestLinks" },
+        { migration_id: 65, name: "CodexUsageNativeTurnIndex" },
+        { migration_id: 66, name: "RepairClientSettlementTimestamps" },
+        { migration_id: 67, name: "WebhookDedupe" },
+        { migration_id: 68, name: "ShellStopRequestIndex" },
+        { migration_id: 69, name: "ThreadMessageSearch" },
+        { migration_id: 70, name: "PeerLinks" },
+        { migration_id: 71, name: "PeerLinkFence" },
+        { migration_id: 72, name: "WaitingLinkRequestIndex" },
+        { migration_id: 73, name: "ActiveTurnItemIndexes" },
+        { migration_id: 74, name: "ExcludeAttachmentPlaceholdersFromSearch" },
+        { migration_id: 75, name: "SubagentDeliveryState" },
+        { migration_id: 76, name: "ProjectionProjectsPinArchive" },
+        { migration_id: 77, name: "RepairBooleanSettledOverride" },
+        { migration_id: 78, name: "DropOrchestrationEventCorrelationIndex" },
+        { migration_id: 79, name: "DelegatedRecoveryIndexes" },
+        { migration_id: 80, name: "ScheduledTaskThreadMode" },
       ]);
       expect(yield* sql`SELECT migration_id, name FROM doer_schema_migrations`).toEqual([
         { migration_id: 1, name: "LegacySchedules" },
@@ -134,9 +188,27 @@ describe("Doer upgrade", () => {
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       const executed = yield* runMigrations();
-      expect(executed.slice(-2)).toEqual([
+      expect(executed.slice(-20)).toEqual([
         [61, "PullRequestReviewGuides"],
         [62, "ThreadFailureLookupIndex"],
+        [63, "DropUnusedV1Projections"],
+        [64, "CanonicalizeThreadPullRequestLinks"],
+        [65, "CodexUsageNativeTurnIndex"],
+        [66, "RepairClientSettlementTimestamps"],
+        [67, "WebhookDedupe"],
+        [68, "ShellStopRequestIndex"],
+        [69, "ThreadMessageSearch"],
+        [70, "PeerLinks"],
+        [71, "PeerLinkFence"],
+        [72, "WaitingLinkRequestIndex"],
+        [73, "ActiveTurnItemIndexes"],
+        [74, "ExcludeAttachmentPlaceholdersFromSearch"],
+        [75, "SubagentDeliveryState"],
+        [76, "ProjectionProjectsPinArchive"],
+        [77, "RepairBooleanSettledOverride"],
+        [78, "DropOrchestrationEventCorrelationIndex"],
+        [79, "DelegatedRecoveryIndexes"],
+        [80, "ScheduledTaskThreadMode"],
       ]);
       const history = yield* sql<{
         migration_id: number;
@@ -164,9 +236,27 @@ describe("Doer upgrade", () => {
         yield* sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('doer_schema_migrations', 'doer_memories')`,
       ).toEqual([]);
       const executed = yield* runMigrations();
-      expect(executed.slice(-2)).toEqual([
+      expect(executed.slice(-20)).toEqual([
         [61, "PullRequestReviewGuides"],
         [62, "ThreadFailureLookupIndex"],
+        [63, "DropUnusedV1Projections"],
+        [64, "CanonicalizeThreadPullRequestLinks"],
+        [65, "CodexUsageNativeTurnIndex"],
+        [66, "RepairClientSettlementTimestamps"],
+        [67, "WebhookDedupe"],
+        [68, "ShellStopRequestIndex"],
+        [69, "ThreadMessageSearch"],
+        [70, "PeerLinks"],
+        [71, "PeerLinkFence"],
+        [72, "WaitingLinkRequestIndex"],
+        [73, "ActiveTurnItemIndexes"],
+        [74, "ExcludeAttachmentPlaceholdersFromSearch"],
+        [75, "SubagentDeliveryState"],
+        [76, "ProjectionProjectsPinArchive"],
+        [77, "RepairBooleanSettledOverride"],
+        [78, "DropOrchestrationEventCorrelationIndex"],
+        [79, "DelegatedRecoveryIndexes"],
+        [80, "ScheduledTaskThreadMode"],
       ]);
       expect(yield* sql`SELECT migration_id, name FROM doer_schema_migrations`).toEqual([
         { migration_id: 1, name: "LegacySchedules" },

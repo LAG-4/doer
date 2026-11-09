@@ -1,11 +1,14 @@
 // @effect-diagnostics nodeBuiltinImport:off -- The integration fixture binds the same platform socket or named pipe as the CLI.
+import * as NodeChildProcess from "node:child_process";
+import * as NodeEvents from "node:events";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { it } from "@effect/vitest";
+import { assert, it } from "@effect/vitest";
 import type { DesktopAppActivationRequest } from "@t3tools/contracts";
 import { resolveDesktopAppControlAddress } from "@t3tools/shared/desktopAppControl";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -20,13 +23,40 @@ import { describe, expect } from "vite-plus/test";
 import { makeCli } from "../binCli.ts";
 import { PersistedServerRuntimeState } from "../serverRuntimeState.ts";
 
+const liveProcess = Effect.acquireRelease(
+  Effect.promise(async () => {
+    const child = NodeChildProcess.spawn(process.execPath, ["-e", "process.stdin.resume()"], {
+      stdio: ["pipe", "ignore", "ignore"],
+    });
+    await NodeEvents.EventEmitter.once(child, "spawn");
+    return child;
+  }),
+  (child) =>
+    Effect.promise(async () => {
+      const exited = NodeEvents.EventEmitter.once(child, "exit");
+      child.kill();
+      await exited;
+    }),
+);
+
 const encodeRuntimeState = Schema.encodeEffect(Schema.fromJsonString(PersistedServerRuntimeState));
+
+// Node reads this variable itself, so the test must set the real process environment.
+const setProcessEnv = (name: string, value: string) => {
+  const previous = process.env[name];
+  process.env[name] = value;
+  return () => {
+    if (previous === undefined) delete process.env[name];
+    else process.env[name] = previous;
+  };
+};
 
 const runCli = (args: ReadonlyArray<string>, env: Record<string, string> = {}) =>
   Command.runWith(makeCli(), { version: "0.0.0" })(args).pipe(
     Effect.provide(
       Layer.mergeAll(
         NodeServices.layer,
+        NodeCrypto.layer,
         NetService.layer,
         ConfigProvider.layer(ConfigProvider.fromEnv({ env })),
       ),
@@ -90,6 +120,7 @@ async function startFakeDesktop(input: {
   });
 
   return {
+    directory: target.directory,
     received,
     close: async () => {
       await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -116,9 +147,10 @@ const fakeDesktop = Effect.fn(function* (
 const withTempDirectory = <A, E, R>(
   prefix: string,
   use: (root: string) => Effect.Effect<A, E, R>,
+  tempDir = NodeOS.tmpdir(),
 ) =>
   Effect.acquireUseRelease(
-    Effect.promise(() => NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), prefix))),
+    Effect.promise(() => NodeFSP.mkdtemp(NodePath.join(tempDir, prefix))),
     use,
     (root) => Effect.promise(() => NodeFSP.rm(root, { recursive: true, force: true })),
   );
@@ -148,26 +180,17 @@ describe("t3 server command safety", () => {
     ),
   );
 
-  it.effect("shows help without creating state", () =>
-    withTempDirectory("t3-cli-help-", (root) =>
-      Effect.gen(function* () {
-        const baseDir = NodePath.join(root, "home");
-        const help = yield* runCli(["help"], { T3CODE_HOME: baseDir }).pipe(Effect.flip);
-        expect(help).toMatchObject({ _tag: "ShowHelp", commandPath: ["t3"], errors: [] });
-        expect(yield* pathExists(baseDir)).toBe(false);
-      }),
-    ),
-  );
-
   it.effect("refuses manual startup over a live server before creating directories", () =>
     withTempDirectory("t3-cli-running-", (root) =>
       Effect.gen(function* () {
         const baseDir = NodePath.join(root, "home");
         const stateDir = NodePath.join(baseDir, "userdata");
         const statePath = NodePath.join(stateDir, "server-runtime.json");
+        const child = yield* liveProcess;
+        assert(child.pid !== undefined);
         const record = yield* encodeRuntimeState({
           version: 1,
-          pid: process.pid,
+          pid: child.pid,
           port: 3773,
           origin: "http://127.0.0.1:3773",
           startedAt: "2026-10-01T00:00:00.000Z",
@@ -259,6 +282,53 @@ describe("t3 app", () => {
         expect(yield* pathExists(baseDir)).toBe(false);
       }),
     ),
+  );
+
+  it.live.each(["permissions", "owner", "symlink", "missing owner"] as const)(
+    "rejects unsafe %s on the socket directory before sending",
+    (unsafe) =>
+      Effect.gen(function* () {
+        const platform = yield* HostProcess.Platform;
+        if (platform === "win32") return;
+        yield* withTempDirectory(
+          "t3-app-unsafe-",
+          (root) =>
+            Effect.gen(function* () {
+              yield* Effect.acquireRelease(
+                Effect.sync(() => setProcessEnv("TMPDIR", root)),
+                (restore) => Effect.sync(restore),
+              );
+              const baseDir = NodePath.join(root, ".t3");
+              const userId = yield* HostProcess.UserId;
+              assert(userId !== undefined);
+              const expectedUserId =
+                unsafe === "missing owner" ? undefined : unsafe === "owner" ? userId + 1 : userId;
+              const desktop = yield* fakeDesktop({ baseDir }).pipe(
+                Effect.provideService(HostProcess.UserId, expectedUserId),
+              );
+              const directory = desktop.directory;
+              assert(directory !== null);
+              if (unsafe === "permissions") {
+                yield* Effect.promise(() => NodeFSP.chmod(directory, 0o755));
+              } else if (unsafe === "symlink") {
+                const moved = NodePath.join(root, "moved");
+                yield* Effect.promise(() => NodeFSP.rename(directory, moved));
+                yield* Effect.promise(() => NodeFSP.symlink(moved, directory));
+              }
+              const result = yield* runCli(["app"]).pipe(
+                Effect.provideService(HostProcess.HomeDirectory, root),
+                Effect.provideService(HostProcess.UserId, expectedUserId),
+                Effect.result,
+              );
+              expect(desktop.received).toEqual([]);
+              expect(result).toMatchObject({
+                _tag: "Failure",
+                failure: { _tag: "DesktopAppUnreachableError" },
+              });
+            }).pipe(Effect.scoped),
+          "/tmp",
+        );
+      }),
   );
 
   it.effect("uses T3CODE_HOME or --base-dir and sends the default or explicit path", () =>

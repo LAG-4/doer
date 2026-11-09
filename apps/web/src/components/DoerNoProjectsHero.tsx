@@ -1,5 +1,5 @@
 import { MessageSquareDashedIcon, PlusIcon } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useState } from "react";
 
 import { openCommandPalette } from "../commandPaletteBus";
 import { useEnsureInboxProject } from "../hooks/useEnsureInboxProject";
@@ -13,7 +13,7 @@ import { SidebarInset } from "./ui/sidebar";
 import { WorkspacePageHeader } from "./WorkspacePageHeader";
 
 export function DoerNoProjectsHero() {
-  const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
+  const openAddProject = () => openCommandPalette({ open: "add-project" });
   const { handleNewThread } = useHandleNewThread();
   const { prepareInboxProject, settleInboxProject, isInboxCapable } = useEnsureInboxProject();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -23,7 +23,7 @@ export function DoerNoProjectsHero() {
 
   // Opens the inbox draft instantly; creation settles behind it. A null
   // draft is not a failure: another navigation already won the race.
-  const startChatting = useCallback(async () => {
+  const startChatting = async () => {
     setFailed(false);
     const prepared = prepareInboxProject();
     if (prepared === null) {
@@ -40,7 +40,7 @@ export function DoerNoProjectsHero() {
     } else if (finalRef.projectId !== prepared.ref.projectId) {
       await handleNewThread(finalRef, { replace: true }).catch(() => undefined);
     }
-  }, [handleNewThread, prepareInboxProject, settleInboxProject]);
+  };
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">

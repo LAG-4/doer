@@ -36,6 +36,7 @@ export function MaterialPullRequestToolbar(props: { readonly onRequestVisibility
     recordScrollOffset("pullRequests", tab.searchEntryOffset);
     dispatch({ type: "cancel", tab: "pullRequests" });
   }, [dispatch, recordScrollOffset, tab.searchEntryOffset]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the native Android back-button handler in step with search mode while mounted
   useEffect(() => {
     if (!searching || !listFocused) return;
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => {

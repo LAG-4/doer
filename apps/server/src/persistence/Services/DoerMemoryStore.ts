@@ -1,12 +1,8 @@
 /**
- * DoerMemoryStore - Persistence interface for explicit saved memories.
- *
- * One row per memory; every mutation touches a single row by id so
- * concurrent save/update/delete operations cannot clobber each other.
- * About-you rows are owner-scoped (null project id) on this server only;
- * Space rows are keyed by the authoritative project id.
- *
- * @module DoerMemoryStore
+ * Persistence for explicit saved memories. One row per memory; every
+ * mutation touches a single row by id so concurrent operations cannot
+ * clobber each other. About-you rows are owner-scoped, Space rows are
+ * keyed by project id.
  */
 import type { DoerMemory, DoerMemoryScope } from "@t3tools/shared/doerMemory";
 import * as Context from "effect/Context";

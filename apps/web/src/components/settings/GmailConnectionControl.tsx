@@ -7,7 +7,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { connectionAtomRuntime } from "~/connection/runtime";
 import { readLocalApi } from "~/localApi";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -31,57 +31,54 @@ const isGmailHttpError = Schema.is(GmailHttpError);
 
 const requestGmail = createEnvironmentCommand(connectionAtomRuntime, {
   label: "connected-apps:gmail",
-  execute: (input: GmailAction) =>
-    Effect.gen(function* () {
-      const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
-      const prepared = Option.getOrNull(yield* SubscriptionRef.get(supervisor.prepared));
-      if (!prepared)
-        return {
-          kind: "error" as const,
-          message: "Reconnect this computer to manage its Gmail account.",
-        };
-      const client = yield* ConnectedAppsHttp;
-      // Preserve readable server failures (revocation, key, configuration,
-      // sign-in conflicts); only transport failures stay generic.
-      const failure = (action: GmailAction["action"]) => (error: unknown) => {
-        if (isGmailHttpError(error)) {
-          return Effect.succeed({ kind: "error" as const, message: error.message });
-        }
-        return Effect.succeed({
-          kind: "error" as const,
-          message:
-            action === "begin"
-              ? "Could not start Gmail sign-in."
-              : "Could not reach this computer.",
-        });
+  execute: Effect.fn("connected-apps:gmail")(function* (input: GmailAction) {
+    const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+    const prepared = Option.getOrNull(yield* SubscriptionRef.get(supervisor.prepared));
+    if (!prepared)
+      return {
+        kind: "error" as const,
+        message: "Reconnect this computer to manage its Gmail account.",
       };
-      if (input.action === "status") {
-        return yield* client.gmailStatus(prepared).pipe(
-          Effect.map((status) => ({ kind: "status" as const, status })),
-          Effect.catch(failure("status")),
-        );
+    const client = yield* ConnectedAppsHttp;
+    // Preserve readable server failures (revocation, key, configuration,
+    // sign-in conflicts); only transport failures stay generic.
+    const failure = (action: GmailAction["action"]) => (error: unknown) => {
+      if (isGmailHttpError(error)) {
+        return Effect.succeed({ kind: "error" as const, message: error.message });
       }
-      if (input.action === "begin") {
-        return yield* client.gmailBegin(prepared).pipe(
-          Effect.map((begin) => ({
-            kind: "authorization" as const,
-            authorizationUrl: begin.authorizationUrl,
-          })),
-          Effect.catch(failure("begin")),
-        );
-      }
-      return yield* client.gmailDisconnect(prepared).pipe(
-        Effect.map((result) =>
-          result.disconnected
-            ? { kind: "disconnected" as const }
-            : {
-                kind: "error" as const,
-                message: "Disconnect did not complete. Try again while online.",
-              },
-        ),
-        Effect.catch(failure("disconnect")),
+      return Effect.succeed({
+        kind: "error" as const,
+        message:
+          action === "begin" ? "Could not start Gmail sign-in." : "Could not reach this computer.",
+      });
+    };
+    if (input.action === "status") {
+      return yield* client.gmailStatus(prepared).pipe(
+        Effect.map((status) => ({ kind: "status" as const, status })),
+        Effect.catch(failure("status")),
       );
-    }),
+    }
+    if (input.action === "begin") {
+      return yield* client.gmailBegin(prepared).pipe(
+        Effect.map((begin) => ({
+          kind: "authorization" as const,
+          authorizationUrl: begin.authorizationUrl,
+        })),
+        Effect.catch(failure("begin")),
+      );
+    }
+    return yield* client.gmailDisconnect(prepared).pipe(
+      Effect.map((result) =>
+        result.disconnected
+          ? { kind: "disconnected" as const }
+          : {
+              kind: "error" as const,
+              message: "Disconnect did not complete. Try again while online.",
+            },
+      ),
+      Effect.catch(failure("disconnect")),
+    );
+  }),
 });
 
 export function GmailConnectionControl({
@@ -114,18 +111,15 @@ export function GmailConnectionControl({
     isLoopback: isLoopbackHost,
   });
 
-  const run = useCallback(
-    async (action: GmailAction["action"]): Promise<GmailResult | null> => {
-      if (environmentId === null || !host.reachable) return null;
-      const result = await request({ environmentId, input: { action } });
-      if (result._tag === "Failure")
-        return { kind: "error", message: "Could not reach this computer." };
-      return result.value;
-    },
-    [environmentId, host.reachable, request],
-  );
+  const run = async (action: GmailAction["action"]): Promise<GmailResult | null> => {
+    if (environmentId === null || !host.reachable) return null;
+    const result = await request({ environmentId, input: { action } });
+    if (result._tag === "Failure")
+      return { kind: "error", message: "Could not reach this computer." };
+    return result.value;
+  };
 
-  const refresh = useCallback(async () => {
+  const refresh = async () => {
     if (environmentId === null || !host.reachable) return;
     // The network request runs inside the refresh loader so its readVersion
     // guard applies to the whole round trip: a slow earlier request can never
@@ -135,14 +129,16 @@ export function GmailConnectionControl({
       if (result?.kind === "status") return result.status;
       throw new Error(result?.kind === "error" ? result.message : "Could not reach this computer.");
     });
-  }, [environmentId, host.reachable, run, state]);
+  };
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refreshes the Gmail status from this computer when availability changes
   useEffect(() => {
     void refresh();
     // The switch can be changed by another paired client, including Disconnect.
     // eslint-disable-next-line react/exhaustive-effect-dependencies
   }, [enabled, refresh]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- revalidates Gmail status when the window regains focus
   useEffect(() => {
     if (typeof window === "undefined") return;
     window.addEventListener("focus", refresh);
@@ -153,12 +149,13 @@ export function GmailConnectionControl({
     };
   }, [refresh, state]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the sign-in attempt refs in step with availability
   useEffect(() => {
     if (!enabled && signingIn.current) state.cancelOperation(operation.current);
     if (!autoConnect || !enabled) attempted.current = false;
   }, [autoConnect, enabled, state]);
 
-  const connect = useCallback(async () => {
+  const connect = async () => {
     if (!host.onHost || !enabled) return;
     const currentOperation = state.beginOperation();
     if (currentOperation === null) return;
@@ -197,8 +194,9 @@ export function GmailConnectionControl({
       state.endOperation(currentOperation);
       if (operation.current === currentOperation) signingIn.current = false;
     }
-  }, [enabled, host.onHost, run, state]);
+  };
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts the first Gmail connection attempt when configured for auto-connect
   useEffect(() => {
     if (
       autoConnect &&

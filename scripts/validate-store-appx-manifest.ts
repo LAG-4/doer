@@ -1,13 +1,8 @@
 #!/usr/bin/env node
 // @effect-diagnostics nodeBuiltinImport:off - Synchronous CI validation runs before any Effect runtime exists.
 
-// CI validation for the unpacked Store package. Reads AppxManifest.xml from
-// the unpacked .appx, maps the app version to the expected Store manifest
-// quad internally (single mapping implementation), and checks the manifest
-// against the expected Partner Center values passed via env (see
-// .github/workflows/store-appx.yml). Optionally verifies the packed brand
-// assets. Exits nonzero with the mismatch list; package existence alone is
-// not evidence.
+// CI validation for the unpacked Store package. Checks AppxManifest.xml
+// against expected Partner Center values (see store-appx.yml).
 
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";

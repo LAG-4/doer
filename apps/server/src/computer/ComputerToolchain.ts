@@ -1,26 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
-/**
- * Pinned install of the external tool computer use is built on.
- *
- * `open-computer-use` sees the desktop and operates real GUI apps through
- * Accessibility / UI Automation / AT-SPI. It is installed after the user
- * enables agent computer access into `<baseDir>/tools/<name>/<version>` and
- * executed from there with the server's own Node, never `npx`: an ephemeral
- * npx cache would make every first `computer_start` after a reboot depend on
- * the registry, and the pinned version is part of the contract the injected
- * agent instructions describe.
- *
- * The preferred path needs no system tools at all: the pinned tarball is
- * fetched with the server's own network stack and unpacked directly. This is
- * what makes computer use work on fresh Windows machines with no Node.js,
- * npm, or pnpm installed. `npm install` stays as a fallback for machines
- * whose proxy setup only npm understands.
- *
- * Install follows the pinned-runtime recipe: stage into a temp sibling, write
- * a sentinel only after the tree verifies, then rename into place. Package
- * managers extract files before they finish, so an entry file alone does not
- * prove a usable tree.
- */
+/** Pinned `open-computer-use` install: tarball fetch preferred, npm fallback. */
 import * as NodeCrypto from "node:crypto";
 import * as NodeZlib from "node:zlib";
 

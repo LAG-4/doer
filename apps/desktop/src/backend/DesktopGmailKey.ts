@@ -1,9 +1,10 @@
-import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Base64 from "effect/encoding/Base64";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+// @effect-diagnostics nodeBuiltinImport:off -- Effect v4 removed effect/Crypto; Node randomBytes replaces Crypto.Crypto.
+import * as NodeCrypto from "node:crypto";
 
 import { DesktopEnvironment } from "../app/DesktopEnvironment.ts";
 import { ElectronSafeStorage } from "../electron/ElectronSafeStorage.ts";
@@ -22,7 +23,6 @@ export const resolveGmailEncryptionKey = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment;
   if (environment.platform === "linux" && Option.isNone(backend)) return undefined;
   const files = yield* FileSystem.FileSystem;
-  const crypto = yield* Crypto.Crypto;
   const target = environment.path.join(environment.stateDir, "gmail-encryption-key.bin");
   const keyPattern = /^[A-Za-z0-9+/]{43}=$/;
   if (yield* files.exists(target)) {
@@ -32,7 +32,7 @@ export const resolveGmailEncryptionKey = Effect.gen(function* () {
       return yield* new GmailKeyError({ message: "Invalid Gmail encryption key." });
     return key;
   }
-  const key = Base64.encode(yield* crypto.randomBytes(32));
+  const key = Base64.encode(NodeCrypto.randomBytes(32));
   const encrypted = yield* storage.value.encryptString(key);
   yield* files.makeDirectory(environment.stateDir, { recursive: true });
   // Exclusive creation prevents another app instance from replacing the key.

@@ -1,21 +1,9 @@
 // @effect-diagnostics globalDate:off -- Excel serials decompose to UTC calendar days/times via Date.
 /**
- * spreadsheetWorkbook - dependency-light .xlsx read/write for the browser,
- * Node, and Bun runtimes.
- *
- * Approach (not code) follows OpenWork's MIT `packages/workbook` design:
- * plain string-cell grid model, ragged rows normalized to a rectangle,
- * serialize-on-save round trips. Unlike a full spreadsheet library there is
- * no formula engine, no styling, and no chart support: every cell is a
- * string, numbers and dates travel as plain text, and only the first sheet
- * is editable. All other sheets are preserved untouched on save.
- *
- * Zero dependencies: zip (stored + deflate) and the minimal OOXML parts are
- * implemented here on top of the platform's CompressionStream /
- * DecompressionStream, which also lets the UI feature-detect support and
- * show a fallback where the APIs are missing.
- *
- * @module spreadsheetWorkbook
+ * spreadsheetWorkbook - dependency-light .xlsx read/write for all runtimes.
+ * Plain string-cell grid model; every cell is a string, only the first
+ * sheet is editable. Zero dependencies: zip and minimal OOXML on top of
+ * the platform's CompressionStream/DecompressionStream.
  */
 
 export interface SpreadsheetSheetGrid {
@@ -980,12 +968,9 @@ const SHEET_GRID_MAX_CELLS = 250_000;
 const CANONICAL_NUMBER = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
 
 /**
- * Excel General-style display for a canonical number: flight-artifact
- * decimals like 70.900000000000006 read as 70.9. By default only applies
- * when the formatted text parses back to the identical double, so saving a
- * parsed value never mutates it. Computed formula results pass
- * `{ coerce: true }`: display precision wins because the formula stays the
- * source of truth and Excel recalculates cached values on open anyway.
+ * Excel General-style display: flight-artifact decimals like 70.900000000000006
+ * read as 70.9. Applies only when the text parses back to the identical
+ * double, so saving a parsed value never mutates it.
  */
 export function formatSpreadsheetNumber(text: string, options: { coerce?: boolean } = {}): string {
   if (!CANONICAL_NUMBER.test(text)) return text;
@@ -1004,12 +989,9 @@ export type SpreadsheetCellInput =
   | { kind: "text"; value: string };
 
 /**
- * Turn edited text back into a typed cell without guessing (the
- * cellInputFromText policy): canonical numbers become numbers so "02134" and
- * "1,000" stay text, TRUE/FALSE become booleans, and everything else is text.
- * Text is never promoted to a formula: the editor cannot tell a typed
- * formula from imported text that starts with "=", so nothing saved here is
- * executable.
+ * Turn edited text back into a typed cell without guessing: canonical numbers
+ * become numbers, TRUE/FALSE become booleans, everything else stays text.
+ * Text is never promoted to a formula, so nothing saved here is executable.
  */
 export function spreadsheetCellInputFromText(text: string): SpreadsheetCellInput {
   if (text === "") return { kind: "empty" };

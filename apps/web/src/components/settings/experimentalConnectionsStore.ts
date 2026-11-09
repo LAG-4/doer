@@ -5,15 +5,9 @@ import {
 } from "@t3tools/client-runtime/experimental-connections";
 
 /**
- * Shared experimental-connections flag cache for one web client.
- *
- * Every mounted consumer (Settings toggle, composer plugin menus, search
- * availability) subscribes to the same per-computer entry, so a toggle in
- * Settings updates all of them without refetching. Sequence numbers guard
- * the whole round trip: a slow GET started before a successful POST can
- * never overwrite the newer value. No polling — consumers load on mount
- * and revalidate on window focus; the server rechecks the flag on every
- * gated call regardless of what the client cached.
+ * Shared experimental-connections flag cache for one web client. Sequence
+ * numbers guard the round trip so a slow GET never overwrites a newer value.
+ * No polling: consumers load on mount and revalidate on window focus.
  */
 export interface ExperimentalConnectionsSnapshot {
   /** Null until the first GET resolves. */

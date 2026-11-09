@@ -11,11 +11,8 @@ import {
   ensureDoerSchemaMigrations,
 } from "./doerMigrations.ts";
 
-// Doer used 51/52 for reminders and shifted upstream 51–54 to 53–56.
-// Archive that ledger before assigning upstream its original ids. Doer
-// releases also recorded the legacy schedule import at 61, which upstream now
-// owns (PullRequestReviewGuides; 62 is ThreadFailureLookupIndex). Both changes
-// are transactional so an interrupted upgrade can be retried safely.
+// Doer used 51/52 for reminders and shifted upstream 51-54 to 53-56.
+// Archive that ledger before assigning upstream its original ids.
 export const reconcileDoerMigrations = Effect.fn("reconcileDoerMigrations")(function* () {
   const sql = yield* SqlClient.SqlClient;
   return yield* sql.withTransaction(
@@ -57,11 +54,7 @@ export const reconcileDoerMigrations = Effect.fn("reconcileDoerMigrations")(func
         }
       }
       // The migrator only runs ids above the highest recorded one, so a stale
-      // 61_DoerLegacySchedules row would silently skip the canonical 61/62
-      // migrations. Archive and remove it before the V2 assertion runs. The
-      // import already wrote its tables, so transfer its completion to the
-      // fork ledger: the post-migration Doer import then skips re-running it
-      // and the schedules stay exactly as the Doer release left them.
+      // 61 row would silently skip the canonical 61/62 migrations. Archive it.
       const later = yield* sql<{
         readonly migration_id: number;
         readonly name: string;

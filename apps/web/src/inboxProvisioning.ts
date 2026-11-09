@@ -1,11 +1,6 @@
 /**
  * Tracks inbox projects with creation still in flight.
- *
- * Opening a no-folder chat navigates instantly with a locally minted
- * project id while the real project.create settles in the background; the
- * draft shows a "setting up" state until the row lands in the project store
- * (or creation fails and the dead-end recovery takes over). Module-local
- * and never persisted: a reload re-derives everything from the store.
+ * Module-local and never persisted; a reload re-derives from the store.
  */
 const pendingProjectIds = new Set<string>();
 

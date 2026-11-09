@@ -42,6 +42,8 @@ const PREPARED_RELAY: PreparedConnection = {
 
 const STATUS = { configured: true, connected: true, email: "user@example.com" };
 
+const isGmailHttpError = Schema.is(GmailHttpError);
+
 function stubFetch(reply: (callNumber: number) => Response | Promise<Response>) {
   const calls: Array<{ readonly url: string; readonly init: RequestInit }> = [];
   vi.stubGlobal(
@@ -85,7 +87,7 @@ describe("ConnectedAppsHttp Gmail transport", () => {
       const apps = yield* ConnectedAppsHttp.pipe(Effect.provide(connectedAppsHttpLayer));
       const error = yield* apps.gmailBegin(PREPARED_SECONDARY).pipe(Effect.flip);
 
-      expect(Schema.is(GmailHttpError)(error)).toBe(true);
+      expect(isGmailHttpError(error)).toBe(true);
       expect(error).toMatchObject({ _tag: "GmailHttpError", message: "Google revoked access." });
       expect(calls).toHaveLength(1);
       expect(calls[0]!.url).toBe("https://secondary.example.test/api/integrations/gmail/connect");
@@ -98,7 +100,7 @@ describe("ConnectedAppsHttp Gmail transport", () => {
       const apps = yield* ConnectedAppsHttp.pipe(Effect.provide(connectedAppsHttpLayer));
       const error = yield* apps.gmailDisconnect(PREPARED_SECONDARY).pipe(Effect.flip);
 
-      expect(Schema.is(GmailHttpError)(error)).toBe(true);
+      expect(isGmailHttpError(error)).toBe(true);
     }),
   );
 
@@ -114,7 +116,7 @@ describe("ConnectedAppsHttp Gmail transport", () => {
       const apps = yield* ConnectedAppsHttp.pipe(Effect.provide(connectedAppsHttpLayer));
       const error = yield* apps.gmailDisconnect(PREPARED_SECONDARY).pipe(Effect.flip);
 
-      expect(Schema.is(GmailHttpError)(error)).toBe(true);
+      expect(isGmailHttpError(error)).toBe(true);
       expect(error).toMatchObject({ _tag: "GmailHttpError" });
       if (error._tag === "GmailHttpError") {
         expect(error.message).toHaveLength(300);
@@ -134,7 +136,7 @@ describe("ConnectedAppsHttp Gmail transport", () => {
       const error = yield* apps.gmailStatus(PREPARED_SECONDARY).pipe(Effect.flip);
 
       expect(error._tag).toBe("RemoteEnvironmentAuthInvalidJsonError");
-      expect(Schema.is(GmailHttpError)(error)).toBe(false);
+      expect(isGmailHttpError(error)).toBe(false);
     }),
   );
 

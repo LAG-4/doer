@@ -12,13 +12,14 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { CopyIcon, DownloadIcon, ExternalLinkIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "~/components/ui/button";
 import { Spinner } from "~/components/ui/spinner";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
+import { useStableCallback } from "~/hooks/useStableCallback";
 import { readLocalApi } from "~/localApi";
 import { shellEnvironment } from "~/state/shell";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -81,9 +82,10 @@ export function SpreadsheetSurface({
   const dirty = document ? isSpreadsheetDirty(document) : false;
   const dirtyRef = useRef(false);
   const saveInFlightRef = useRef(false);
-  const formulas = useMemo(() => collectSpreadsheetFormulas(document?.rows ?? []), [document]);
+  const formulas = collectSpreadsheetFormulas(document?.rows ?? []);
 
   // The formula engine loads lazily, only for sheets that contain formulas.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads the formula engine module on demand once the sheet contains formulas
   useEffect(() => {
     if (formulas.length === 0 || formulaEngine) return;
     let cancelled = false;
@@ -100,7 +102,7 @@ export function SpreadsheetSurface({
 
   // Display grid: formula cells show live computed values, everything else
   // passes through. Without an engine the raw text shows, as before.
-  const displays = useMemo(() => {
+  const displays = (() => {
     if (!document) return null;
     if (formulas.length === 0) return document.rows;
     try {
@@ -114,24 +116,29 @@ export function SpreadsheetSurface({
     } catch {
       return document.rows;
     }
-  }, [document, formulas, formulaEngine]);
+  })();
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes the computed display grid to a ref read by save and download handlers
   useEffect(() => {
     displaysRef.current = displays;
   }, [displays]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes the committed document to a ref read by async save handlers
   useEffect(() => {
     documentRef.current = document;
   }, [document]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes the dirty flag to a ref read by the Excel confirm and dismissal guards
   useEffect(() => {
     dirtyRef.current = dirty;
   }, [dirty]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes the save flight flag to a ref read by concurrent save guards
   useEffect(() => {
     saveInFlightRef.current = saveInFlight;
   }, [saveInFlight]);
 
   // The surface reports pending from its edit and save handlers. A goodbye
   // report on unmount keeps the tab dot from going stale.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reports pending=false to the tab store on unmount
   useEffect(() => {
     return () => {
       onPendingChange(relativePath, false);
@@ -145,6 +152,9 @@ export function SpreadsheetSurface({
     resourceKey: `spreadsheet:${environmentId}:${cwd}:${relativePath}`,
   });
 
+  // Parses fetched bytes into grid state; the request id keeps a slow parse
+  // from clobbering a newer sheet, and dirty edits are never overwritten.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- parses fetched file bytes into grid state without clobbering unsaved edits
   useEffect(() => {
     if (file.data === null || file.data.truncated) return;
     // Never clobber unsaved edits with a background refresh.
@@ -183,28 +193,25 @@ export function SpreadsheetSurface({
     };
   }, [file.data, sheetIndex]);
 
-  const handleSaved = useCallback(
-    (contents: string) => {
-      const pending = pendingSaveRef.current;
-      if (!pending || pending.base64 !== contents) {
-        setSaveInFlight(false);
-        return;
-      }
-      pendingSaveRef.current = null;
+  const handleSaved = (contents: string) => {
+    const pending = pendingSaveRef.current;
+    if (!pending || pending.base64 !== contents) {
       setSaveInFlight(false);
-      const liveRows = documentRef.current?.rows;
-      setDocument((current) =>
-        current ? applySpreadsheetSave(current, pending.rows, pending.bytes) : current,
-      );
-      // Edits typed while the save was in flight stay pending.
-      onPendingChange(relativePath, !spreadsheetGridsEqual(pending.rows, liveRows ?? pending.rows));
-    },
-    [onPendingChange, relativePath],
-  );
+      return;
+    }
+    pendingSaveRef.current = null;
+    setSaveInFlight(false);
+    const liveRows = documentRef.current?.rows;
+    setDocument((current) =>
+      current ? applySpreadsheetSave(current, pending.rows, pending.bytes) : current,
+    );
+    // Edits typed while the save was in flight stay pending.
+    onPendingChange(relativePath, !spreadsheetGridsEqual(pending.rows, liveRows ?? pending.rows));
+  };
 
   const saveCoordinatorRef = useRef<{ save: (contents: string) => void } | null>(null);
 
-  const handleSave = useCallback(async () => {
+  const handleSave = async () => {
     const current = documentRef.current;
     if (!current || !isSpreadsheetDirty(current) || saveInFlightRef.current) return;
     setSaveInFlight(true);
@@ -234,9 +241,9 @@ export function SpreadsheetSurface({
         }),
       );
     }
-  }, [onPendingChange, relativePath]);
+  };
 
-  const handleSaveError = useCallback(() => {
+  const handleSaveError = () => {
     setSaveInFlight(false);
     onPendingChange(relativePath, true);
     toastManager.add(
@@ -252,7 +259,7 @@ export function SpreadsheetSurface({
         },
       }),
     );
-  }, [handleSave, onPendingChange, relativePath]);
+  };
 
   const saveCoordinator = useFileSaveCoordinator({
     environmentId,
@@ -264,32 +271,30 @@ export function SpreadsheetSurface({
     onSaveError: handleSaveError,
   });
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes the save coordinator to a ref read by the save handler
   useEffect(() => {
     saveCoordinatorRef.current = saveCoordinator;
   }, [saveCoordinator]);
 
-  const handleDiscard = useCallback(() => {
+  const handleDiscard = () => {
     setDocument((current) => (current ? discardSpreadsheetChanges(current) : current));
     onPendingChange(relativePath, false);
-  }, [onPendingChange, relativePath]);
+  };
 
-  const applyEdit = useCallback(
-    (edit: (current: SpreadsheetDocument) => SpreadsheetDocument) => {
-      const current = documentRef.current;
-      if (!current) return;
-      const next = edit(current);
-      setDocument(next);
-      onPendingChange(relativePath, isSpreadsheetDirty(next));
-    },
-    [onPendingChange, relativePath],
-  );
+  const applyEdit = (edit: (current: SpreadsheetDocument) => SpreadsheetDocument) => {
+    const current = documentRef.current;
+    if (!current) return;
+    const next = edit(current);
+    setDocument(next);
+    onPendingChange(relativePath, isSpreadsheetDirty(next));
+  };
 
   const openFileInExternalApp = useAtomCommand(shellEnvironment.openFile, {
     label: "open in excel",
     reportFailure: false,
   });
 
-  const handleOpenInExcel = useCallback(async () => {
+  const handleOpenInExcel = async () => {
     if (saveInFlightRef.current || !documentRef.current) return;
     // Excel opens the bytes on disk, not the grid: confirm instead of
     // silently opening stale data.
@@ -315,9 +320,9 @@ export function SpreadsheetSurface({
       return;
     }
     toastManager.add({ type: "success", title: "Opened in Excel" });
-  }, [cwd, environmentId, openFileInExternalApp, relativePath]);
+  };
 
-  const handleDownload = useCallback(async () => {
+  const handleDownload = async () => {
     const current = documentRef.current;
     if (!current) return;
     const baseName = relativePath.split(/[\\/]/).at(-1)?.trim() || "sheet.xlsx";
@@ -355,9 +360,9 @@ export function SpreadsheetSurface({
         }),
       );
     }
-  }, [relativePath]);
+  };
 
-  const handleCopySheet = useCallback(async () => {
+  const handleCopySheet = async () => {
     const current = documentRef.current;
     if (!current) return;
     try {
@@ -368,7 +373,7 @@ export function SpreadsheetSurface({
       await navigator.clipboard.writeText(spreadsheetGridToTsv(displayGrid));
       toastManager.add({
         type: "success",
-        title: "Copied — paste into Excel or Google Sheets",
+        title: "Copied. Paste into Excel or Google Sheets",
       });
     } catch {
       toastManager.add(
@@ -379,16 +384,17 @@ export function SpreadsheetSurface({
         }),
       );
     }
-  }, []);
+  };
 
-  const confirmDiscard = useCallback(async () => {
+  const confirmDiscard = useStableCallback(async () => {
     if (!dirtyRef.current || saveInFlightRef.current) return;
     const localApi = readLocalApi();
     const confirmed =
       (await localApi?.dialogs.confirm("Discard unsaved changes to this sheet?")) ?? false;
     if (confirmed) handleDiscard();
-  }, [handleDiscard]);
+  });
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers Escape and outside dismissal on the surface DOM node
   useEffect(() => {
     const root = surfaceRef.current;
     if (!root) return;

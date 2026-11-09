@@ -8,10 +8,10 @@ import {
   type DoerMemoryScope,
 } from "@t3tools/shared/doerMemory";
 import * as Cause from "effect/Cause";
-import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as NodeCrypto from "node:crypto";
 
 import * as DoerMemoryStore from "../../../persistence/Services/DoerMemoryStore.ts";
 import * as ProjectionSnapshotQuery from "../../../memory/DoerTaskContext.ts";
@@ -43,13 +43,9 @@ const dispatchFailure =
 const make = Effect.gen(function* () {
   const store = yield* DoerMemoryStore.DoerMemoryStore;
   const snapshots = yield* ProjectionSnapshotQuery.DoerTaskContext;
-  const crypto = yield* Crypto.Crypto;
 
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
-  const newMemoryId = crypto.randomUUIDv4().pipe(
-    Effect.orDie,
-    Effect.map((uuid) => `mem_${uuid}`),
-  );
+  const newMemoryId = Effect.succeed(`mem_${NodeCrypto.randomUUID()}`);
 
   /** The calling Task's thread; scope always resolves from here, never from caller ids. */
   const requireScopeThread = Effect.fn("MemoriesToolkit.requireScopeThread")(function* (
@@ -92,17 +88,19 @@ const make = Effect.gen(function* () {
     return entry.value;
   });
 
-  const checkContent = (content: string, Failure: MemoryFailure) =>
-    Effect.gen(function* () {
-      const normalized = normalizeDoerMemoryContent(content);
-      const secret = findDoerMemorySecretProblem(normalized);
-      if (secret !== null) {
-        return yield* new Failure({
-          cause: new Error(`${secret} Nothing was saved.`),
-        });
-      }
-      return normalized;
-    });
+  const checkContent = Effect.fn("MemoriesToolkit.checkContent")(function* (
+    content: string,
+    Failure: MemoryFailure,
+  ) {
+    const normalized = normalizeDoerMemoryContent(content);
+    const secret = findDoerMemorySecretProblem(normalized);
+    if (secret !== null) {
+      return yield* new Failure({
+        cause: new Error(`${secret} Nothing was saved.`),
+      });
+    }
+    return normalized;
+  });
 
   const savedMessage = (scope: DoerMemoryScope) =>
     scope === "about-you"
@@ -115,125 +113,120 @@ const make = Effect.gen(function* () {
       : `This Space already holds ${DOER_MEMORY_MAX_COUNT_PER_SCOPE} memories. Forget one before saving another. Nothing was saved.`;
 
   return MemoriesToolkit.of({
-    remember_memory: (input) =>
-      Effect.gen(function* () {
-        const { scope: invocation, thread } = yield* requireScopeThread(MemorySaveFailedError);
-        const scope = input.scope ?? "space";
-        const content = yield* checkContent(input.content, MemorySaveFailedError);
-        const projectId = scope === "about-you" ? null : String(thread.projectId);
-        const occurredAt = yield* nowIso;
-        const id = yield* newMemoryId;
-        // The store enforces the bucket cap atomically: false means full.
-        const inserted = yield* store
-          .create({
-            id,
-            scope,
-            projectId,
-            content,
-            sourceThreadId: String(invocation.threadId),
-            createdAt: occurredAt,
-            updatedAt: occurredAt,
-          })
-          .pipe(Effect.catchCause(dispatchFailure(MemorySaveFailedError)));
-        if (!inserted) {
-          return yield* new MemorySaveFailedError({ cause: new Error(bucketFullMessage(scope)) });
-        }
-        const memory = yield* readBack(id, MemorySaveFailedError);
-        return { memory, message: savedMessage(scope) };
-      }),
+    remember_memory: Effect.fn("MemoriesToolkit.remember_memory")(function* (input) {
+      const { scope: invocation, thread } = yield* requireScopeThread(MemorySaveFailedError);
+      const scope = input.scope ?? "space";
+      const content = yield* checkContent(input.content, MemorySaveFailedError);
+      const projectId = scope === "about-you" ? null : String(thread.projectId);
+      const occurredAt = yield* nowIso;
+      const id = yield* newMemoryId;
+      // The store enforces the bucket cap atomically: false means full.
+      const inserted = yield* store
+        .create({
+          id,
+          scope,
+          projectId,
+          content,
+          sourceThreadId: String(invocation.threadId),
+          createdAt: occurredAt,
+          updatedAt: occurredAt,
+        })
+        .pipe(Effect.catchCause(dispatchFailure(MemorySaveFailedError)));
+      if (!inserted) {
+        return yield* new MemorySaveFailedError({ cause: new Error(bucketFullMessage(scope)) });
+      }
+      const memory = yield* readBack(id, MemorySaveFailedError);
+      return { memory, message: savedMessage(scope) };
+    }),
 
-    list_memories: (input) =>
-      Effect.gen(function* () {
-        const { thread } = yield* requireScopeThread(MemoryListFailedError);
-        const projectId = String(thread.projectId);
-        if (input.scope === "about-you") {
-          return {
-            memories: yield* store
-              .listAboutYou()
-              .pipe(Effect.catchCause(dispatchFailure(MemoryListFailedError))),
-          };
-        }
-        if (input.scope === "space") {
-          return {
-            memories: yield* store
-              .listForSpace({ projectId })
-              .pipe(Effect.catchCause(dispatchFailure(MemoryListFailedError))),
-          };
-        }
+    list_memories: Effect.fn("MemoriesToolkit.list_memories")(function* (input) {
+      const { thread } = yield* requireScopeThread(MemoryListFailedError);
+      const projectId = String(thread.projectId);
+      if (input.scope === "about-you") {
         return {
           memories: yield* store
-            .listInScope({ projectId })
+            .listAboutYou()
             .pipe(Effect.catchCause(dispatchFailure(MemoryListFailedError))),
         };
-      }),
-
-    search_memories: (input) =>
-      Effect.gen(function* () {
-        const { thread } = yield* requireScopeThread(MemorySearchFailedError);
-        const needle = normalizeDoerMemoryContent(input.query).toLowerCase();
-        const entries = yield* store
-          .listInScope({ projectId: String(thread.projectId) })
-          .pipe(Effect.catchCause(dispatchFailure(MemorySearchFailedError)));
+      }
+      if (input.scope === "space") {
         return {
-          query: input.query,
-          memories: entries
-            .filter((entry) => entry.content.toLowerCase().includes(needle))
-            .slice(0, DOER_MEMORY_MAX_RECALL_ENTRIES),
+          memories: yield* store
+            .listForSpace({ projectId })
+            .pipe(Effect.catchCause(dispatchFailure(MemoryListFailedError))),
         };
-      }),
+      }
+      return {
+        memories: yield* store
+          .listInScope({ projectId })
+          .pipe(Effect.catchCause(dispatchFailure(MemoryListFailedError))),
+      };
+    }),
 
-    update_memory: (input) =>
-      Effect.gen(function* () {
-        const { thread } = yield* requireScopeThread(MemoryUpdateFailedError);
-        const projectId = String(thread.projectId);
-        const existing = yield* store
-          .getById({ id: input.memoryId })
-          .pipe(Effect.catchCause(dispatchFailure(MemoryUpdateFailedError)));
-        if (Option.isNone(existing)) {
-          return yield* new MemoryNotFoundError({ memoryId: input.memoryId });
-        }
-        yield* requireVisible(existing.value, projectId, input.memoryId);
-        const content = yield* checkContent(input.content, MemoryUpdateFailedError);
-        const updatedAt = yield* nowIso;
-        // The affected-row answer governs: false means the id vanished under us.
-        const updated = yield* store
-          .updateById({ id: input.memoryId, content, updatedAt })
-          .pipe(Effect.catchCause(dispatchFailure(MemoryUpdateFailedError)));
-        if (!updated) {
-          return yield* new MemoryNotFoundError({ memoryId: input.memoryId });
-        }
-        const memory = yield* readBack(input.memoryId, MemoryUpdateFailedError);
-        return {
-          memory,
-          message:
-            "Updated. The corrected version is available starting next message. Earlier conversation may still contain the old wording.",
-        };
-      }),
+    search_memories: Effect.fn("MemoriesToolkit.search_memories")(function* (input) {
+      const { thread } = yield* requireScopeThread(MemorySearchFailedError);
+      const needle = normalizeDoerMemoryContent(input.query).toLowerCase();
+      const entries = yield* store
+        .listInScope({ projectId: String(thread.projectId) })
+        .pipe(Effect.catchCause(dispatchFailure(MemorySearchFailedError)));
+      return {
+        query: input.query,
+        memories: entries
+          .filter((entry) => entry.content.toLowerCase().includes(needle))
+          .slice(0, DOER_MEMORY_MAX_RECALL_ENTRIES),
+      };
+    }),
 
-    forget_memory: (input) =>
-      Effect.gen(function* () {
-        const { thread } = yield* requireScopeThread(MemoryForgetFailedError);
-        const projectId = String(thread.projectId);
-        const existing = yield* store
-          .getById({ id: input.memoryId })
-          .pipe(Effect.catchCause(dispatchFailure(MemoryForgetFailedError)));
-        if (Option.isNone(existing)) {
-          return yield* new MemoryNotFoundError({ memoryId: input.memoryId });
-        }
-        const visible = yield* requireVisible(existing.value, projectId, input.memoryId);
-        const deleted = yield* store
-          .deleteById({ id: input.memoryId })
-          .pipe(Effect.catchCause(dispatchFailure(MemoryForgetFailedError)));
-        if (!deleted) {
-          return yield* new MemoryNotFoundError({ memoryId: input.memoryId });
-        }
-        return {
-          memoryId: input.memoryId,
-          scope: visible.scope,
-          message:
-            "Forgotten. It will not appear in future messages. Earlier conversation with a provider may still contain it.",
-        };
-      }),
+    update_memory: Effect.fn("MemoriesToolkit.update_memory")(function* (input) {
+      const { thread } = yield* requireScopeThread(MemoryUpdateFailedError);
+      const projectId = String(thread.projectId);
+      const existing = yield* store
+        .getById({ id: input.memoryId })
+        .pipe(Effect.catchCause(dispatchFailure(MemoryUpdateFailedError)));
+      if (Option.isNone(existing)) {
+        return yield* new MemoryNotFoundError({ memoryId: input.memoryId });
+      }
+      yield* requireVisible(existing.value, projectId, input.memoryId);
+      const content = yield* checkContent(input.content, MemoryUpdateFailedError);
+      const updatedAt = yield* nowIso;
+      // The affected-row answer governs: false means the id vanished under us.
+      const updated = yield* store
+        .updateById({ id: input.memoryId, content, updatedAt })
+        .pipe(Effect.catchCause(dispatchFailure(MemoryUpdateFailedError)));
+      if (!updated) {
+        return yield* new MemoryNotFoundError({ memoryId: input.memoryId });
+      }
+      const memory = yield* readBack(input.memoryId, MemoryUpdateFailedError);
+      return {
+        memory,
+        message:
+          "Updated. The corrected version is available starting next message. Earlier conversation may still contain the old wording.",
+      };
+    }),
+
+    forget_memory: Effect.fn("MemoriesToolkit.forget_memory")(function* (input) {
+      const { thread } = yield* requireScopeThread(MemoryForgetFailedError);
+      const projectId = String(thread.projectId);
+      const existing = yield* store
+        .getById({ id: input.memoryId })
+        .pipe(Effect.catchCause(dispatchFailure(MemoryForgetFailedError)));
+      if (Option.isNone(existing)) {
+        return yield* new MemoryNotFoundError({ memoryId: input.memoryId });
+      }
+      const visible = yield* requireVisible(existing.value, projectId, input.memoryId);
+      const deleted = yield* store
+        .deleteById({ id: input.memoryId })
+        .pipe(Effect.catchCause(dispatchFailure(MemoryForgetFailedError)));
+      if (!deleted) {
+        return yield* new MemoryNotFoundError({ memoryId: input.memoryId });
+      }
+      return {
+        memoryId: input.memoryId,
+        scope: visible.scope,
+        message:
+          "Forgotten. It will not appear in future messages. Earlier conversation with a provider may still contain it.",
+      };
+    }),
   });
 });
 

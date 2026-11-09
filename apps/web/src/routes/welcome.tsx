@@ -1,10 +1,15 @@
-import { createFileRoute, redirect, useLocation } from "@tanstack/react-router";
+import { createFileRoute, redirect, useLocation, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { EnvironmentId } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
+import * as Option from "effect/Option";
 
 import { NoProjectsHero } from "../components/NoProjectsHero";
 import { WelcomeWizard } from "../components/onboarding/WelcomeWizard";
+import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 
-/** Onboarding overlays the workspace. Visiting /welcome reopens setup. */
+const decodeEnvironmentId = Schema.decodeOption(EnvironmentId);
+
 export const Route = createFileRoute("/welcome")({
   beforeLoad: ({ context }) => {
     const { authGateState } = context;
@@ -16,24 +21,33 @@ export const Route = createFileRoute("/welcome")({
 });
 
 function WelcomeRouteView() {
-  // The root shell can remount this pending outlet after the location changes.
-  // Never reopen setup while the destination route is still loading.
+  const { authGateState } = Route.useRouteContext();
+  const navigate = useNavigate();
+  const hash = useLocation({ select: (location) => location.hash });
+  const resumeEnvironmentId = hash.startsWith("agents:")
+    ? Option.getOrUndefined(decodeEnvironmentId(hash.slice("agents:".length)))
+    : undefined;
+  // The root can remount this pending outlet after navigation; do not reopen setup.
   const isWelcomeRoute = useLocation({ select: (location) => location.pathname === "/welcome" });
   const [dismissed, setDismissed] = useState(false);
+  const openNewThread = useNewThreadHandler();
+  const localAvailable = authGateState.status === "authenticated";
   return (
     <>
       <NoProjectsHero />
       {isWelcomeRoute && !dismissed ? (
         <WelcomeWizard
-          localAvailable
-          onDone={() => {
-            // The hero behind the wizard is the destination: dismissing
-            // reveals "Start chatting" with no navigation, so no
-            // intermediate screen can flash. Starting a chat opens the
-            // default folder (the auto-provisioned inbox); adding a folder
-            // stays optional. A submitted first task navigates itself to
-            // its conversation before calling back here.
+          localAvailable={localAvailable}
+          resumeEnvironmentId={resumeEnvironmentId}
+          onDone={async (projectRef) => {
             setDismissed(true);
+            if (projectRef !== undefined) {
+              await openNewThread(projectRef, { replace: true }).catch(() =>
+                navigate({ to: "/", replace: true }),
+              );
+              return;
+            }
+            await navigate({ to: "/", replace: true });
           }}
         />
       ) : null}

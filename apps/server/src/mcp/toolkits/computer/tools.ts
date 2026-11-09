@@ -28,13 +28,7 @@ const dependencies = [
   ComputerService.ComputerService,
 ];
 
-/**
- * Deliberately a small surface: status, consent, and one image-returning
- * verb. Driving the desktop (click, type, keys, scroll) happens through the
- * preconfigured `computer-use` CLI, which speaks the upstream tool surface
- * directly and stays current with its own releases. Wrapping its commands
- * here would only lag behind it.
- */
+/** Small surface: status, consent, one image verb. Desktop driving stays in the `computer-use` CLI. */
 const ComputerStatusTool = Tool.make("computer_status", {
   description:
     "Check computer use on this machine: platform support, helper install state, OS permission state, and which apps the user already approved. Call this before computer_start when you do not know the setup state.",

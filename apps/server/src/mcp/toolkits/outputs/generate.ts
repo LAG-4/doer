@@ -27,11 +27,9 @@ const PRESENTATION_MAX_POINTS = 8;
 const PRESENTATION_MAX_TITLE_CHARS = 120;
 const PRESENTATION_MAX_POINT_CHARS = 500;
 /**
- * Visible text budget per slide (title plus bullets). The template shrinks
- * text to fit a fixed box, so without this cap a full 8×500 slide would
- * render microscopically small. This only blocks obvious overflow — it does
- * not certify rendered quality, which the user should check in their office
- * app. Speaker notes are excluded: they never render on the slide.
+ * Visible text budget per slide (title plus bullets). Without this cap a
+ * full 8x500 slide would render microscopically small. Blocks obvious
+ * overflow only, never rendered quality; speaker notes are excluded.
  */
 const PRESENTATION_MAX_VISIBLE_CHARS_PER_SLIDE = 1_200;
 const SPREADSHEET_MAX_SHEETS = 20;

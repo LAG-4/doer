@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  buildPairingUrl,
-  extractPairingUrlFromQrPayload,
-  PairingQrPayloadEmptyError,
-  parsePairingUrl,
-} from "./pairing";
+import { buildPairingUrl, extractPairingUrlFromQrPayload, parsePairingUrl } from "./pairing";
 
 describe("buildPairingUrl", () => {
   it("uses HTTP for a schemeless IP address", () => {

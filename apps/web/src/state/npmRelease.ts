@@ -1,45 +1,66 @@
+import { ServerNpmReleaseError } from "@t3tools/contracts";
+import { npmReleaseDatabaseMigration } from "@t3tools/shared/cliRelease";
 import { useAtomValue } from "@effect/atom-react";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";
 
-/**
- * Whether `@lag4/doer-cli@<version>` is published on npm. A 404 is false; network and
- * registry errors stay unknown. Both re-check every few minutes, so a release
- * that lands later shows up without a reload.
- */
-export const npmReleasePublishedAtom = Atom.family((version: string) =>
+export interface NpmRelease {
+  readonly version: string;
+  /** Absent on releases published before npm manifests carried it. */
+  readonly databaseMigration: number | undefined;
+}
+
+const isServerNpmReleaseError = Schema.is(ServerNpmReleaseError);
+
+export function npmReleaseFailureMessage(cause: Cause.Cause<unknown>): string {
+  const error = Option.getOrUndefined(Cause.findErrorOption(cause));
+  return isServerNpmReleaseError(error)
+    ? error.message
+    : "Could not check this environment's npm registry. Check the connection and registry settings.";
+}
+
+/** `spec` is an exact version or a dist-tag such as `nightly`. Null when npm has no such release.
+ * Refreshes only while mounted; the published check below keeps its own versions alive. */
+export const npmReleaseAtom = Atom.family((spec: string) =>
   Atom.make(
     Effect.gen(function* () {
       const response = yield* HttpClient.get(
-        `https://registry.npmjs.org/@lag4%2Fdoer-cli/${encodeURIComponent(version)}`,
+        `https://registry.npmjs.org/@lag4%2Fdoer-cli/${encodeURIComponent(spec)}`,
       );
-      if (response.status === 404) return false;
+      if (response.status === 404) return null;
       const body = yield* HttpClientResponse.filterStatusOk(response).pipe(
         Effect.flatMap((ok) => ok.json),
       );
-      return typeof body === "object" && body !== null && "version" in body
-        ? body.version === version
-        : false;
+      if (
+        typeof body !== "object" ||
+        body === null ||
+        !("version" in body) ||
+        typeof body.version !== "string"
+      ) {
+        return null;
+      }
+      return {
+        version: body.version,
+        databaseMigration: npmReleaseDatabaseMigration(body),
+      } satisfies NpmRelease;
     }).pipe(
       // Tracing headers would make the browser send a CORS preflight, which npm rejects.
       Effect.provideService(HttpClient.TracerPropagationEnabled, false),
       Effect.provide(FetchHttpClient.layer),
     ),
-  ).pipe(
-    Atom.withRefresh("5 minutes"),
-    Atom.keepAlive,
-    Atom.withLabel(`npm-release-published:${version}`),
-  ),
+  ).pipe(Atom.withRefresh("5 minutes"), Atom.withLabel(`npm-release:${spec}`)),
+);
+
+export const npmReleasePublishedAtom = Atom.family((version: string) =>
+  Atom.make((get) =>
+    get.result(npmReleaseAtom(version)).pipe(Effect.map((release) => release?.version === version)),
+  ).pipe(Atom.keepAlive, Atom.withLabel(`npm-release-published:${version}`)),
 );
 
 const NO_VERSION_ATOM = Atom.make(AsyncResult.success(false)).pipe(
   Atom.withLabel("npm-release-published:none"),
 );
-
-/** True only once npm confirms the version, so callers can hide work that
-    would download it until then. */
-export function useNpmReleasePublished(version: string | null): boolean {
-  const result = useAtomValue(version ? npmReleasePublishedAtom(version) : NO_VERSION_ATOM);
-  return AsyncResult.getOrElse(result, () => false);
-}

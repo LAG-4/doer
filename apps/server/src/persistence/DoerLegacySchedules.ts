@@ -23,6 +23,15 @@ const LegacySchedule = Schema.Union([
   }),
 ]);
 
+const decodeLegacySchedule = Schema.decodeUnknownEffect(Schema.fromJsonString(LegacySchedule));
+const decodeModelSelection = Schema.decodeUnknownEffect(Schema.fromJsonString(ModelSelection));
+const decodeRuns = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Array(Schema.Unknown)));
+const encodeSchedule = Schema.encodeEffect(Schema.fromJsonString(ScheduledTaskSchedule));
+const encodeStrategy = Schema.encodeEffect(
+  Schema.fromJsonString(OrchestrationV2ThreadLaunchWorkspaceStrategy),
+);
+const encodeModel = Schema.encodeEffect(Schema.fromJsonString(ModelSelection));
+
 export default Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   yield* Memories;
@@ -49,15 +58,9 @@ export default Effect.gen(function* () {
      FROM projection_automations a JOIN projection_threads t ON t.thread_id = a.thread_id
      WHERE a.deleted_at IS NULL AND t.deleted_at IS NULL`;
   for (const row of rows) {
-    const legacy = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(LegacySchedule))(
-      row.schedule_json,
-    );
-    const model = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ModelSelection))(
-      row.model_selection_json,
-    );
-    const runs = yield* Schema.decodeUnknownEffect(
-      Schema.fromJsonString(Schema.Array(Schema.Unknown)),
-    )(row.runs_json);
+    const legacy = yield* decodeLegacySchedule(row.schedule_json);
+    const model = yield* decodeModelSelection(row.model_selection_json);
+    const runs = yield* decodeRuns(row.runs_json);
     const schedule: ScheduledTaskSchedule =
       legacy.kind === "once"
         ? { type: "interval", everyMs: 86400000, onceAt: legacy.at }
@@ -71,13 +74,9 @@ export default Effect.gen(function* () {
       row.worktree_path === null
         ? { type: "root" }
         : { type: "existing_worktree", worktreePath: row.worktree_path };
-    const scheduleJson = yield* Schema.encodeEffect(Schema.fromJsonString(ScheduledTaskSchedule))(
-      schedule,
-    );
-    const strategyJson = yield* Schema.encodeEffect(
-      Schema.fromJsonString(OrchestrationV2ThreadLaunchWorkspaceStrategy),
-    )(strategy);
-    const modelJson = yield* Schema.encodeEffect(Schema.fromJsonString(ModelSelection))(model);
+    const scheduleJson = yield* encodeSchedule(schedule);
+    const strategyJson = yield* encodeStrategy(strategy);
+    const modelJson = yield* encodeModel(model);
     yield* sql`INSERT OR IGNORE INTO scheduled_tasks (
       task_id, title, prompt, enabled, schedule_json, project_id, thread_id, workspace_strategy_json,
       model_selection_json, runtime_mode, interaction_mode, created_by, creation_source, created_at,

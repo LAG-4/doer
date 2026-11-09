@@ -1,5 +1,10 @@
-import { type ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
-import { memo } from "react";
+import {
+  type EnvironmentId,
+  type ProviderInstanceId,
+  type ServerProvider,
+} from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
+import { memo, useRef, useState } from "react";
 import { InfoIcon, XIcon } from "lucide-react";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "../ui/alert";
 import { Button, InlineButton } from "../ui/button";
@@ -11,8 +16,10 @@ import {
   stripAnsiErrorText,
   TECHNICAL_HEALTH_FRIENDLY_DETAIL,
 } from "../settings/providerStatus";
+import { serverEnvironment } from "../../state/server";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { RefreshIcon } from "../ui/refresh-icon";
 
-/** Unsupported and broken versions fail mid-turn, so they warn even when ready. */
 function getIncompatibleVersion(status: ServerProvider) {
   const compatibility = status.compatibilityAdvisory;
   if (status.status === "error" && status.auth.status === "unauthenticated") return null;
@@ -34,8 +41,7 @@ export function getProviderStatusBannerKey(status: ServerProvider | null): strin
     ].join("\u0000");
   }
   if (status.status === "ready") return null;
-  // Antigravity checks saved credentials when a session starts. Its local
-  // health check leaves auth unknown after a restart, which is not a failure.
+  // Antigravity validates credentials at session start; unknown restart auth is not failure.
   if (
     status.driver === "antigravity" &&
     status.installed &&
@@ -65,7 +71,6 @@ export function hasProviderSetup(status: ServerProvider): boolean {
   );
 }
 
-/** Broken-version guidance takes precedence over startup failures it can cause. */
 export function getProviderStatusMessage(status: ServerProvider): string {
   if (
     status.auth.status !== "unauthenticated" &&
@@ -95,15 +100,36 @@ export function getProviderStatusMessage(status: ServerProvider): string {
 }
 
 export const ProviderStatusBanner = memo(function ProviderStatusBanner({
+  environmentId,
   onDismiss,
   onOpenProviderSetup,
   status,
 }: {
+  environmentId: EnvironmentId;
   onDismiss: () => void;
   onOpenProviderSetup?: (instanceId: ProviderInstanceId) => void;
   status: ServerProvider | null;
 }) {
   const simpleMode = useClientSettings((settings) => settings.simpleModeEnabled);
+  const canRefresh = useAtomValue(serverEnvironment.refreshProviders.permissionAtom(environmentId));
+  const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
+    label: "Refresh provider status",
+  });
+  const refreshingRef = useRef(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const refresh = async () => {
+    if (!status || !canRefresh || refreshingRef.current) return;
+    refreshingRef.current = true;
+    setIsRefreshing(true);
+    await refreshProviders({
+      environmentId,
+      input: { instanceId: status.instanceId, refreshModels: true },
+    });
+    refreshingRef.current = false;
+    setIsRefreshing(false);
+  };
+
   if (!status || getProviderStatusBannerKey(status) === null) {
     return null;
   }
@@ -150,29 +176,45 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
         <InfoIcon />
         <AlertTitle>{title}</AlertTitle>
         <AlertDescription>
-          {technicalDetail ? (
-            <>
-              <div className="line-clamp-3">{message}</div>
-              <details>
-                <summary className="cursor-pointer">Advanced details</summary>
-                <pre className="mt-1 max-w-full overflow-x-auto rounded-md bg-muted px-3 py-2 font-mono text-xs whitespace-pre-wrap break-all text-muted-foreground">
-                  {technicalDetail}
-                </pre>
-              </details>
-            </>
-          ) : (
-            <Tooltip>
-              <TooltipTrigger render={<div className="line-clamp-3" />}>{message}</TooltipTrigger>
-              <TooltipPopup side="top" className="whitespace-pre-wrap">
-                {message}
-              </TooltipPopup>
-            </Tooltip>
-          )}
-          {onOpenProviderSetup && hasProviderSetup(status) ? (
-            <InlineButton onClick={() => onOpenProviderSetup(status.instanceId)}>
-              {simpleMode ? "Open setup" : "Open provider setup"}
-            </InlineButton>
-          ) : null}
+          <div className="flex flex-col gap-2">
+            {technicalDetail ? (
+              <>
+                <div className="line-clamp-3">{message}</div>
+                <details>
+                  <summary className="cursor-pointer">Advanced details</summary>
+                  <pre className="mt-1 max-w-full overflow-x-auto rounded-md bg-muted px-3 py-2 font-mono text-xs whitespace-pre-wrap break-all text-muted-foreground">
+                    {technicalDetail}
+                  </pre>
+                </details>
+              </>
+            ) : (
+              <Tooltip>
+                <TooltipTrigger render={<div className="line-clamp-3" />}>
+                  {message}
+                </TooltipTrigger>
+                <TooltipPopup side="top" className="whitespace-pre-wrap">
+                  {message}
+                </TooltipPopup>
+              </Tooltip>
+            )}
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              {onOpenProviderSetup && hasProviderSetup(status) ? (
+                <InlineButton onClick={() => onOpenProviderSetup(status.instanceId)}>
+                  {simpleMode ? "Open setup" : "Open provider setup"}
+                </InlineButton>
+              ) : null}
+              <Button
+                aria-label={`Refresh ${providerName} provider status`}
+                disabled={!canRefresh || isRefreshing}
+                onClick={() => void refresh()}
+                size="xs"
+                variant="outline"
+              >
+                <RefreshIcon />
+                {isRefreshing ? "Refreshing..." : "Refresh"}
+              </Button>
+            </div>
+          </div>
         </AlertDescription>
         <AlertAction>
           <Button

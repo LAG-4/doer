@@ -20,25 +20,8 @@ export class ExperimentalConnectionsStoreError extends Schema.TaggedError<Experi
 ) {}
 
 /**
- * ExperimentalConnections - Host-scoped master switch for Google, Microsoft,
- * and local Office plugin connections.
- *
- * Off by default for new and existing installations. Persisted as a tiny JSON
- * file next to `settings.json`, so the value survives restarts and is shared
- * by web, desktop, and paired clients of this computer. Credentials are
- * preserved while the switch is off: gating denies new connect/auth/tool
- * calls, never deletes tokens.
- *
- * Durability contract: writes serialize, the file is persisted before the
- * in-memory value commits, and a storage failure is reported to the caller
- * (the Settings toggle shows an error, never a false success). On failure
- * the in-memory value fails closed to off.
- *
- * Transports stay thin: HTTP routes and MCP handlers consult this service and
- * deny with plain-language guidance. Disconnect/revoke paths never consult
- * it, so they stay available while the switch is off.
- *
- * @module ExperimentalConnections
+ * Host-scoped master switch for Google, Microsoft, and local Office plugins.
+ * Off by default; persisted next to `settings.json` and fail-closed to off.
  */
 export class ExperimentalConnections extends Context.Service<
   ExperimentalConnections,

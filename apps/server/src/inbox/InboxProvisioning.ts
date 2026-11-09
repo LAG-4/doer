@@ -1,31 +1,23 @@
 /**
- * InboxProvisioning - ensures the Codex-style no-folder workspace exists.
- *
- * On every startup the server reuses the active project rooted at the inbox
- * root (`~/Documents/Doer`, see `InboxWorkspace`), or creates it (including
- * the directory itself) when missing. The resolved ids flow into the welcome
- * payload so clients can treat an inbox-only workspace as fresh for
- * first-run purposes and land new chats there without asking for a folder.
- * Provisioning failures degrade to "no inbox" instead of failing startup.
- *
- * @module InboxProvisioning
+ * Ensures the inbox workspace (`~/Documents/Doer`) exists on startup.
+ * Reuses the active project at the inbox root or creates it when missing.
+ * Failures degrade to "no inbox" instead of failing startup.
  */
 
 import { CommandId, ProjectId } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Cause from "effect/Cause";
-import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as NodeCrypto from "node:crypto";
 
 import * as ProjectService from "../project/ProjectService.ts";
 import { INBOX_PROJECT_TITLE, resolveInboxRoot } from "./InboxWorkspace.ts";
 import { ServerConfig } from "../config.ts";
 
 export const resolveInboxWelcomeTargets = Effect.gen(function* () {
-  const crypto = yield* Crypto.Crypto;
   const path = yield* Path.Path;
   const fileSystem = yield* FileSystem.FileSystem;
   const homeDir = yield* HostProcess.HomeDirectory;
@@ -50,8 +42,8 @@ export const resolveInboxWelcomeTargets = Effect.gen(function* () {
   }
 
   const { project, created } = yield* projects.bootstrap({
-    commandId: CommandId.make(yield* crypto.randomUUIDv4()),
-    projectId: ProjectId.make(yield* crypto.randomUUIDv4()),
+    commandId: CommandId.make(NodeCrypto.randomUUID()),
+    projectId: ProjectId.make(NodeCrypto.randomUUID()),
     workspaceRoot: inboxRoot,
     title: INBOX_PROJECT_TITLE,
     createWorkspaceRootIfMissing: true,

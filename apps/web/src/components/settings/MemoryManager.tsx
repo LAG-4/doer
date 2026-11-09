@@ -18,7 +18,7 @@ import {
 import { useRouter } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 
 import { usePreparedConnection } from "../../state/session";
 import { buildThreadRouteParams } from "../../threadRoutes";
@@ -50,14 +50,14 @@ function MemoryRow(props: {
 }) {
   const router = useRouter();
   const { entry } = props;
-  const openSourceTask = useCallback(() => {
+  const openSourceTask = () => {
     void router.navigate({
       to: "/$environmentId/$threadId",
       params: buildThreadRouteParams(
         scopeThreadRef(props.environmentId, ThreadIdBrand.make(entry.sourceThreadId) as ThreadId),
       ),
     });
-  }, [router, props.environmentId, entry.sourceThreadId]);
+  };
   return (
     <li className="flex flex-col gap-1.5 rounded-md border border-border px-3 py-2">
       {props.editing ? (
@@ -158,7 +158,7 @@ export function MemoryManager(props: {
   description: string;
 }) {
   const prepared = usePreparedConnection(props.environmentId);
-  const connection = useMemo(() => {
+  const connection = (() => {
     if (Option.isNone(prepared)) return null;
     const authorization = prepared.value.httpAuthorization;
     if (authorization !== null && authorization._tag !== "Bearer") return { relay: true as const };
@@ -172,7 +172,7 @@ export function MemoryManager(props: {
         ...(authorization !== null ? { authHeader: `Bearer ${authorization.token}` } : {}),
       } satisfies DoerMemoryTransport,
     };
-  }, [prepared]);
+  })();
   if (connection === null) {
     return (
       <SettingsSection id={props.sectionId} title={props.title}>
@@ -222,13 +222,9 @@ function MemoryManagerLoaded(props: {
   const transport = props.transport;
   const writeProjectId = props.scope === "about-you" ? undefined : props.projectId;
   const query: { scope: DoerMemoryScope } | { scope: "space"; projectId: string | undefined } =
-    useMemo(
-      () =>
-        props.scope === "about-you"
-          ? { scope: props.scope }
-          : { scope: "space" as const, projectId: props.projectId },
-      [props.scope, props.projectId],
-    );
+    props.scope === "about-you"
+      ? { scope: props.scope }
+      : { scope: "space" as const, projectId: props.projectId };
   const [entries, setEntries] = useState<ReadonlyArray<DoerMemory> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -240,16 +236,16 @@ function MemoryManagerLoaded(props: {
   // Guards slow responses: only the latest load may populate the list.
   const loadGeneration = useRef(0);
 
-  const load = useCallback(async () => {
+  const load = async () => {
     if ("projectId" in query) {
       if (query.projectId === undefined) return [];
       // Always request scope=space so About-you entries never mix into This Space.
       return listDoerMemories(transport, { scope: "space", projectId: query.projectId });
     }
     return listDoerMemories(transport, { scope: query.scope });
-  }, [transport, query]);
+  };
 
-  const refresh = useCallback(async () => {
+  const refresh = async () => {
     const generation = (loadGeneration.current += 1);
     setError(null);
     try {
@@ -266,46 +262,45 @@ function MemoryManagerLoaded(props: {
           : "Could not load memories. Check the connection and try again.",
       );
     }
-  }, [load]);
+  };
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reloads the list from the memory service when transport or query changes
   useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- A new transport or query clears the stale list before reloading.
     setEntries(null);
     void refresh();
   }, [refresh]);
 
-  const mutate = useCallback(
-    async (work: () => Promise<unknown>, done: string) => {
-      if (busy) return;
-      setBusy(true);
-      setError(null);
-      setNotice(null);
-      try {
-        await work();
-      } catch (cause) {
-        setError(
-          cause instanceof DoerMemoryRequestError
-            ? cause.message
-            : "Could not confirm the change. Refresh the list before trying again.",
-        );
-        setBusy(false);
-        return;
-      }
-      setNotice(done);
-      try {
-        const generation = (loadGeneration.current += 1);
-        const loaded = await load();
-        if (loadGeneration.current === generation) setEntries(loaded);
-      } catch {
-        // The save succeeded; only the refresh failed.
-        setError("Saved, but the list could not be refreshed. Reopen Settings to see it.");
-      } finally {
-        setBusy(false);
-      }
-    },
-    [busy, load],
-  );
+  const mutate = async (work: () => Promise<unknown>, done: string) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await work();
+    } catch (cause) {
+      setError(
+        cause instanceof DoerMemoryRequestError
+          ? cause.message
+          : "Could not confirm the change. Refresh the list before trying again.",
+      );
+      setBusy(false);
+      return;
+    }
+    setNotice(done);
+    try {
+      const generation = (loadGeneration.current += 1);
+      const loaded = await load();
+      if (loadGeneration.current === generation) setEntries(loaded);
+    } catch {
+      // The save succeeded; only the refresh failed.
+      setError("Saved, but the list could not be refreshed. Reopen Settings to see it.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
-  const add = useCallback(() => {
+  const add = () => {
     const content = draft.trim();
     if (content === "") {
       setError("Write the memory first.");
@@ -326,36 +321,32 @@ function MemoryManagerLoaded(props: {
         ? "Saved to About you. Available starting next message."
         : "Saved to This Space. Available starting next message.",
     );
-  }, [draft, mutate, transport, props.scope, writeProjectId]);
+  };
 
-  const saveEdit = useCallback(
-    (entry: DoerMemory) =>
-      void mutate(
-        () =>
-          updateDoerMemory(transport, entry.id, {
-            content: editDraft,
-            ...(entry.projectId ? { projectId: entry.projectId } : {}),
-          }).then(() => {
-            setEditingId(null);
-          }),
-        "Updated. Available starting next message.",
-      ),
-    [editDraft, mutate, transport],
-  );
+  const saveEdit = (entry: DoerMemory) =>
+    void mutate(
+      () =>
+        updateDoerMemory(transport, entry.id, {
+          content: editDraft,
+          ...(entry.projectId ? { projectId: entry.projectId } : {}),
+        }).then(() => {
+          setEditingId(null);
+        }),
+      "Updated. Available starting next message.",
+    );
 
-  const confirmForget = useCallback(
-    (entry: DoerMemory) =>
-      void mutate(
-        () =>
-          forgetDoerMemory(transport, entry.id, {
-            ...(entry.projectId ? { projectId: entry.projectId } : {}),
-          }).then(() => {
-            setConfirmingId(null);
-          }),
-        "Forgotten. It will not appear in future messages.",
-      ),
-    [mutate, transport],
-  );
+  const confirmForget = (entry: DoerMemory) =>
+    void mutate(
+      () =>
+        forgetDoerMemory(
+          transport,
+          entry.id,
+          entry.projectId ? { projectId: entry.projectId } : {},
+        ).then(() => {
+          setConfirmingId(null);
+        }),
+      "Forgotten. It will not appear in future messages.",
+    );
 
   return (
     <SettingsSection id={props.sectionId} title={props.title}>
@@ -425,7 +416,7 @@ function MemoryManagerLoaded(props: {
           </div>
         </div>
         <p className="max-w-prose text-xs text-muted-foreground">
-          Memories cannot keep secrets safe — never store passwords, keys, or sign-in codes.{" "}
+          Memories cannot keep secrets safe. Never store passwords, keys, or sign-in codes.{" "}
           {DOER_MEMORY_COPY.localDisclosure}
         </p>
         {notice ? (

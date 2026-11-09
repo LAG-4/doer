@@ -7,11 +7,8 @@ import * as Schema from "effect/Schema";
 
 /**
  * Shared saved-memory HTTP client for web, desktop, and mobile.
- *
- * The caller supplies the environment base URL plus an authenticated fetch:
- * web passes plain `fetch` (session cookies travel automatically), mobile
- * passes a wrapper that adds its environment bearer token. URLs stay relative
- * to the connected environment so remote connections work unchanged.
+ * Caller supplies the environment base URL plus an authenticated fetch.
+ * URLs stay relative so remote connections work unchanged.
  */
 export interface DoerMemoryTransport {
   /** Environment origin, e.g. `http://192.168.1.5:13773` — no trailing slash. */

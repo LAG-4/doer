@@ -21,16 +21,7 @@ export function threadBulkDeleteConfirmationMessage(count: number): string {
 type ThreadDeleteDialogs = Pick<LocalApi["dialogs"], "confirm"> &
   Partial<Pick<LocalApi["dialogs"], "confirmWithDontAskAgain">>;
 
-/**
- * Shows the delete-thread confirmation with a "Don't ask again" checkbox.
- * When the user confirms with the box checked, the `confirmThreadDelete`
- * client setting is turned off so later deletes skip the dialog. The setting
- * stays reversible in Settings → General → delete confirmation.
- *
- * Dialog failures propagate to the caller (wrap with `settlePromise` where
- * the call site reports failures that way). A missing dialogs host resolves
- * to "not confirmed", matching `dialogs.confirm` failing closed.
- */
+/** Delete-thread confirmation with "Don't ask again". Missing dialogs host resolves to not confirmed. */
 export async function requestThreadDeleteConfirmation(input: {
   readonly dialogs: ThreadDeleteDialogs | null | undefined;
   readonly message: string;

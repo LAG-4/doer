@@ -3,10 +3,12 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
+import * as DesktopWindow from "../window/DesktopWindow.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import { WEB_LINK_OPEN_CHANNEL } from "../ipc/channels.ts";
 
 /** An http(s) link the operating system handed to Doer as the default browser. */
+
 export const isWebLink = (value: string) => {
   if (!URL.canParse(value)) return false;
   const { protocol } = new URL(value);
@@ -17,26 +19,22 @@ export const isWebLink = (value: string) => {
 export const isWebPageFile = (path: string) => /\.x?html?$/i.test(path);
 
 /**
- * Web links and HTML files macOS opens with Doer once it is the default
- * browser, plus `doer://` prompt and thread links on every platform. Files
- * arrive as file:// URLs. They can
- * arrive before the app is ready (the link that launched it) or while the web
- * app reloads, so they wait until the renderer says it is listening.
+ * Links can arrive before the app is ready or while the web app reloads,
+ * so they wait until the renderer says it is listening. Covers OS-opened
+ * web links and HTML files plus `doer://` prompt and thread links.
  */
 export class DesktopWebLinks extends Context.Service<
   DesktopWebLinks,
   {
-    /** Queues a link and delivers it as soon as the renderer is listening. */
     readonly receive: (url: string) => Effect.Effect<void>;
-    /** The renderer started or stopped listening; listening flushes queued links. */
     readonly setRendererReady: (ready: boolean) => Effect.Effect<void>;
   }
 >()("@t3tools/desktop/app/DesktopWebLinks") {}
 
 const make = Effect.gen(function* () {
   const electronWindow = yield* ElectronWindow.ElectronWindow;
+  const desktopWindow = yield* DesktopWindow.DesktopWindow;
   const pending: Array<string> = [];
-  /** The page that said it is listening; a reload or crash replaces it, and it must say so again. */
   let listening: Electron.WebContents | null = null;
   let detachListening: (() => void) | null = null;
 
@@ -55,7 +53,7 @@ const make = Effect.gen(function* () {
       return;
     }
     for (const url of pending.splice(0)) listening.send(WEB_LINK_OPEN_CHANNEL, url);
-    yield* electronWindow.reveal(window.value);
+    yield* desktopWindow.activate.pipe(Effect.ignore);
   });
 
   const startListening = Effect.gen(function* () {
@@ -65,7 +63,6 @@ const make = Effect.gen(function* () {
     if (listening === webContents) return;
     stopListening();
     listening = webContents;
-    // Links that arrive while a new page loads wait for it to listen again.
     const onNavigation = (
       event: Electron.Event<Electron.WebContentsDidStartNavigationEventParams>,
     ) => {
@@ -82,16 +79,15 @@ const make = Effect.gen(function* () {
   });
 
   return DesktopWebLinks.of({
-    receive: (url) =>
-      Effect.suspend(() => {
+    receive: Effect.fn("DesktopWebLinks.receive")(function (url) {
+      return Effect.suspend(() => {
         pending.push(url);
         return flush;
-      }).pipe(Effect.withSpan("DesktopWebLinks.receive")),
-    setRendererReady: (ready) =>
-      (ready ? startListening : Effect.sync(stopListening)).pipe(
-        Effect.andThen(flush),
-        Effect.withSpan("DesktopWebLinks.setRendererReady"),
-      ),
+      });
+    }),
+    setRendererReady: Effect.fn("DesktopWebLinks.setRendererReady")(function (ready) {
+      return ready ? startListening : Effect.sync(stopListening);
+    }, Effect.andThen(flush)),
   });
 });
 
