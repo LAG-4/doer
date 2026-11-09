@@ -4303,7 +4303,6 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
     private: true,
     packageManager: rootPackageJson.packageManager,
     description: "Doer desktop build",
-    license: "MIT",
     author: "T3 Tools",
     homepage: "https://doer.lagaryan.click",
     main: "apps/desktop/dist-electron/boot.cjs",

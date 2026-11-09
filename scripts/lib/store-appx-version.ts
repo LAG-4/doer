@@ -1,3 +1,4 @@
+// @effect-diagnostics extendsNativeError:off - Sync Store version validation throws plain Errors; no Effect runtime exists here.
 // Store package Version is four parts; electron-builder v26 does not
 // enforce the Store rule, so the manifest hook rewrites the quad.
 
