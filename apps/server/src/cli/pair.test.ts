@@ -312,7 +312,7 @@ describe("doer pair", () => {
     ).pipe(Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("directs to t3 serve or doer connect when no server is running", () =>
+  it.effect("directs to doer serve or doer connect when no server is running", () =>
     Effect.gen(function* () {
       const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-pair-none-test-"));
 
@@ -324,8 +324,10 @@ describe("doer pair", () => {
         typeof error === "object" && error !== null && "cause" in error ? error.cause : error,
       );
       assert.include(rendered, "No running Doer server found.");
-      assert.include(rendered, "npx @lag4/doer-cli serve");
-      assert.include(rendered, "npx @lag4/doer-cli connect");
+      for (const subcommand of ["serve", "connect"]) {
+        const { command } = yield* resolveHostCliCommand(subcommand, ["--base-dir", baseDir]);
+        assert.include(rendered, `\`${command}\``);
+      }
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 

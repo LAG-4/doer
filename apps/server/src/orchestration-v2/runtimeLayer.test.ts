@@ -305,7 +305,15 @@ const layerTest = Layer.mergeAll(
   Layer.provide(SqlitePersistence.layerMemory),
   Layer.provide(layerCheckpointStoreTest),
   Layer.provide(layerServerConfig),
-  Layer.provide(ServerSettings.layerTest()),
+  // Doer enables only opencode by default; enable the codex instances used here.
+  Layer.provide(
+    ServerSettings.layerTest({
+      providerInstances: {
+        [modelSelection.instanceId]: { driver: "codex", enabled: true },
+        [alternateInstanceId]: { driver: "codex", enabled: true },
+      },
+    }),
+  ),
   Layer.provide(layerTestProviderInstanceRegistry),
   Layer.provide(layerGitWorkflowTest),
   Layer.provide(layerProjectServiceTest),

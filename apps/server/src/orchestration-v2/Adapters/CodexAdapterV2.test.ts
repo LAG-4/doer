@@ -1147,7 +1147,7 @@ describe("CodexAdapterV2 session initialize", () => {
       assert.instanceOf(failure.cause, ProviderSetupError);
       assert.equal(
         failure.cause.message,
-        "Codex 0.144.3 does not work with this T3 Code release. Update Codex to >=0.159.0, then retry.",
+        "Codex 0.144.3 does not work with this T3 Code release. Update Codex to >=0.156.0, then retry.",
       );
     }).pipe(
       Effect.scoped,
@@ -1624,14 +1624,6 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       );
       assert.deepEqual(requests, [
         {
-          clientInfo: { name: "Doer", title: "Doer", version: packageJson.version },
-          capabilities: {
-            experimentalApi: true,
-            optOutNotificationMethods: ["turn/diff/updated"],
-            extensions: {
-              "io.modelcontextprotocol/ui": { mimeTypes: ["text/html;profile=mcp-app"] },
-            },
-          },
           cwd: "/workspace",
           model: "gpt-5.4",
           config: {
