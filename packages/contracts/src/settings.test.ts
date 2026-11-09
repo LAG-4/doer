@@ -344,7 +344,7 @@ describe("provider enabled defaults", () => {
     expect(
       resolveProjectProviderInstanceEnabled(settings, null, ProviderInstanceId.make("opencode")),
     ).toBe(true);
-    for (const driver of ["codex", "claudeAgent", "cursor", "grok", "muse", "pi", "antigravity"]) {
+    for (const driver of ["codex", "claudeAgent", "cursor", "grok", "fx", "kiro", "muse", "pi", "antigravity"]) {
       expect(enabledByDefault(driver)).toBe(false);
       expect(
         resolveProjectProviderInstanceEnabled(settings, null, ProviderInstanceId.make(driver)),

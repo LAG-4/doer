@@ -13,6 +13,10 @@ import {
   type UnifiedSettings,
 } from "@t3tools/contracts/settings";
 import { describe, expect, it } from "vite-plus/test";
+// Upstream logic tests run with simple-mode off; Doer defaults it on (which
+// forces the free OpenCode model). Use these to verify generic selection.
+const NON_SIMPLE_CLIENT = { ...DEFAULT_CLIENT_SETTINGS, simpleModeEnabled: false };
+const NON_SIMPLE_UNIFIED = { ...DEFAULT_UNIFIED_SETTINGS, simpleModeEnabled: false };
 import { createModelSelection } from "@t3tools/shared/model";
 import { deriveEffectiveComposerModelState } from "./composerDraftStore";
 import { getComposerProviderState } from "./components/chat/composerProviderState";
@@ -83,14 +87,24 @@ function settingsWithProviderInstances(): UnifiedSettings {
 describe("scoped default model selections", () => {
   // regression: #27997 equal automatic defaults can resolve to different providers
   it("compares automatic defaults using each environment's models", () => {
+    // Upstream test assumes codex/claudeAgent enabled by default; Doer only
+    // enables opencode, so opt these instances in for the mixed check.
+    const enabledInstances = {
+      [ProviderInstanceId.make("codex")]: { enabled: true },
+      [ProviderInstanceId.make("claudeAgent")]: { enabled: true },
+    } as const;
+    const testSettings = {
+      ...NON_SIMPLE_UNIFIED,
+      providerInstances: enabledInstances,
+    };
     const codex = {
       projectId: null,
-      settings: DEFAULT_UNIFIED_SETTINGS,
+      settings: testSettings,
       providers: [provider({ instanceId: "codex", models: ["gpt-6-astra"] })],
     };
     const claude = {
       projectId: null,
-      settings: DEFAULT_UNIFIED_SETTINGS,
+      settings: testSettings,
       providers: [
         provider({
           instanceId: "claudeAgent",
@@ -100,16 +114,16 @@ describe("scoped default model selections", () => {
       ],
     };
 
-    expect(defaultModelSelectionsAreMixed(DEFAULT_CLIENT_SETTINGS, [codex, claude])).toBe(true);
-    expect(defaultModelSelectionsAreMixed(DEFAULT_CLIENT_SETTINGS, [claude, codex])).toBe(true);
-    expect(defaultModelSelectionsAreMixed(DEFAULT_CLIENT_SETTINGS, [codex, codex])).toBe(false);
-    expect(defaultModelSelectionsAreMixed(DEFAULT_CLIENT_SETTINGS, [claude])).toBe(false);
-    expect(defaultModelSelectionsAreMixed(DEFAULT_CLIENT_SETTINGS, [])).toBe(false);
+    expect(defaultModelSelectionsAreMixed(NON_SIMPLE_CLIENT, [codex, claude])).toBe(true);
+    expect(defaultModelSelectionsAreMixed(NON_SIMPLE_CLIENT, [claude, codex])).toBe(true);
+    expect(defaultModelSelectionsAreMixed(NON_SIMPLE_CLIENT, [codex, codex])).toBe(false);
+    expect(defaultModelSelectionsAreMixed(NON_SIMPLE_CLIENT, [claude])).toBe(false);
+    expect(defaultModelSelectionsAreMixed(NON_SIMPLE_CLIENT, [])).toBe(false);
     expect(
-      defaultModelSelectionsAreMixed(DEFAULT_CLIENT_SETTINGS, [codex, { ...codex, providers: [] }]),
+      defaultModelSelectionsAreMixed(NON_SIMPLE_CLIENT, [codex, { ...codex, providers: [] }]),
     ).toBe(true);
     expect(
-      defaultModelSelectionsAreMixed(DEFAULT_CLIENT_SETTINGS, [
+      defaultModelSelectionsAreMixed(NON_SIMPLE_CLIENT, [
         codex,
         { ...codex, providers: [provider({ instanceId: "codex", models: ["gpt-6-sol"] })] },
       ]),
@@ -120,6 +134,7 @@ describe("scoped default model selections", () => {
       projectId,
       settings: {
         ...DEFAULT_SERVER_SETTINGS,
+        providerInstances: enabledInstances,
         projectSettingsOverrides: {
           [projectId]: {
             providerInstances: { [ProviderInstanceId.make("codex")]: { enabled: false } },
@@ -129,14 +144,14 @@ describe("scoped default model selections", () => {
       providers: [...codex.providers, ...claude.providers],
     };
     const remoteProject = { ...claude, projectId: ProjectId.make("remote-project") };
-    expect(defaultModelSelectionsAreMixed(DEFAULT_CLIENT_SETTINGS, [project, remoteProject])).toBe(
+    expect(defaultModelSelectionsAreMixed(NON_SIMPLE_CLIENT, [project, remoteProject])).toBe(
       false,
     );
-    expect(defaultModelSelectionsAreMixed(DEFAULT_CLIENT_SETTINGS, [remoteProject, project])).toBe(
+    expect(defaultModelSelectionsAreMixed(NON_SIMPLE_CLIENT, [remoteProject, project])).toBe(
       false,
     );
     expect(
-      defaultModelSelectionsAreMixed(DEFAULT_CLIENT_SETTINGS, [
+      defaultModelSelectionsAreMixed(NON_SIMPLE_CLIENT, [
         project,
         { ...project, projectId: ProjectId.make("other-project") },
       ]),
@@ -146,6 +161,7 @@ describe("scoped default model selections", () => {
       projectId: null,
       settings: {
         ...DEFAULT_SERVER_SETTINGS,
+        providerInstances: enabledInstances,
         providerModelPreferences: {
           [ProviderInstanceId.make("codex")]: {
             hiddenModels: ["gpt-6-astra"],
@@ -155,15 +171,18 @@ describe("scoped default model selections", () => {
       },
       providers: [provider({ instanceId: "codex", models: ["gpt-6-astra", "gpt-6-sol"] })],
     };
-    const inherited = { ...configured, settings: DEFAULT_SERVER_SETTINGS };
-    expect(defaultModelSelectionsAreMixed(DEFAULT_CLIENT_SETTINGS, [configured, inherited])).toBe(
+    const inherited = {
+      ...configured,
+      settings: { ...DEFAULT_SERVER_SETTINGS, providerInstances: enabledInstances },
+    };
+    expect(defaultModelSelectionsAreMixed(NON_SIMPLE_CLIENT, [configured, inherited])).toBe(
       true,
     );
-    expect(defaultModelSelectionsAreMixed(DEFAULT_CLIENT_SETTINGS, [inherited, configured])).toBe(
+    expect(defaultModelSelectionsAreMixed(NON_SIMPLE_CLIENT, [inherited, configured])).toBe(
       true,
     );
     const clientSettings = {
-      ...DEFAULT_CLIENT_SETTINGS,
+      ...NON_SIMPLE_CLIENT,
       providerModelPreferences: configured.settings.providerModelPreferences,
     };
     expect(defaultModelSelectionsAreMixed(clientSettings, [configured, inherited])).toBe(false);
@@ -774,7 +793,7 @@ describe("instance-scoped model selection", () => {
       selectedInstanceId: kimiInstanceId,
       threadModelSelection: null,
       projectModelSelection: null,
-      settings: DEFAULT_UNIFIED_SETTINGS,
+      settings: NON_SIMPLE_UNIFIED,
     });
 
     expect(state.selectedModel).toBe(kimiModel);
