@@ -150,7 +150,17 @@ it.effect.each([
           layerOrchestrator,
           ThreadManagementService.layer.pipe(
             Layer.provide(layerOrchestrator),
-            Layer.provide(ServerSettings.layerTest()),
+            // Doer enables only opencode by default; enable the claudeAgent driver used here.
+            Layer.provide(
+              ServerSettings.layerTest({
+                providerInstances: {
+                  [instanceId]: {
+                    driver: ProviderDriverKind.make("claudeAgent"),
+                    enabled: true,
+                  },
+                },
+              }),
+            ),
             Layer.provide(
               CommandReceiptStore.layer.pipe(Layer.provide(SqlitePersistence.layerMemory)),
             ),
@@ -168,7 +178,16 @@ it.effect.each([
                   }),
               }),
               ProjectionStore.layer.pipe(Layer.provide(SqlitePersistence.layerMemory)),
-              ServerSettings.layerTest({ autoResumeLimitedThreads: true }),
+              // Doer enables only opencode by default; enable the claudeAgent driver used here.
+              ServerSettings.layerTest({
+                autoResumeLimitedThreads: true,
+                providerInstances: {
+                  [instanceId]: {
+                    driver: ProviderDriverKind.make("claudeAgent"),
+                    enabled: true,
+                  },
+                },
+              }),
             ),
           ),
         );
@@ -187,7 +206,15 @@ it.effect.each([
               Layer.mock(ProjectService.ProjectService)({}),
               Layer.mock(SecretRequests.SecretRequests)({}),
               Layer.mock(RemoteDelegation.RemoteDelegation)({}),
-              ServerSettings.layerTest(),
+              // Doer enables only opencode by default; enable the claudeAgent driver used here.
+              ServerSettings.layerTest({
+                providerInstances: {
+                  [instanceId]: {
+                    driver: ProviderDriverKind.make("claudeAgent"),
+                    enabled: true,
+                  },
+                },
+              }),
               Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
               NodeServices.layer,
               NodeCrypto.layer,

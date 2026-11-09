@@ -12,6 +12,7 @@ import * as DeviceService from "../../../device/DeviceService.ts";
 import * as ServerConfig from "../../../config.ts";
 import { expect, it } from "@effect/vitest";
 import { NodeHttpServer } from "@effect/platform-node";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -20,6 +21,12 @@ import * as Schema from "effect/Schema";
 import { HttpBody, HttpClient, HttpRouter } from "effect/http";
 
 import * as ServerEnvironment from "../../../environment/ServerEnvironment.ts";
+import * as RemoteDelegation from "../../../peer/RemoteDelegation.ts";
+import * as PeerForwarding from "../../../peer/PeerForwarding.ts";
+import * as PeerLinkRequests from "../../../peer/PeerLinkRequests.ts";
+import * as PeerLinks from "../../../peer/PeerLinks.ts";
+import * as AssetSigner from "../../../assets/AssetSigner.ts";
+import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as GitWorkflowService from "../../../git/GitWorkflowService.ts";
 import * as ProviderAdapterRegistry from "../../../orchestration-v2/ProviderAdapterRegistry.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
@@ -84,6 +91,12 @@ const layerStubServices = Layer.mergeAll(
   Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({}),
   Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
   Layer.mock(ThreadSearch.ThreadSearch)({}),
+  Layer.mock(RemoteDelegation.RemoteDelegation)({}),
+  Layer.mock(AssetSigner.AssetSigner)({} as never),
+  Layer.mock(McpProviderSessions.McpProviderSessions)({}),
+  Layer.mock(PeerForwarding.PeerForwarding)({}),
+  Layer.mock(PeerLinkRequests.PeerLinkRequests)({}),
+  Layer.mock(PeerLinks.PeerLinks)({}),
 );
 
 const ToolsListPayload = Schema.fromJsonString(
@@ -110,7 +123,26 @@ const decodeToolsListPayload = Schema.decodeUnknownEffect(ToolsListPayload);
 it.effect("production mcp layer lists worktree tools over http", () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const layerRoutes = McpHttpServer.layer.pipe(Layer.provide(McpSessionRegistry.layer));
+      const token = "scratch-token";
+      const scope = {
+        environmentId: "environment-scratch",
+        requestNamespace: token,
+        thread: {
+          threadId: ThreadId.make("thread-scratch"),
+          providerSessionId: token,
+          providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+        },
+        client: undefined,
+        capabilities: new Set(["orchestration"]),
+        issuedAt: 1,
+      } as never;
+      const layerRoutes = McpHttpServer.layer.pipe(
+        Layer.provide(
+          Layer.mock(McpSessionRegistry.McpSessionRegistry)({
+            resolve: (presented: string) => Effect.succeed(presented === token ? scope : undefined),
+          }),
+        ),
+      );
       yield* HttpRouter.serve(layerRoutes, {
         disableListenLog: true,
         disableLogger: true,
@@ -126,15 +158,8 @@ it.effect("production mcp layer lists worktree tools over http", () =>
         Layer.build,
       );
 
-      const registry = McpSessionRegistry.issueActiveMcpCredential({
-        threadId: ThreadId.make("thread-scratch"),
-        providerInstanceId: ProviderInstanceId.make("claudeAgent"),
-      });
-      const credential = yield* registry;
-      expect(credential).toBeDefined();
-
       const httpClient = yield* HttpClient.HttpClient;
-      const auth = credential!.config.authorizationHeader;
+      const auth = `Bearer ${token}`;
       const initResponse = yield* httpClient.post("/mcp", {
         headers: {
           accept: "application/json, text/event-stream",
@@ -192,6 +217,7 @@ it.effect("production mcp layer lists worktree tools over http", () =>
   ).pipe(
     Effect.provide(
       Layer.mergeAll(
+        NodeCrypto.layer,
         NodeHttpServer.layerTest,
         ServerConfig.layerTest(process.cwd(), { prefix: "t3-worktree-mcp-" }).pipe(
           Layer.provide(NodeServices.layer),
