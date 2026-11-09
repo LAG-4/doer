@@ -31,6 +31,7 @@ import type {
 } from "@t3tools/contracts";
 
 import {
+  DEFAULT_SERVER_SETTINGS,
   DEFAULT_TEXT_GENERATION_MODEL,
   EventId,
   GitCommandError,
@@ -2911,6 +2912,15 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
       const { manager } = yield* makeManager({
         serverSettings: {
+          // Doer enables only opencode by default; opt claudeAgent in so the
+          // writer selection survives settings normalization (upstream has it on).
+          providerInstances: {
+            [ProviderInstanceId.make("claudeAgent")]: {
+              driver: ProviderDriverKind.make("claudeAgent"),
+              enabled: true,
+              config: {},
+            },
+          },
           textGenerationModelSelection: {
             instanceId: ProviderInstanceId.make("claudeAgent"),
             model: "claude-sonnet-4-5",
@@ -3042,6 +3052,15 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
       const { manager } = yield* makeManager({
         serverSettings: {
+          // Doer enables only opencode by default; opt claudeAgent in so the
+          // project-scoped fallback can resolve to it (upstream has it on).
+          providerInstances: {
+            [ProviderInstanceId.make("claudeAgent")]: {
+              driver: ProviderDriverKind.make("claudeAgent"),
+              enabled: true,
+              config: {},
+            },
+          },
           projectSettingsOverrides: {
             [projectId]: {
               providerInstances: { [disabledInstanceId]: { enabled: false } },
